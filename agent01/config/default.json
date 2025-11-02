@@ -1,0 +1,34 @@
+{
+  "file": "voice 1.m4a",
+  "model": "gpt-4o-transcribe-diarize",
+  "prompt": null,
+  "language": null,
+  "temperature": 0.0,
+  "openai_api_key": "env:OPENAI_API_KEY",
+  "openai_base_url": null,
+  "openai_organization": null,
+  "response_format": "json",
+  "timestamp_granularities": ["segment"],
+  "openai_speaker_diarization": true,
+  "md_output_path": "transcript.md",
+  "raw_json_output_path": "openai_response.json",
+
+  "pre_split": true,
+  "chunk_overlap_sec": 2.0,
+  "target_chunk_mb": 5,
+  "chunking_strategy": "auto",
+  "split_workdir": "chunks",
+  "ffmpeg_path": "ffmpeg",
+  "ffprobe_path": "ffprobe",
+  "reencode_if_needed": true,
+  "reencode_bitrate_kbps": 64,
+  "concat_markdown": true,
+  "chunk_naming": "{base}_part_%03d.m4a",
+  "fallback_models": ["gpt-4o-mini-transcribe", "whisper-1"],
+
+  "parallel_workers": 4,
+  "save_per_chunk_json": true,
+  "per_chunk_json_dir": "chunks_json",
+  "cache_dir": "cache"
+}
+
