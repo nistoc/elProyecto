@@ -398,13 +398,31 @@ class TranscriptionPipeline:
             Transcription result dictionary
         """
         try:
-            with open(audio_path, "rb") as f:
-                response = self.api_client.client.audio.transcriptions.create(
-                    file=f,
-                    model="whisper-1",
-                    response_format="verbose_json"
-                    # Note: language not specified - let model auto-detect
-                )
+            # Prepare transcription parameters
+            transcribe_params = {
+                "file": open(audio_path, "rb"),
+                "model": "whisper-1",
+                "response_format": "verbose_json"
+            }
+            
+            # Add language if specified (for single language)
+            # For multilingual audio (e.g., Russian + Spanish), leave as None for auto-detect
+            language = self.config.get("language")
+            if language:
+                transcribe_params["language"] = language
+                print(f"[INFO] Using language hint: {language}")
+            
+            # Add prompt if specified (helps with multilingual content and terminology)
+            # Example for Russian+Spanish: "Здравствуйте. Buenos días. Привет. Hola."
+            prompt = self.config.get("prompt")
+            if prompt:
+                transcribe_params["prompt"] = prompt
+                print(f"[INFO] Using transcription prompt: {prompt[:50]}...")
+            
+            response = self.api_client.client.audio.transcriptions.create(**transcribe_params)
+            
+            # Close the file
+            transcribe_params["file"].close()
             
             # Convert to dict
             if hasattr(response, "model_dump"):

@@ -258,6 +258,8 @@ pytest tests/test_core.py
 ## 📚 Документация
 
 - **[QUICK_START.md](docs/QUICK_START.md)** - установка и использование
+- **[MULTILINGUAL_SETUP.md](docs/MULTILINGUAL_SETUP.md)** - настройка мультиязычного распознавания (русский + испанский и др.)
+- **[CHANGELOG_v3.1.md](docs/CHANGELOG_v3.1.md)** - что нового в v3.1
 - **[CHANGELOG_v3.0.md](docs/CHANGELOG_v3.0.md)** - что нового в v3.0
 - **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - детальная архитектура
 
@@ -293,9 +295,18 @@ pytest tests/test_core.py
   "save_intermediate_results": true,
   
   "diarization_model": "pyannote/speaker-diarization-3.1",
-  "diarization_segments_dir": "diarization_segments"
+  "diarization_segments_dir": "diarization_segments",
+  
+  "language": null,
+  "prompt": "Здравствуйте, как дела? Buenos días, ¿cómo estás?"
 }
 ```
+
+**Мультиязычное аудио (русский + испанский):**
+- `language: null` - автоопределение языка (рекомендуется)
+- `prompt` - примеры фраз на обоих языках для лучшего распознавания
+
+**Подробнее:** см. [MULTILINGUAL_SETUP.md](docs/MULTILINGUAL_SETUP.md)
 
 ## 📊 Сравнение режимов
 
