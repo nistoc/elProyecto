@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent01"
-version = "2.0.0"
+version = "2.1.0"
 description = "Modular transcription system with OpenAI API"
 readme = "README.md"
 requires-python = ">=3.8"

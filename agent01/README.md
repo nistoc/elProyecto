@@ -145,6 +145,20 @@ cached = cache.get_cached_response(manifest, "chunk.m4a", fingerprint)
 - CLI или Python API
 - Расширяемая архитектура
 
+### ✅ Новые возможности (v2.1)
+- **Автоматическая конвертация M4A → WAV**
+  - Конвертирует m4a файлы в WAV перед обработкой
+  - Формат: 16kHz, mono, 16-bit PCM
+  - Оптимизировано для transcription API
+  - Включается параметром `convert_to_wav: true`
+  
+- **Промежуточное сохранение результатов**
+  - Сохраняет результат каждого чанка отдельно
+  - Защита от потери данных при сбоях
+  - Позволяет анализировать результаты по частям
+  - JSON с полными данными сегментов + raw response
+  - Включается параметром `save_intermediate_results: true`
+
 ## 🧪 Тестирование
 
 ```bash
@@ -173,6 +187,9 @@ pytest tests/test_core.py
   "model": "gpt-4o-transcribe-diarize",
   "openai_api_key": "env:OPENAI_API_KEY",
   
+  "convert_to_wav": true,
+  "wav_output_dir": "converted_wav",
+  
   "pre_split": true,
   "target_chunk_mb": 5,
   "chunk_overlap_sec": 2.0,
@@ -181,7 +198,9 @@ pytest tests/test_core.py
   "raw_json_output_path": "response.json",
   
   "cache_dir": "cache",
-  "save_per_chunk_json": true
+  "save_per_chunk_json": true,
+  "save_intermediate_results": true,
+  "intermediate_results_dir": "intermediate_results"
 }
 ```
 
@@ -318,10 +337,49 @@ writer.append_segments_to_markdown("output.md", segments, offset=0.0, emit_guard
 writer.finalize_markdown("output.md")
 ```
 
+### Конвертация M4A → WAV
+
+```python
+from agent01.infrastructure.audio import AudioUtils
+
+# Конвертировать m4a в wav
+ffmpeg = "ffmpeg"  # или полный путь
+wav_path = AudioUtils.convert_to_wav(
+    ffmpeg_path=ffmpeg,
+    input_path="audio.m4a",
+    output_dir="converted_wav"  # опционально
+)
+print(f"Converted to: {wav_path}")
+```
+
+### Использование с конвертацией в pipeline
+
+```python
+from agent01 import Config, TranscriptionPipeline
+
+config = Config({
+    "file": "audio.m4a",
+    "convert_to_wav": True,  # Включить конвертацию
+    "wav_output_dir": "converted_wav",
+    "save_intermediate_results": True,  # Промежуточное сохранение
+    "intermediate_results_dir": "intermediate_results"
+})
+
+pipeline = TranscriptionPipeline(config)
+md_path, json_path = pipeline.process_file("audio.m4a")
+
+# Результаты:
+# - converted_wav/audio.wav (конвертированный файл)
+# - intermediate_results/audio_chunk_000_result.json (промежуточные результаты)
+# - intermediate_results/audio_chunk_001_result.json
+# - transcript.md (финальная транскрипция)
+# - openai_response.json (полный ответ API)
+```
+
 ## 📄 Лицензия
 
 MIT License - см. [LICENSE](LICENSE)
 
 ---
 
-**v2.0.0** - Clean Architecture Implementation 🚀
+**v2.1.0** - Enhanced with M4A→WAV Conversion & Intermediate Saves 🚀

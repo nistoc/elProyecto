@@ -50,6 +50,10 @@ class Config:
             "cache_dir": "cache",
             "chunk_overlap_sec": 2.0,
             "temperature": 0.0,
+            "convert_to_wav": False,  # Convert m4a to wav before processing
+            "wav_output_dir": "converted_wav",  # Directory for converted wav files
+            "save_intermediate_results": True,  # Save results after each chunk
+            "intermediate_results_dir": "intermediate_results",  # Directory for intermediate saves
         }
         for key, value in defaults.items():
             self._config.setdefault(key, value)
@@ -90,11 +94,13 @@ class Config:
             f"- Temperature: {self.get('temperature')}",
             f"- Prompt provided: {'yes' if self.get('prompt') else 'no'}",
             f"- Request speaker labels from API: {bool(self.get('openai_speaker_diarization'))}",
+            f"- Convert to WAV: {bool(self.get('convert_to_wav'))} -> dir: {self.get('wav_output_dir')}",
             f"- Pre-splitting: {bool(self.get('pre_split'))} (target <= {self.get('target_chunk_mb')} MB)",
             f"- Chunk overlap: {float(self.get('chunk_overlap_sec') or 0.0)} sec",
             f"- Split workdir: {self.get('split_workdir')} | ffmpeg: {self.get('ffmpeg_path')} | ffprobe: {self.get('ffprobe_path')}",
             f"- Cache dir: {self.get('cache_dir')}",
             f"- Save per-chunk JSON: {bool(self.get('save_per_chunk_json'))} -> dir: {self.get('per_chunk_json_dir')}",
+            f"- Save intermediate results: {bool(self.get('save_intermediate_results'))} -> dir: {self.get('intermediate_results_dir')}",
             "",
             "Sanitized config (effective):",
             json.dumps(self.get_sanitized(), ensure_ascii=False, indent=2)

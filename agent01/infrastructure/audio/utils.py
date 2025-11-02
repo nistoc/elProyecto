@@ -67,4 +67,56 @@ class AudioUtils:
     def format_mb(num_bytes: int) -> str:
         """Format bytes as MB string."""
         return f"{num_bytes/1024/1024:.2f} MB"
+    
+    @staticmethod
+    def convert_to_wav(ffmpeg_path: str, input_path: str, output_dir: Optional[str] = None) -> str:
+        """
+        Convert audio file to WAV format.
+        
+        Args:
+            ffmpeg_path: Path to ffmpeg executable
+            input_path: Path to input audio file
+            output_dir: Directory for output file (default: same as input)
+        
+        Returns:
+            Path to converted WAV file
+        """
+        # Determine output path
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+            basename = os.path.splitext(os.path.basename(input_path))[0]
+            output_path = os.path.join(output_dir, f"{basename}.wav")
+        else:
+            root, _ = os.path.splitext(input_path)
+            output_path = root + ".wav"
+        
+        # Skip if already WAV
+        if input_path.lower().endswith('.wav'):
+            print(f"[INFO] File is already WAV format: {input_path}")
+            return input_path
+        
+        # Skip if converted file already exists
+        if os.path.exists(output_path):
+            print(f"[INFO] Converted WAV file already exists: {output_path}")
+            return output_path
+        
+        # Convert to WAV
+        print(f"[INFO] Converting to WAV: {input_path} -> {output_path}")
+        cmd = [
+            ffmpeg_path, "-y",
+            "-i", input_path,
+            "-acodec", "pcm_s16le",  # 16-bit PCM
+            "-ar", "16000",           # 16kHz sample rate
+            "-ac", "1",               # Mono
+            output_path
+        ]
+        
+        try:
+            subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+            size_mb = os.path.getsize(output_path) / 1024 / 1024
+            print(f"[INFO] Conversion complete: {size_mb:.2f} MB")
+            return output_path
+        except subprocess.CalledProcessError as e:
+            print(f"[ERROR] Failed to convert to WAV: {e}")
+            return input_path  # Return original file on failure
 

@@ -139,7 +139,11 @@ config = Config({
     "openai_api_key": "sk-...",
     "pre_split": True,
     "target_chunk_mb": 5,
-    "chunk_overlap_sec": 2.0
+    "chunk_overlap_sec": 2.0,
+    
+    # Новые возможности (v2.1)
+    "convert_to_wav": True,  # Конвертировать m4a → wav
+    "save_intermediate_results": True  # Сохранять промежуточные результаты
 })
 
 pipeline = TranscriptionPipeline(config)
@@ -152,24 +156,39 @@ pipeline.process_file("audio.m4a")
 |----------|----------|--------------|
 | `file` / `files` | Входной файл(ы) | - |
 | `model` | Модель OpenAI | `gpt-4o-transcribe-diarize` |
+| `convert_to_wav` | Конвертировать m4a → wav | `false` |
+| `wav_output_dir` | Папка для wav файлов | `converted_wav` |
 | `pre_split` | Разделять на чанки? | `true` |
 | `target_chunk_mb` | Размер чанка (MB) | 24.5 |
 | `chunk_overlap_sec` | Перекрытие (секунды) | 2.0 |
 | `cache_dir` | Папка кеша | `cache` |
+| `save_intermediate_results` | Сохранять промежуточные результаты | `true` |
+| `intermediate_results_dir` | Папка для промежуточных результатов | `intermediate_results` |
 
 ## 6️⃣ Структура выходных файлов
 
 ```
 transcript.md           # Markdown с метками времени
 openai_response.json    # Сырой ответ API
+
+converted_wav/          # Конвертированные WAV файлы (если convert_to_wav=true)
+  └── audio.wav
+
 cache/                  # Кеш результатов
   └── audio.manifest.json
+
 chunks/                 # Чанки (если pre_split=true)
-  ├── audio_part_001.m4a
-  ├── audio_part_002.m4a
+  ├── audio_part_001.wav
+  ├── audio_part_002.wav
   └── ...
+
 chunks_json/           # JSON для каждого чанка (опционально)
   ├── audio_part_001.json
+  └── ...
+
+intermediate_results/  # Промежуточные результаты (если save_intermediate_results=true)
+  ├── audio_chunk_000_result.json
+  ├── audio_chunk_001_result.json
   └── ...
 ```
 
@@ -345,3 +364,5 @@ python examples/basic_examples.py
 ---
 
 **Начните за 30 секунд! 🚀**
+
+**v2.1.0** - Enhanced with M4A→WAV Conversion & Intermediate Saves

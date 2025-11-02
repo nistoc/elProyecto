@@ -57,6 +57,83 @@ class TranscriptionPipeline:
         """Initialize output writer."""
         self.output_writer = OutputWriter()
     
+    def _convert_to_wav_if_needed(self, file_path: str) -> str:
+        """
+        Convert audio file to WAV format if enabled in config.
+        
+        Args:
+            file_path: Path to input audio file
+        
+        Returns:
+            Path to WAV file (or original if conversion disabled/failed)
+        """
+        if not self.config.get("convert_to_wav"):
+            return file_path
+        
+        # Only convert if file is m4a
+        if not file_path.lower().endswith('.m4a'):
+            print(f"[INFO] File is not m4a, skipping conversion: {file_path}")
+            return file_path
+        
+        ffmpeg = AudioUtils.which_or(self.config.get("ffmpeg_path"), "ffmpeg")
+        if not ffmpeg:
+            print("[WARN] ffmpeg not found; skipping WAV conversion.")
+            return file_path
+        
+        wav_dir = self.config.get("wav_output_dir") or "converted_wav"
+        converted_path = AudioUtils.convert_to_wav(ffmpeg, file_path, wav_dir)
+        
+        return converted_path
+    
+    def _save_intermediate_result(
+        self,
+        result: TranscriptionResult,
+        base_name: str,
+        chunk_index: int
+    ):
+        """
+        Save intermediate transcription result to file.
+        
+        Args:
+            result: Transcription result to save
+            base_name: Base name of the audio file
+            chunk_index: Index of the chunk
+        """
+        if not self.config.get("save_intermediate_results"):
+            return
+        
+        intermediate_dir = self.config.get("intermediate_results_dir") or "intermediate_results"
+        os.makedirs(intermediate_dir, exist_ok=True)
+        
+        # Create filename for intermediate result
+        intermediate_filename = f"{base_name}_chunk_{chunk_index:03d}_result.json"
+        intermediate_path = os.path.join(intermediate_dir, intermediate_filename)
+        
+        # Prepare data to save
+        intermediate_data = {
+            "chunk_basename": result.chunk_basename,
+            "chunk_index": chunk_index,
+            "offset": result.offset,
+            "emit_guard": result.emit_guard,
+            "segments": [
+                {
+                    "start": seg.start,
+                    "end": seg.end,
+                    "text": seg.text,
+                    "speaker": seg.speaker
+                }
+                for seg in result.segments
+            ],
+            "raw_response": result.raw_response
+        }
+        
+        # Save to file
+        import json
+        with open(intermediate_path, 'w', encoding='utf-8') as f:
+            json.dump(intermediate_data, f, ensure_ascii=False, indent=2)
+        
+        print(f"[INFO] Saved intermediate result: {intermediate_path}")
+    
     def process_file(self, file_path: str) -> tuple:
         """
         Process a single audio file through the complete pipeline.
@@ -72,7 +149,13 @@ class TranscriptionPipeline:
         
         print(f"\n[FILE] {file_path}")
         
-        # Get output paths
+        # === STAGE 3: Convert to WAV if needed ===
+        print("\n[STAGE 3] Converting to WAV if needed...")
+        working_file_path = self._convert_to_wav_if_needed(file_path)
+        if working_file_path != file_path:
+            print(f"[INFO] Working with converted file: {working_file_path}")
+        
+        # Get output paths (use original file basename for consistency)
         base_name = os.path.splitext(os.path.basename(file_path))[0]
         md_path, json_path = self.output_writer.get_output_paths(
             base_name,
@@ -92,17 +175,24 @@ class TranscriptionPipeline:
         manifest = self.cache_manager.load_manifest(manifest_path)
         print(f"[CACHE] Manifest -> {manifest_path}")
         
-        # Chunk the file if needed
-        chunk_infos = self._prepare_chunks(file_path)
+        # === STAGE 4: Chunk the file if needed ===
+        print("\n[STAGE 4] Chunking audio file...")
+        chunk_infos = self._prepare_chunks(working_file_path)
         
-        # Process each chunk
+        # === STAGE 5-9: Process each chunk ===
+        print(f"\n[STAGE 5-9] Processing {len(chunk_infos)} chunk(s)...")
         results: List[TranscriptionResult] = []
         for i, chunk_info in enumerate(chunk_infos):
+            print(f"\n--- Processing chunk {i+1}/{len(chunk_infos)} ---")
+            
             result = self._process_chunk(
                 chunk_info, i, len(chunk_infos),
                 manifest, manifest_path
             )
             results.append(result)
+            
+            # === STAGE 8: Save intermediate result ===
+            self._save_intermediate_result(result, base_name, i)
             
             # Write to markdown incrementally
             self.output_writer.append_segments_to_markdown(
@@ -113,9 +203,16 @@ class TranscriptionPipeline:
             )
             print(f"[INFO] Appended {len(result.segments)} segments to Markdown (guard {result.emit_guard:.2f}s).")
         
-        # Finalize outputs
+        # === STAGE 10: Finalize outputs ===
+        print("\n[STAGE 10] Finalizing outputs...")
         self.output_writer.finalize_markdown(md_path)
         self.output_writer.save_combined_json(json_path, results)
+        
+        print(f"\n[DONE] Processing complete!")
+        print(f"  - Markdown: {md_path}")
+        print(f"  - JSON: {json_path}")
+        if self.config.get("save_intermediate_results"):
+            print(f"  - Intermediate results: {self.config.get('intermediate_results_dir')}/")
         
         return md_path, json_path
     

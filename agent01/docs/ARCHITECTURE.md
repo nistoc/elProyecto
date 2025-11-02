@@ -170,33 +170,48 @@ cli/
 2. Config загружает настройки
            │
            ▼
-3. AudioChunker разделяет на части (если нужно)
+3. Конвертация m4a → WAV (если включено)
            │
-           ├─► chunk_001.m4a (offset=0s, guard=0s)
-           ├─► chunk_002.m4a (offset=58s, guard=2s)
-           └─► chunk_003.m4a (offset=116s, guard=2s)
+           ├─► audio.wav (16kHz, mono, PCM)
+           │   Сохраняется в: converted_wav/
            │
            ▼
-4. CacheManager проверяет кеш
+4. AudioChunker разделяет на части (если нужно)
+           │
+           ├─► chunk_001.wav (offset=0s, guard=0s)
+           ├─► chunk_002.wav (offset=58s, guard=2s)
+           └─► chunk_003.wav (offset=116s, guard=2s)
+           │
+           ▼
+5. CacheManager проверяет кеш
            │
            ├─► Cache HIT  ──► Берём из кеша
            └─► Cache MISS ──┐
                             ▼
-5. APIClient транскрибирует
+6. APIClient транскрибирует
                             │
                             ▼
-6. CacheManager сохраняет
+7. CacheManager сохраняет в кеш
                             │
                             ▼
-7. APIClient парсит сегменты
+8. Промежуточное сохранение результатов (если включено)
+                            │
+                            ├─► intermediate_results/
+                            │   audio_chunk_000_result.json
+                            │   audio_chunk_001_result.json
+                            │   ...
+                            ▼
+9. APIClient парсит сегменты
                             │
                             ▼
-8. OutputWriter форматирует
+10. OutputWriter форматирует
                             │
                             ▼
-9. Выходные файлы
-   ├─► transcript.md
-   └─► openai_response.json
+11. Выходные файлы
+    ├─► transcript.md
+    ├─► openai_response.json
+    ├─► converted_wav/ (если включена конвертация)
+    └─► intermediate_results/ (если включено промежуточное сохранение)
 ```
 
 ## 📊 Компоненты
@@ -221,7 +236,7 @@ cli/
 
 | Файл | Класс | Описание |
 |------|-------|----------|
-| `audio/utils.py` | AudioUtils | ffmpeg утилиты |
+| `audio/utils.py` | AudioUtils | ffmpeg утилиты + конвертация в WAV |
 | `audio/chunker.py` | AudioChunker | Разделение на чанки с overlap |
 | `cache/manager.py` | CacheManager | Кеширование по fingerprint |
 | `io/writers.py` | OutputWriter | Markdown/JSON форматирование |
@@ -357,4 +372,4 @@ def test_asr_segment():
 
 ---
 
-**v2.0.0** - Clean Architecture Implementation 🚀
+**v2.1.0** - Enhanced with M4A→WAV Conversion & Intermediate Saves 🚀
