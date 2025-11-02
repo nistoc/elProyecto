@@ -79,16 +79,17 @@ Implemented a new `languages` parameter that allows specifying multiple language
 
 ### Algorithm
 
-1. **Get language list** from `languages` config parameter
+1. **Get language list** from `languages` config parameter (default: `["es", "ru"]`)
 2. **Fallback**: If not specified, try single `language` parameter (backward compatibility)
-3. **Auto-detect**: If no languages, use `None` (Whisper auto-detection)
-4. **Try each language**:
-   - Transcribe audio with `language="es"`
-   - Transcribe audio with `language="ru"`
-   - Store successful results
-5. **Select best result**:
-   - Compare by text length (longest non-empty wins)
-   - Return the best transcription
+3. **Transcribe with each specified language**:
+   - Transcribe audio with `language="es"` → store as `text-es`
+   - Transcribe audio with `language="ru"` → store as `text-ru`
+4. **Transcribe with auto-detection**:
+   - Transcribe audio with `language=None` → store as `text-null`
+5. **Store all results**:
+   - All transcriptions are saved in separate fields
+   - No selection or comparison of results
+   - Default `text` field is set to auto-detect result (`text-null`)
 
 ### Example Process
 
@@ -96,27 +97,58 @@ Implemented a new `languages` parameter that allows specifying multiple language
 Input: audio_segment.wav
 Config: "languages": ["es", "ru"]
 
-Step 1: Try language="es"
+Step 1: Transcribe with language="es"
   → Result: "Hola, ¿cómo estás?" (20 chars)
+  → Store as: text-es
 
-Step 2: Try language="ru"  
+Step 2: Transcribe with language="ru"  
+  → Result: "Привет, как дела?" (18 chars)
+  → Store as: text-ru
+
+Step 3: Transcribe with language=null (auto-detect)
   → Result: "Привет, как дела? Все хорошо." (31 chars)
-
-Step 3: Compare results
-  → Spanish: 20 chars
-  → Russian: 31 chars
+  → Store as: text-null
+  → Detected language: "ru"
   
-Step 4: Select Russian (longer result)
-  → Return: Russian transcription
+Step 4: Return combined result
+  → All three transcriptions included
+  → text-es: "Hola, ¿cómo estás?"
+  → text-ru: "Привет, как дела?"
+  → text-null: "Привет, как дела? Все хорошо."
+  → text: (same as text-null for backward compatibility)
+```
+
+### Result Structure
+
+```json
+{
+  "text": "Привет, как дела? Все хорошо.",
+  "words": [...],
+  "language": "ru",
+  "text-es": "Hola, ¿cómo estás?",
+  "words-es": [...],
+  "language-es": "es",
+  "text-ru": "Привет, как дела?",
+  "words-ru": [...],
+  "language-ru": "ru",
+  "text-null": "Привет, как дела? Все хорошо.",
+  "words-null": [...],
+  "language-null": "ru"
+}
 ```
 
 ### Logging Example
 
 ```
 [INFO] Trying transcription with languages: ['es', 'ru']
-[INFO] Language 'es': transcribed 245 chars
-[INFO] Language 'ru': transcribed 312 chars
-[INFO] Selected best result: language='ru', length=312 chars
+[INFO] Language 'es': transcribed 45 chars
+       Text: Hola, ¿cómo estás? Muy bien, gracias.
+[INFO] Language 'ru': transcribed 41 chars
+       Text: Привет! Как дела? Всё отлично.
+[INFO] Trying transcription with auto-detection (language=null)
+[INFO] Auto-detection: transcribed 48 chars, detected language: ru
+       Text: Привет! Как дела? Всё отлично, спасибо.
+[INFO] Successfully transcribed with 2 language(s) + auto-detection
 ```
 
 ## Backward Compatibility
@@ -149,11 +181,12 @@ Step 4: Select Russian (longer result)
 
 ## Benefits
 
-1. **Better accuracy** for multilingual content (Spanish-Russian conversations)
-2. **No guessing** which language will work better
-3. **Automatic selection** based on transcription quality
-4. **Flexible configuration** - can specify any number of languages
+1. **All transcriptions preserved** - no data loss from language selection
+2. **Compare results yourself** - can analyze which language worked best
+3. **Auto-detection included** - always have Whisper's best guess
+4. **Flexible analysis** - can combine or choose results in post-processing
 5. **Backward compatible** - existing configs continue to work
+6. **Research-friendly** - perfect for studying multilingual speech recognition
 
 ## Configuration Examples
 
@@ -213,21 +246,29 @@ The implementation has been tested with:
 
 ## Performance Considerations
 
-**Important:** This feature makes **N API calls per segment** where N is the number of languages.
+**Important:** This feature makes **(N + 1) API calls per segment** where N is the number of languages.
 
 Example:
-- `languages: ["es", "ru"]` → 2 API calls per segment
-- `languages: ["en", "de", "fr"]` → 3 API calls per segment
+- `languages: ["es", "ru"]` → **3 API calls** per segment (es + ru + null)
+- `languages: ["en", "de"]` → **3 API calls** per segment (en + de + null)
+- `languages: ["en"]` → **2 API calls** per segment (en + null)
 
 **Cost implications:**
-- More API calls = higher cost
-- But better accuracy for multilingual content
-- Trade-off between cost and quality
+- Default config (`["es", "ru"]`) = **3x** API calls per segment
+- Each additional language adds 1 more call
+- Auto-detection (null) is always added as +1 call
+- Significantly higher costs but complete data preservation
 
 **Recommendation:**
-- Use 2-3 languages maximum for best balance
+- Use 2-3 languages maximum (results in 3-4 API calls)
 - Use only languages actually present in your audio
-- Monitor API usage and costs
+- Monitor API usage and costs carefully
+- Consider if you need all transcriptions or can use auto-detect only
+
+**Cost comparison:**
+- Single language: 1 call/segment
+- Default (es + ru + null): 3 calls/segment = **3x cost**
+- Three languages + null: 4 calls/segment = **4x cost**
 
 ## Use Cases
 

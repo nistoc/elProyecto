@@ -392,13 +392,14 @@ class TranscriptionPipeline:
         Transcribe audio segment using whisper-1 with verbose_json.
         
         For multilingual content, tries transcription with each language from
-        the 'languages' config parameter and selects the best result.
+        the 'languages' config parameter and stores all results in separate fields.
+        Also performs transcription with auto-detection (language=null).
         
         Args:
             audio_path: Path to audio segment
         
         Returns:
-            Transcription result dictionary with best transcription
+            Transcription result dictionary with text-{lang} fields for each language
         """
         # Get languages list from config (defaults to ['es', 'ru'])
         languages = self.config.get("languages")
@@ -406,42 +407,87 @@ class TranscriptionPipeline:
         # Fallback to single language parameter for backward compatibility
         if not languages:
             single_lang = self.config.get("language")
-            languages = [single_lang] if single_lang else []
+            if single_lang:
+                languages = [single_lang]
+            else:
+                # If no languages specified at all, just use auto-detect
+                print("[INFO] No languages specified, using auto-detection only")
+                return self._transcribe_with_language(audio_path, None, self.config.get("prompt"))
         
         # Get prompt if specified
         prompt = self.config.get("prompt")
         
-        # If no languages specified, use auto-detect (None)
-        if not languages:
-            print("[INFO] No languages specified, using auto-detection")
-            return self._transcribe_with_language(audio_path, None, prompt)
+        # Create combined result structure
+        combined_result = {
+            "text": "",  # Will be set to auto-detect result for backward compatibility
+            "words": [],
+            "language": "multilingual"
+        }
         
-        # Try transcription with each language
+        # Try transcription with each specified language
         print(f"[INFO] Trying transcription with languages: {languages}")
-        results = []
         
         for lang in languages:
             try:
                 result = self._transcribe_with_language(audio_path, lang, prompt)
-                if result and result.get("text"):
-                    results.append(result)
-                    print(f"[INFO] Language '{lang}': transcribed {len(result.get('text', ''))} chars")
+                if result:
+                    text = result.get("text", "")
+                    text_length = len(text)
+                    
+                    # Store result with language-specific key
+                    combined_result[f"text-{lang}"] = text
+                    combined_result[f"words-{lang}"] = result.get("words", [])
+                    combined_result[f"language-{lang}"] = result.get("language", lang)
+                    
+                    print(f"[INFO] Language '{lang}': transcribed {text_length} chars")
+                    print(f"       Text: {text}")
+                    
             except Exception as e:
                 print(f"[WARN] Failed to transcribe with language '{lang}': {e}")
+                combined_result[f"text-{lang}"] = ""
+                combined_result[f"words-{lang}"] = []
+                combined_result[f"language-{lang}"] = "error"
                 continue
         
-        # Select best result (longest non-empty transcription)
-        if not results:
-            print("[WARN] All language attempts failed, returning empty result")
+        # Always add transcription with auto-detection (language=null)
+        print(f"[INFO] Trying transcription with auto-detection (language=null)")
+        try:
+            result_null = self._transcribe_with_language(audio_path, None, prompt)
+            if result_null:
+                text_null = result_null.get("text", "")
+                text_length_null = len(text_null)
+                
+                # Store auto-detect result
+                combined_result["text-null"] = text_null
+                combined_result["words-null"] = result_null.get("words", [])
+                combined_result["language-null"] = result_null.get("language", "auto-detected")
+                
+                # Set default 'text' field to auto-detect result
+                combined_result["text"] = text_null
+                combined_result["words"] = result_null.get("words", [])
+                combined_result["language"] = result_null.get("language", "auto-detected")
+                
+                print(f"[INFO] Auto-detection: transcribed {text_length_null} chars, detected language: {result_null.get('language', 'unknown')}")
+                print(f"       Text: {text_null}")
+        except Exception as e:
+            print(f"[WARN] Failed to transcribe with auto-detection: {e}")
+            combined_result["text-null"] = ""
+            combined_result["words-null"] = []
+            combined_result["language-null"] = "error"
+        
+        # Check if we got any results
+        has_results = (
+            combined_result.get("text-null") or
+            any(combined_result.get(f"text-{lang}") for lang in languages)
+        )
+        
+        if not has_results:
+            print("[WARN] All transcription attempts failed, returning empty result")
             return {"text": "", "words": [], "language": "unknown"}
         
-        best_result = max(results, key=lambda r: len(r.get("text", "")))
-        detected_lang = best_result.get("language", "unknown")
-        text_length = len(best_result.get("text", ""))
+        print(f"[INFO] Successfully transcribed with {len(languages)} language(s) + auto-detection")
         
-        print(f"[INFO] Selected best result: language='{detected_lang}', length={text_length} chars")
-        
-        return best_result
+        return combined_result
     
     def _transcribe_with_language(
         self, 

@@ -215,9 +215,13 @@ Version 3.1 adds a new `languages` parameter that allows specifying multiple lan
 
 **How it works:**
 
-1. For each audio segment, the system transcribes with each specified language
-2. Compares all results
-3. Selects the best transcription (longest non-empty text)
+1. For each audio segment, the system transcribes with:
+   - Each specified language (e.g., `es`, `ru`)
+   - Auto-detection (`language=null`)
+2. Stores all results in separate fields:
+   - `text-es`, `text-ru`, `text-null`
+   - `words-es`, `words-ru`, `words-null`
+3. No comparison or selection - all transcriptions are preserved
 
 **Configuration:**
 
@@ -232,10 +236,24 @@ Version 3.1 adds a new `languages` parameter that allows specifying multiple lan
 
 **Benefits:**
 
-- **Better accuracy** for multilingual content (e.g., Spanish-Russian conversations)
-- **No more guessing** which language will work best
-- **Automatic selection** of the best result
+- **All transcriptions preserved** - compare results yourself
+- **Auto-detection included** - always have Whisper's best guess  
+- **Flexible analysis** - choose which transcription to use in post-processing
+- **Research-friendly** - perfect for studying multilingual speech recognition
 - **Backward compatible** - falls back to single `language` parameter if not specified
+
+**Result structure:**
+```json
+{
+  "text": "Auto-detected transcription",
+  "text-es": "Spanish transcription",
+  "text-ru": "Russian transcription", 
+  "text-null": "Auto-detected transcription",
+  "words-es": [...],
+  "words-ru": [...],
+  "words-null": [...]
+}
+```
 
 **Example:**
 
@@ -249,10 +267,11 @@ config = Config({
 pipeline = TranscriptionPipeline(config)
 md_path, json_path = pipeline.process_file("multilingual_audio.m4a")
 
-# System will:
-# 1. Try transcription with language="es"
-# 2. Try transcription with language="ru"
-# 3. Select the better result automatically
+# System will transcribe each segment 3 times:
+# 1. With language="es" → text-es
+# 2. With language="ru" → text-ru  
+# 3. With language=null → text-null (auto-detect)
+# All results stored in separate fields
 ```
 
 **Logging:**
@@ -260,10 +279,17 @@ md_path, json_path = pipeline.process_file("multilingual_audio.m4a")
 During processing, you'll see:
 ```
 [INFO] Trying transcription with languages: ['es', 'ru']
-[INFO] Language 'es': transcribed 245 chars
-[INFO] Language 'ru': transcribed 312 chars
-[INFO] Selected best result: language='ru', length=312 chars
+[INFO] Language 'es': transcribed 45 chars
+       Text: Hola, ¿cómo estás? Muy bien, gracias.
+[INFO] Language 'ru': transcribed 41 chars
+       Text: Привет! Как дела? Всё отлично.
+[INFO] Trying transcription with auto-detection (language=null)
+[INFO] Auto-detection: transcribed 48 chars, detected language: es
+       Text: Hola, ¿cómo estás? Muy bien, muchas gracias.
+[INFO] Successfully transcribed with 2 language(s) + auto-detection
 ```
+
+**Cost consideration:** With `languages: ["es", "ru"]`, each segment makes **3 API calls** (es + ru + null). Monitor costs accordingly.
 
 ## Related Changes
 

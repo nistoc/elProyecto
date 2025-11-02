@@ -310,9 +310,12 @@ processing_workspaces/
 ```
 
 **Multilingual Support:** The `languages` parameter specifies which languages to try when transcribing. For each audio segment, the system will:
-1. Transcribe with each specified language
-2. Compare results and select the one with the longest text
-3. This ensures better accuracy for multilingual content
+1. Transcribe with each specified language (e.g., `es`, `ru`)
+2. Transcribe with auto-detection (`language=null`)
+3. Store all results in separate fields: `text-es`, `text-ru`, `text-null`
+4. No selection - all transcriptions are preserved for analysis
+
+**Note:** This makes **(N + 1) API calls per segment** where N is the number of languages. Default `["es", "ru"]` = **3 calls per segment**.
 
 ### Полная конфигурация для batch processing
 
@@ -337,7 +340,11 @@ processing_workspaces/
 }
 ```
 
-**Note:** The `languages` parameter (v3.1+) allows specifying multiple languages to try for transcription. The system will transcribe with each language and select the best result. Default: `["es", "ru"]` (Spanish and Russian).
+**Note:** The `languages` parameter (v3.1+) allows specifying multiple languages to try for transcription. The system will:
+- Transcribe with each language + auto-detection
+- Store all results in separate fields (`text-es`, `text-ru`, `text-null`)  
+- Makes **(N + 1) API calls per segment**
+- Default: `["es", "ru"]` → 3 API calls per segment
 
 ## Часто задаваемые вопросы
 
