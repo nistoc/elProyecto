@@ -4,11 +4,17 @@
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version: 3.0.0](https://img.shields.io/badge/version-3.0.0-green.svg)](docs/CHANGELOG_v3.0.md)
+[![Version: 3.1.0](https://img.shields.io/badge/version-3.1.0-green.svg)](docs/CHANGELOG_v3.1.md)
 
-## 🆕 Что нового в v3.0
+## 🆕 Что нового в v3.1
 
-**Интеллектуальная диаризация спикеров** через pyannote.audio:
+**Организованная структура workspace:**
+- 📁 Каждый файл обрабатывается в своей папке
+- 🗂️ Все промежуточные и финальные файлы в одном месте
+- 🧹 Простая очистка - удалите папку файла
+- 🔧 Python 3.13 совместимость (замена pydub на soundfile)
+
+**v3.0 - Интеллектуальная диаризация спикеров:**
 - 🎯 Точное определение кто, когда и что говорил
 - 🌍 Автоопределение языка в каждом сегменте
 - 📊 Детальные тайминги слов
@@ -16,10 +22,11 @@
 
 **Два режима работы:**
 - **v2.x (Chunking):** разделение по размеру → для монологов, подкастов
-- **v3.0 (Diarization):** разделение по спикерам → для диалогов, интервью
+- **v3.0+ (Diarization):** разделение по спикерам → для диалогов, интервью
 
 ## 📁 Структура проекта
 
+**Исходный код:**
 ```
 agent01/                        # Корневая папка проекта
 ├── core/                       # Domain Layer (модели, конфиг)
@@ -35,7 +42,21 @@ agent01/                        # Корневая папка проекта
 └── config/                     # Конфигурация
 ```
 
-**Подробнее**: см. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+**Рабочие файлы (v3.1+):**
+```
+processing_workspaces/          # Workspace для каждого файла
+└── my_audio/                   # Папка для my_audio.m4a
+    ├── converted_wav/          # WAV конвертация
+    ├── segments/               # Сегменты диаризации
+    ├── intermediate/           # Промежуточные результаты
+    ├── cache/                  # Кеш API запросов
+    └── output/                 # 📤 Финальные файлы
+        ├── my_audio_transcript.json
+        ├── my_audio_transcript.md
+        └── my_audio_diarization.json
+```
+
+**Подробнее**: см. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) и [docs/CHANGELOG_v3.1.md](docs/CHANGELOG_v3.1.md)
 
 ## 🚀 Быстрый старт
 

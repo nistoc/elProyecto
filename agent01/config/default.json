@@ -1,5 +1,5 @@
 {
-  "file": "voice 1.m4a",
+  "file": "Voice 251022_191028-1-1-1.m4a",
   "model": "gpt-4o-transcribe-diarize",
   "prompt": null,
   "language": null,
@@ -39,6 +39,8 @@
   "use_diarization": true,
   "huggingface_token": "env:HUGGINGFACE_TOKEN",
   "diarization_model": "pyannote/speaker-diarization-3.1",
-  "diarization_segments_dir": "diarization_segments"
+  "diarization_segments_dir": "diarization_segments",
+  
+  "workspace_root": "processing_workspaces"
 }
 

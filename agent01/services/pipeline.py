@@ -18,6 +18,7 @@ class TranscriptionPipeline:
     
     def __init__(self, config: Config):
         self.config = config
+        self.current_file_workspace = None  # Workspace for current file
         
         # Initialize components
         self._init_chunker()
@@ -69,12 +70,48 @@ class TranscriptionPipeline:
         """Initialize output writer."""
         self.output_writer = OutputWriter()
     
-    def _convert_to_wav_if_needed(self, file_path: str) -> str:
+    def _create_file_workspace(self, file_path: str) -> Dict[str, str]:
+        """
+        Create workspace directories for processing a specific file.
+        
+        Args:
+            file_path: Path to the audio file being processed
+        
+        Returns:
+            Dictionary with paths to all workspace directories
+        """
+        # Get base name without extension
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        
+        # Create main workspace directory inside project
+        workspace_root = self.config.get("workspace_root") or "processing_workspaces"
+        file_workspace = os.path.join(workspace_root, base_name)
+        
+        # Create subdirectories
+        workspace = {
+            "root": file_workspace,
+            "wav": os.path.join(file_workspace, "converted_wav"),
+            "segments": os.path.join(file_workspace, "segments"),
+            "intermediate": os.path.join(file_workspace, "intermediate"),
+            "cache": os.path.join(file_workspace, "cache"),
+            "output": os.path.join(file_workspace, "output"),
+        }
+        
+        # Create all directories
+        for dir_path in workspace.values():
+            os.makedirs(dir_path, exist_ok=True)
+        
+        print(f"[INFO] Created workspace for '{base_name}': {file_workspace}")
+        
+        return workspace
+    
+    def _convert_to_wav_if_needed(self, file_path: str, workspace: Dict[str, str] = None) -> str:
         """
         Convert audio file to WAV format if enabled in config.
         
         Args:
             file_path: Path to input audio file
+            workspace: Workspace dictionary for current file (optional)
         
         Returns:
             Path to WAV file (or original if conversion disabled/failed)
@@ -92,7 +129,12 @@ class TranscriptionPipeline:
             print("[WARN] ffmpeg not found; skipping WAV conversion.")
             return file_path
         
-        wav_dir = self.config.get("wav_output_dir") or "converted_wav"
+        # Use workspace directory if available, otherwise use config/default
+        if workspace:
+            wav_dir = workspace["wav"]
+        else:
+            wav_dir = self.config.get("wav_output_dir") or "converted_wav"
+        
         converted_path = AudioUtils.convert_to_wav(ffmpeg, file_path, wav_dir)
         
         return converted_path
@@ -101,7 +143,8 @@ class TranscriptionPipeline:
         self,
         result: TranscriptionResult,
         base_name: str,
-        chunk_index: int
+        chunk_index: int,
+        workspace: Dict[str, str] = None
     ):
         """
         Save intermediate transcription result to file.
@@ -110,12 +153,17 @@ class TranscriptionPipeline:
             result: Transcription result to save
             base_name: Base name of the audio file
             chunk_index: Index of the chunk
+            workspace: Workspace dictionary for current file (optional)
         """
         if not self.config.get("save_intermediate_results"):
             return
         
-        intermediate_dir = self.config.get("intermediate_results_dir") or "intermediate_results"
-        os.makedirs(intermediate_dir, exist_ok=True)
+        # Use workspace directory if available
+        if workspace:
+            intermediate_dir = workspace["intermediate"]
+        else:
+            intermediate_dir = self.config.get("intermediate_results_dir") or "intermediate_results"
+            os.makedirs(intermediate_dir, exist_ok=True)
         
         # Create filename for intermediate result
         intermediate_filename = f"{base_name}_chunk_{chunk_index:03d}_result.json"
@@ -161,9 +209,13 @@ class TranscriptionPipeline:
         
         print(f"\n[FILE] {file_path}")
         
+        # === STAGE 1: Create workspace for this file ===
+        print("\n[STAGE 1] Creating workspace...")
+        self.current_file_workspace = self._create_file_workspace(file_path)
+        
         # === STAGE 3: Convert to WAV if needed ===
         print("\n[STAGE 3] Converting to WAV if needed...")
-        working_file_path = self._convert_to_wav_if_needed(file_path)
+        working_file_path = self._convert_to_wav_if_needed(file_path, self.current_file_workspace)
         if working_file_path != file_path:
             print(f"[INFO] Working with converted file: {working_file_path}")
         
@@ -171,13 +223,13 @@ class TranscriptionPipeline:
         if self.config.get("use_diarization"):
             return self._process_file_with_diarization(file_path, working_file_path)
         
-        # Get output paths (use original file basename for consistency)
+        # Get output paths in workspace
         base_name = os.path.splitext(os.path.basename(file_path))[0]
-        md_path, json_path = self.output_writer.get_output_paths(
-            base_name,
-            self.config.get("md_output_path"),
-            self.config.get("raw_json_output_path")
-        )
+        workspace = self.current_file_workspace
+        
+        # Use workspace output directory
+        md_path = os.path.join(workspace["output"], f"{base_name}_transcript.md")
+        json_path = os.path.join(workspace["output"], f"{base_name}_transcript.json")
         
         print(f"[OUT ] Markdown -> {md_path}")
         print(f"[OUT ] Raw JSON -> {json_path}")
@@ -186,8 +238,8 @@ class TranscriptionPipeline:
         self.output_writer.initialize_markdown(md_path)
         self.output_writer.reset_speaker_map()
         
-        # Load cache manifest
-        manifest_path = self.cache_manager.get_manifest_path(base_name)
+        # Load cache manifest from workspace cache directory
+        manifest_path = os.path.join(workspace["cache"], f"{base_name}_manifest.json")
         manifest = self.cache_manager.load_manifest(manifest_path)
         print(f"[CACHE] Manifest -> {manifest_path}")
         
@@ -208,7 +260,7 @@ class TranscriptionPipeline:
             results.append(result)
             
             # === STAGE 8: Save intermediate result ===
-            self._save_intermediate_result(result, base_name, i)
+            self._save_intermediate_result(result, base_name, i, workspace)
             
             # Write to markdown incrementally
             self.output_writer.append_segments_to_markdown(
@@ -225,10 +277,11 @@ class TranscriptionPipeline:
         self.output_writer.save_combined_json(json_path, results)
         
         print(f"\n[DONE] Processing complete!")
+        print(f"  - Workspace: {workspace['root']}")
         print(f"  - Markdown: {md_path}")
         print(f"  - JSON: {json_path}")
         if self.config.get("save_intermediate_results"):
-            print(f"  - Intermediate results: {self.config.get('intermediate_results_dir')}/")
+            print(f"  - Intermediate results: {workspace['intermediate']}/")
         
         return md_path, json_path
     
@@ -244,20 +297,21 @@ class TranscriptionPipeline:
             Tuple of (markdown_path, json_path)
         """
         base_name = os.path.splitext(os.path.basename(original_file_path))[0]
+        workspace = self.current_file_workspace
         
         # === STAGE 4: Diarization ===
         print("\n[STAGE 4] Running speaker diarization...")
         diarization_segments = self.diarizer.diarize(wav_file_path)
         
-        # Save diarization results
-        diarization_json_path = f"{base_name}_diarization.json"
+        # Save diarization results in workspace
+        diarization_json_path = os.path.join(workspace["output"], f"{base_name}_diarization.json")
         self.diarizer.save_segments_to_json(diarization_segments, diarization_json_path)
         
         # === STAGE 5-6: Extract and transcribe each segment ===
         print(f"\n[STAGE 5-6] Processing {len(diarization_segments)} diarized segments...")
         
-        segments_dir = self.config.get("diarization_segments_dir") or "diarization_segments"
-        os.makedirs(segments_dir, exist_ok=True)
+        # Use workspace segments directory
+        segments_dir = workspace["segments"]
         
         all_transcriptions = []
         
@@ -292,12 +346,10 @@ class TranscriptionPipeline:
             
             all_transcriptions.append(result)
             
-            # Save intermediate result
+            # Save intermediate result in workspace
             if self.config.get("save_intermediate_results"):
-                intermediate_dir = self.config.get("intermediate_results_dir") or "intermediate_results"
-                os.makedirs(intermediate_dir, exist_ok=True)
                 intermediate_path = os.path.join(
-                    intermediate_dir,
+                    workspace["intermediate"],
                     f"{base_name}_seg_{idx:04d}_result.json"
                 )
                 with open(intermediate_path, 'w', encoding='utf-8') as f:
@@ -311,14 +363,14 @@ class TranscriptionPipeline:
         # === STAGE 8: Save final results ===
         print("\n[STAGE 8] Saving final results...")
         
-        # Save as JSON
-        json_path = f"{base_name}_transcript.json"
+        # Save as JSON in workspace output directory
+        json_path = os.path.join(workspace["output"], f"{base_name}_transcript.json")
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(all_transcriptions, f, ensure_ascii=False, indent=2)
         print(f"[INFO] Saved final JSON: {json_path}")
         
-        # Save as Markdown (optional, for compatibility)
-        md_path = f"{base_name}_transcript.md"
+        # Save as Markdown in workspace output directory
+        md_path = os.path.join(workspace["output"], f"{base_name}_transcript.md")
         with open(md_path, 'w', encoding='utf-8') as f:
             f.write("# Transcription with Speaker Diarization\n\n")
             for item in all_transcriptions:
@@ -327,8 +379,10 @@ class TranscriptionPipeline:
         print(f"[INFO] Saved Markdown: {md_path}")
         
         print(f"\n[DONE] Diarization-based processing complete!")
+        print(f"  - Workspace: {workspace['root']}")
         print(f"  - JSON: {json_path}")
         print(f"  - Markdown: {md_path}")
+        print(f"  - Segments: {segments_dir}")
         print(f"  - Total segments: {len(all_transcriptions)}")
         
         return md_path, json_path

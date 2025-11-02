@@ -205,3 +205,19 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Agent01 processing workspaces and outputs
+processing_workspaces/
+converted_wav/
+diarization_segments/
+intermediate_results/
+chunks/
+chunks_json/
+cache/
+*.m4a
+*.mp3
+*.wav
+transcript*.md
+transcript*.json
+openai_response*.json
+*_diarization.json
