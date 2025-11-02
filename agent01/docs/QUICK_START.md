@@ -1,39 +1,20 @@
 # ⚡ Быстрый старт
 
-## 🎯 Выбор режима работы
-
-**Agent01 v3.0** поддерживает два режима:
-
-| Режим | Описание | Подходит для |
-|-------|----------|--------------|
-| **v2.x (Chunking)** | Разделение по размеру файла | Монологи, подкасты |
-| **v3.0 (Diarization)** | Диаризация спикеров | Диалоги, интервью |
+> **Agent01 v3.0** использует интеллектуальную диаризацию спикеров для точной транскрипции диалогов и интервью.
 
 ---
 
 ## 1️⃣ Установка
 
-### Базовая установка (v2.x режим)
-
 ```bash
 cd agent01
 pip install -e .
-
-# Настройте API ключ OpenAI
-touch .env
-echo "OPENAI_API_KEY=sk-ваш-ключ" >> .env
 ```
 
-### Установка с диаризацией (v3.0 режим)
+**Настройте токены** в файле `.env`:
 
 ```bash
-cd agent01
-pip install -e .
-
-# Или установите зависимости вручную:
-pip install pyannote.audio pydub
-
-# Настройте оба токена в .env
+# Создайте .env файл
 cat > .env << EOF
 OPENAI_API_KEY=sk-ваш-ключ-openai
 HUGGINGFACE_TOKEN=hf_ваш-токен-huggingface
@@ -44,68 +25,54 @@ EOF
 - OpenAI: https://platform.openai.com/api-keys
 - HuggingFace: https://huggingface.co/settings/tokens (Read access)
 
+> ⚠️ **Важно:** После создания HuggingFace токена нужно получить доступ к **ТРЕМ** моделям:
+> 1. https://huggingface.co/pyannote/speaker-diarization-3.1 → "Agree and access repository"
+> 2. https://huggingface.co/pyannote/speaker-diarization-community-1 → "Agree and access repository"
+> 3. https://huggingface.co/pyannote/segmentation-3.0 → "Agree and access repository"
+> 4. Подождите несколько секунд для одобрения каждой
+>
+> 📖 **Подробная инструкция:** [HUGGINGFACE_SETUP.md](HUGGINGFACE_SETUP.md)
+
 ---
 
 ## 2️⃣ Первый запуск
 
-### Режим v2.x (Chunking)
+### Python API
 
 ```python
 from agent01 import Config, TranscriptionPipeline
 
 config = Config({
     "file": "audio.m4a",
-    "use_diarization": False  # Режим v2.x
-})
-
-pipeline = TranscriptionPipeline(config)
-md_path, json_path = pipeline.process_file("audio.m4a")
-print(f"Готово! {md_path}")
-```
-
-### Режим v3.0 (Diarization) 🆕
-
-```python
-from agent01 import Config, TranscriptionPipeline
-
-config = Config({
-    "file": "audio.m4a",
-    "use_diarization": True,  # Режим v3.0
+    "use_diarization": True,
     "convert_to_wav": True
 })
 
 pipeline = TranscriptionPipeline(config)
 md_path, json_path = pipeline.process_file("audio.m4a")
-print(f"Готово! {json_path}")  # Основной результат теперь в JSON
+print(f"Готово! {json_path}")
 ```
 
 ### CLI
 
+**После установки:**
 ```bash
-# Отредактируйте config/default.json
-# Установите use_diarization: true/false
-
 agent01 --config config/default.json
 ```
+
+**Без установки (прямой запуск):**
+```bash
+# Из корня проекта agent01/
+python -m cli.main --config config/default.json
+```
+
+> 💡 **Совет:** Прямой запуск полезен для разработки и тестирования без установки пакета.
 
 ---
 
 ## 3️⃣ Конфигурация
 
-### Конфиг для v2.x (Chunking)
-
-```json
-{
-  "file": "audio.m4a",
-  "openai_api_key": "env:OPENAI_API_KEY",
-  "use_diarization": false,
-  "pre_split": true,
-  "target_chunk_mb": 5,
-  "chunk_overlap_sec": 2.0
-}
-```
-
-### Конфиг для v3.0 (Diarization) 🆕
+### Минимальная конфигурация
 
 ```json
 {
@@ -113,8 +80,25 @@ agent01 --config config/default.json
   "openai_api_key": "env:OPENAI_API_KEY",
   "huggingface_token": "env:HUGGINGFACE_TOKEN",
   "use_diarization": true,
+  "convert_to_wav": true
+}
+```
+
+### Полная конфигурация
+
+```json
+{
+  "file": "audio.m4a",
+  "openai_api_key": "env:OPENAI_API_KEY",
+  "huggingface_token": "env:HUGGINGFACE_TOKEN",
+  
+  "use_diarization": true,
   "convert_to_wav": true,
-  "save_intermediate_results": true
+  "save_intermediate_results": true,
+  
+  "diarization_model": "pyannote/speaker-diarization-3.1",
+  "diarization_segments_dir": "diarization_segments",
+  "cache_dir": "cache"
 }
 ```
 
@@ -122,26 +106,12 @@ agent01 --config config/default.json
 
 ## 4️⃣ Формат результатов
 
-### v2.x (Chunking)
-
-**Файлы:**
-- `transcript.md` - транскрипция с таймингами
-- `openai_response.json` - сырой ответ API
-
-**Markdown:**
-```markdown
-- 0.00 speaker_0: "Hello"
-- 2.50 speaker_1: "Hi there"
-```
-
-### v3.0 (Diarization) 🆕
-
 **Файлы:**
 - `audio_transcript.json` - основной результат
 - `audio_transcript.md` - для чтения
 - `audio_diarization.json` - raw диаризация
 
-**JSON:**
+**JSON формат:**
 ```json
 [
   {
@@ -154,61 +124,47 @@ agent01 --config config/default.json
       {"word": "how", "start": 1.2, "end": 1.4}
     ],
     "language": "en"
+  },
+  {
+    "speaker": "SPEAKER_01",
+    "start": 5.8,
+    "end": 9.3,
+    "text": "Отлично, спасибо!",
+    "words": [...],
+    "language": "ru"
   }
 ]
+```
+
+**Markdown формат:**
+```markdown
+**[0.50s - 5.20s] SPEAKER_00:**
+Hello, how are you?
+
+**[5.80s - 9.30s] SPEAKER_01:**
+Отлично, спасибо!
 ```
 
 ---
 
 ## 5️⃣ Ключевые параметры
 
-### Общие параметры
-
 | Параметр | Описание | По умолчанию |
 |----------|----------|--------------|
 | `file` / `files` | Входной файл(ы) | - |
 | `openai_api_key` | API ключ OpenAI | `env:OPENAI_API_KEY` |
-| `cache_dir` | Папка кеша | `cache` |
-
-### Параметры v2.x (Chunking)
-
-| Параметр | Описание | По умолчанию |
-|----------|----------|--------------|
-| `use_diarization` | Режим диаризации | `false` |
-| `pre_split` | Разделять на чанки | `true` |
-| `target_chunk_mb` | Размер чанка (MB) | 24.5 |
-| `chunk_overlap_sec` | Перекрытие (сек) | 2.0 |
-
-### Параметры v3.0 (Diarization) 🆕
-
-| Параметр | Описание | По умолчанию |
-|----------|----------|--------------|
-| `use_diarization` | Режим диаризации | `true` |
 | `huggingface_token` | Токен HuggingFace | `env:HUGGINGFACE_TOKEN` |
-| `diarization_model` | Модель диаризации | `pyannote/speaker-diarization-3.1` |
+| `use_diarization` | Режим диаризации | `true` |
 | `convert_to_wav` | Конвертация в WAV | `true` |
+| `diarization_model` | Модель диаризации | `pyannote/speaker-diarization-3.1` |
+| `save_intermediate_results` | Промежуточное сохранение | `true` |
+| `cache_dir` | Папка кеша | `cache` |
 
 ---
 
-## 6️⃣ Примеры использования
+## 6️⃣ Модульное использование
 
-### Только chunking (без API)
-
-```python
-from agent01.infrastructure.audio import AudioChunker
-
-chunker = AudioChunker("ffmpeg", "ffprobe")
-chunks = chunker.process_chunks_for_file(
-    "audio.m4a", 
-    target_mb=5.0,
-    overlap_sec=2.0
-)
-
-for chunk in chunks:
-    print(f"Chunk: {chunk.path}, offset: {chunk.offset}s")
-```
-
-### Только диаризация 🆕
+### Только диаризация
 
 ```python
 from agent01.infrastructure.audio import AudioDiarizer
@@ -237,6 +193,17 @@ for seg in segments:
     print(f"{seg.speaker}: {seg.text}")
 ```
 
+### Кеширование
+
+```python
+from agent01.infrastructure.cache import CacheManager
+
+cache = CacheManager("cache")
+fingerprint = cache.get_file_fingerprint("audio.m4a")
+manifest = cache.load_manifest(cache.get_manifest_path("audio"))
+cached = cache.get_cached_response(manifest, "chunk.m4a", fingerprint)
+```
+
 ---
 
 ## 7️⃣ Troubleshooting
@@ -248,21 +215,66 @@ for seg in segments:
 OPENAI_API_KEY=sk-ваш-ключ
 ```
 
-### ❌ "HUGGINGFACE_TOKEN not found" (v3.0)
+### ❌ "HUGGINGFACE_TOKEN not found"
 
 **Решение:** Добавьте в `.env`:
 ```bash
 HUGGINGFACE_TOKEN=hf_ваш-токен
 ```
 
-Получите токен: https://huggingface.co/settings/tokens
+**Пошаговая инструкция:**
+1. Создайте токен: https://huggingface.co/settings/tokens (Read access)
+2. Получите доступ к **трем** моделям:
+   - https://huggingface.co/pyannote/speaker-diarization-3.1 → "Agree and access repository"
+   - https://huggingface.co/pyannote/speaker-diarization-community-1 → "Agree and access repository"
+   - https://huggingface.co/pyannote/segmentation-3.0 → "Agree and access repository"
+3. Добавьте токен в `.env` файл
 
-### ❌ "pyannote.audio not installed" (v3.0)
+### ❌ "403 Client Error" или "gated repo"
+
+**Проблема:** Нет доступа к одной или нескольким моделям диаризации.
+
+**Решение:** Получите доступ к **ТРЕМ** моделям:
+
+**Модель 1: speaker-diarization-3.1**
+1. Откройте: https://huggingface.co/pyannote/speaker-diarization-3.1
+2. Войдите в аккаунт HuggingFace
+3. Нажмите **"Agree and access repository"**
+4. Подождите 5-10 секунд
+
+**Модель 2: speaker-diarization-community-1**
+1. Откройте: https://huggingface.co/pyannote/speaker-diarization-community-1
+2. Нажмите **"Agree and access repository"**
+3. Подождите 5-10 секунд
+
+**Модель 3: segmentation-3.0**
+1. Откройте: https://huggingface.co/pyannote/segmentation-3.0
+2. Нажмите **"Agree and access repository"**
+3. Подождите 5-10 секунд
+
+Затем запустите скрипт снова.
+
+> 💡 Это нужно сделать **один раз** для каждой модели. После одобрения ваш токен получит постоянный доступ ко всем трем.
+
+### ❌ "pyannote.audio not installed"
 
 **Решение:**
 ```bash
-pip install pyannote.audio pydub
+pip install pyannote.audio pydub torchaudio
 ```
+
+### ⚠️ "torchcodec" или "AudioDecoder" warnings/errors
+
+**Что это:** Warnings о `libtorchcodec` или ошибки `AudioDecoder is not defined`.
+
+**Решение:** agent01 автоматически обходит эту проблему используя `torchaudio`.
+
+Вы увидите сообщение:
+```
+[INFO] Loading audio with torchaudio (bypassing torchcodec)...
+```
+
+Это **нормально** и ожидаемо на Windows. Никаких дополнительных действий не требуется.
 
 ### ❌ "ffmpeg/ffprobe not found"
 
@@ -278,11 +290,20 @@ brew install ffmpeg
 # Скачайте с https://ffmpeg.org/download.html
 ```
 
-### ❌ Медленная обработка (v3.0)
+### ❌ Медленная обработка
 
 **Причина:** Первый запуск загружает модель диаризации (~500MB).
 
-**Решение:** Последующие запуски будут быстрее. Или используйте v2.x режим для монологов.
+**Решение:** Последующие запуски будут быстрее (модель кешируется).
+
+### ❌ TypeError: Pipeline.from_pretrained() unexpected keyword
+
+**Проблема:** Несовместимость версий pyannote.audio API.
+
+**Решение:** Код уже поддерживает обе версии API. Убедитесь что используете последнюю версию:
+```bash
+pip install --upgrade pyannote.audio torchaudio
+```
 
 ---
 
@@ -297,11 +318,6 @@ HUGGINGFACE_TOKEN=hf_ваш-токен
 ```
 
 Файл `.env` автоматически загружается и защищен `.gitignore`.
-
-### ✅ Выбирайте правильный режим
-
-- **v2.x (Chunking):** для монологов, подкастов, длинных аудио
-- **v3.0 (Diarization):** для диалогов, интервью, встреч
 
 ### ✅ Используйте кеширование
 
@@ -321,27 +337,109 @@ config = Config({
 
 ---
 
-## 9️⃣ Сравнение режимов
+## 9️⃣ CLI - Детальное использование
 
-| Характеристика | v2.x | v3.0 |
-|----------------|------|------|
-| **Разделение** | По размеру | По спикерам |
-| **Модель** | gpt-4o-transcribe | whisper-1 |
-| **Точность спикеров** | Средняя | Высокая |
-| **Мультиязычность** | Один язык | Авто для каждого |
-| **Скорость** | Быстрее | Медленнее |
-| **Токены** | OpenAI | OpenAI + HuggingFace |
+### Способы запуска
+
+**1. После установки пакета:**
+```bash
+# Установите пакет
+pip install -e .
+
+# Запустите команду
+agent01 --config config/default.json
+```
+
+**2. Прямой запуск без установки:**
+```bash
+# Из корня проекта agent01/
+python -m cli.main --config config/default.json
+```
+
+**3. Прямой запуск с python:**
+```bash
+# Если cli.main не работает, используйте полный путь
+python cli/main.py --config config/default.json
+```
+
+### Параметры командной строки
+
+```bash
+# Основной параметр - путь к конфигу
+agent01 --config config/my_config.json
+
+# Или
+python -m cli.main --config config/my_config.json
+```
+
+### Пример использования
+
+```bash
+# Создайте config/interview.json:
+{
+  "file": "interview.m4a",
+  "use_diarization": true,
+  "convert_to_wav": true,
+  "save_intermediate_results": true
+}
+
+# Запустите
+python -m cli.main --config config/interview.json
+```
+
+### Структура вывода CLI
+
+```
+Execution plan:
+- Load config from: config/default.json
+- Model: gpt-4o-transcribe-diarize
+- Files: ['audio.m4a']
+- Use diarization (v3.0+): True
+...
+
+[FILE] audio.m4a
+[STAGE 3] Converting to WAV if needed...
+[STAGE 4] Running speaker diarization...
+[INFO] Diarization complete: 15 segments found
+[STAGE 5-6] Processing 15 diarized segments...
+[DONE] Processing complete!
+  - JSON: audio_transcript.json
+  - Markdown: audio_transcript.md
+```
 
 ---
 
-## 🔟 Дополнительная документация
+## 🔟 Альтернативный режим (без диаризации)
 
+Для монологов и подкастов можно использовать упрощенный режим:
+
+```json
+{
+  "file": "podcast.m4a",
+  "use_diarization": false,
+  "pre_split": true,
+  "target_chunk_mb": 5
+}
+```
+
+**Отличия:**
+- ✅ Быстрее (нет диаризации)
+- ✅ Не требует HuggingFace токен
+- ❌ Меньше точность определения спикеров
+- ❌ Один язык для всего файла
+
+---
+
+## 1️⃣1️⃣ Дополнительная документация
+
+- [HUGGINGFACE_SETUP.md](HUGGINGFACE_SETUP.md) - настройка HuggingFace (пошагово)
 - [CHANGELOG v3.0](CHANGELOG_v3.0.md) - что нового в v3.0
 - [ARCHITECTURE.md](ARCHITECTURE.md) - архитектура проекта
-- [Примеры](../examples/basic_examples.py) - готовые примеры кода
+- [README.md](../README.md) - полная документация
 
 ---
 
 **Начните за 30 секунд! 🚀**
 
 **v3.0.0** - Revolutionary Speaker Diarization
+

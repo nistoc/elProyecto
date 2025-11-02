@@ -95,7 +95,7 @@ def print_plan(cfg: Dict[str, Any], cfg_path: str):
     sanitized = dict(cfg)
     for key in ["openai_api_key"]:
         if sanitized.get(key):
-            sanitized[key] = "*** (set) ***"
+            sanitized[key] = "*** (sanitized config) ***"
     plan_lines = [
         "Execution plan:",
         f"- Load config from: {cfg_path}",

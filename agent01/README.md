@@ -4,6 +4,19 @@
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Version: 3.0.0](https://img.shields.io/badge/version-3.0.0-green.svg)](docs/CHANGELOG_v3.0.md)
+
+## 🆕 Что нового в v3.0
+
+**Интеллектуальная диаризация спикеров** через pyannote.audio:
+- 🎯 Точное определение кто, когда и что говорил
+- 🌍 Автоопределение языка в каждом сегменте
+- 📊 Детальные тайминги слов
+- 🔄 Обратная совместимость с v2.x
+
+**Два режима работы:**
+- **v2.x (Chunking):** разделение по размеру → для монологов, подкастов
+- **v3.0 (Diarization):** разделение по спикерам → для диалогов, интервью
 
 ## 📁 Структура проекта
 
@@ -12,7 +25,7 @@ agent01/                        # Корневая папка проекта
 ├── core/                       # Domain Layer (модели, конфиг)
 ├── services/                   # Application Layer (бизнес-логика)
 ├── infrastructure/             # Infrastructure Layer (внешние зависимости)
-│   ├── audio/                  # ffmpeg/ffprobe
+│   ├── audio/                  # ffmpeg/ffprobe + diarization
 │   ├── cache/                  # Кеширование
 │   └── io/                     # Ввод-вывод
 ├── cli/                        # Interface Layer (CLI)
@@ -28,94 +41,132 @@ agent01/                        # Корневая папка проекта
 
 ### Установка
 
+**Базовая (v2.x режим):**
 ```bash
 pip install -e .
 ```
 
-### Настройка API ключа
-
-**Рекомендуемый способ:** использование `.env` файла
-
-1. Скопируйте файл `.env.example` в `.env`:
+**С диаризацией (v3.0 режим):**
 ```bash
-cp .env.example .env
+pip install -e .
+# или:
+pip install pyannote.audio pydub
 ```
 
-2. Откройте `.env` и замените `your-api-key-here` на ваш настоящий API ключ OpenAI:
+### Настройка токенов
+
+Создайте файл `.env`:
+
 ```bash
-OPENAI_API_KEY=sk-ваш-настоящий-ключ
+# Обязательно для всех версий
+OPENAI_API_KEY=sk-ваш-ключ-openai
+
+# Дополнительно для v3.0 (диаризация)
+HUGGINGFACE_TOKEN=hf_ваш-токен-huggingface
 ```
 
-3. Файл `.env` автоматически загружается при импорте модуля `agent01`
+**Где получить:**
+- OpenAI: https://platform.openai.com/api-keys
+- HuggingFace: https://huggingface.co/settings/tokens
 
-**Альтернативные способы:**
-- Установить переменную окружения: `export OPENAI_API_KEY="sk-..."`
-- Передать напрямую в конфиге: `{"openai_api_key": "sk-..."}`
+> ⚠️ **Важно для HuggingFace:** После создания токена получите доступ к **ТРЕМ** моделям:
+> - https://huggingface.co/pyannote/speaker-diarization-3.1 → "Agree and access repository"
+> - https://huggingface.co/pyannote/speaker-diarization-community-1 → "Agree and access repository"
+> - https://huggingface.co/pyannote/segmentation-3.0 → "Agree and access repository"
 
-> ⚠️ **Важно:** Файл `.env` уже добавлен в `.gitignore` и не будет закоммичен в git
+> ⚠️ Файл `.env` уже в `.gitignore`
 
 ### Первый запуск
 
+**Режим v2.x (Chunking):**
 ```python
 from agent01 import Config, TranscriptionPipeline
 
-# API ключ автоматически загружается из .env файла
 config = Config({
-    "file": "audio.m4a"
+    "file": "audio.m4a",
+    "use_diarization": False  # v2.x режим
 })
 
-# Запустить pipeline
 pipeline = TranscriptionPipeline(config)
 md_path, json_path = pipeline.process_file("audio.m4a")
+```
 
-print(f"Done! {md_path}")
+**Режим v3.0 (Diarization) 🆕:**
+```python
+from agent01 import Config, TranscriptionPipeline
+
+config = Config({
+    "file": "audio.m4a",
+    "use_diarization": True,   # v3.0 режим
+    "convert_to_wav": True
+})
+
+pipeline = TranscriptionPipeline(config)
+md_path, json_path = pipeline.process_file("audio.m4a")
 ```
 
 ### CLI использование
 
 ```bash
-# После установки
-agent01 --config config/default.json
+# Отредактируйте config/default.json
+# Установите use_diarization: true/false
 
-# Или напрямую
-python -m cli.main --config config/default.json
+agent01 --config config/default.json
 ```
 
 ## 💡 Примеры использования
 
-### Полный pipeline
+### Полный pipeline (v3.0)
 
 ```python
 from agent01 import Config, TranscriptionPipeline
 
-config = Config.from_file("config/default.json")
+config = Config({
+    "file": "interview.m4a",
+    "use_diarization": True,        # Включить диаризацию
+    "convert_to_wav": True,          # Конвертация в WAV
+    "save_intermediate_results": True # Промежуточные результаты
+})
+
 pipeline = TranscriptionPipeline(config)
-md_path, json_path = pipeline.process_file("audio.m4a")
+md_path, json_path = pipeline.process_file("interview.m4a")
+
+# Результат (v3.0):
+# - interview_transcript.json (основной)
+# - interview_transcript.md (для чтения)
+# - interview_diarization.json (raw)
 ```
 
 ### Использование отдельных модулей
 
 ```python
-# Только chunking
+# Диаризация (v3.0)
+from agent01.infrastructure.audio import AudioDiarizer
+
+diarizer = AudioDiarizer(huggingface_token="hf_...")
+segments = diarizer.diarize("audio.wav")
+
+for seg in segments:
+    print(f"{seg.speaker}: {seg.start:.2f}s - {seg.end:.2f}s")
+
+# Chunking (v2.x)
 from agent01.infrastructure.audio import AudioChunker
 
 chunker = AudioChunker("ffmpeg", "ffprobe")
 chunks = chunker.process_chunks_for_file(
     "audio.m4a",
     target_mb=5.0,
-    workdir="chunks",
-    naming_pattern="{base}_part_%03d.m4a",
     overlap_sec=2.0
 )
 
-# Только транскрибация
+# Транскрипция
 from agent01.services import OpenAITranscriptionClient
 
 client = OpenAITranscriptionClient(api_key="sk-...")
 response = client.transcribe("audio.m4a")
 segments = client.parse_segments(response)
 
-# Только кеш
+# Кеш
 from agent01.infrastructure.cache import CacheManager
 
 cache = CacheManager("cache")
@@ -145,19 +196,30 @@ cached = cache.get_cached_response(manifest, "chunk.m4a", fingerprint)
 - CLI или Python API
 - Расширяемая архитектура
 
-### ✅ Новые возможности (v2.1)
+### ✅ v3.0 - Диаризация спикеров 🆕
+- **Интеллектуальная диаризация** через pyannote.audio
+  - Точное определение спикеров
+  - Разделение по спикерам вместо chunking
+  - State-of-the-art точность
+  
+- **Мультиязычность**
+  - Автоопределение языка в каждом сегменте
+  - Поддержка смешанных языков
+  - Whisper-1 для транскрипции
+  
+- **Детальные результаты**
+  - Тайминги слов (verbose_json)
+  - Информация о языке
+  - Промежуточные результаты
+
+### ✅ v2.1 - Конвертация и сохранение
 - **Автоматическая конвертация M4A → WAV**
-  - Конвертирует m4a файлы в WAV перед обработкой
   - Формат: 16kHz, mono, 16-bit PCM
   - Оптимизировано для transcription API
-  - Включается параметром `convert_to_wav: true`
   
 - **Промежуточное сохранение результатов**
-  - Сохраняет результат каждого чанка отдельно
-  - Защита от потери данных при сбоях
-  - Позволяет анализировать результаты по частям
-  - JSON с полными данными сегментов + raw response
-  - Включается параметром `save_intermediate_results: true`
+  - Защита от потери данных
+  - Анализ результатов по частям
 
 ## 🧪 Тестирование
 
@@ -174,206 +236,114 @@ pytest tests/test_core.py
 
 ## 📚 Документация
 
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Детальная архитектура
-- **[QUICK_START.md](docs/QUICK_START.md)** - Быстрый старт за 30 секунд
+- **[QUICK_START.md](docs/QUICK_START.md)** - установка и использование
+- **[CHANGELOG_v3.0.md](docs/CHANGELOG_v3.0.md)** - что нового в v3.0
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - детальная архитектура
 
 ## 🔧 Конфигурация
 
-### Основные параметры
+### v2.x режим (Chunking)
 
 ```json
 {
   "file": "audio.m4a",
-  "model": "gpt-4o-transcribe-diarize",
   "openai_api_key": "env:OPENAI_API_KEY",
   
-  "convert_to_wav": true,
-  "wav_output_dir": "converted_wav",
-  
+  "use_diarization": false,
   "pre_split": true,
   "target_chunk_mb": 5,
   "chunk_overlap_sec": 2.0,
   
-  "md_output_path": "transcript.md",
-  "raw_json_output_path": "response.json",
-  
-  "cache_dir": "cache",
-  "save_per_chunk_json": true,
-  "save_intermediate_results": true,
-  "intermediate_results_dir": "intermediate_results"
+  "convert_to_wav": true,
+  "save_intermediate_results": true
 }
 ```
 
-### Переменные окружения и .env файл
-
-**Способ 1: `.env` файл (рекомендуется)**
-
-Проект автоматически загружает переменные из файла `.env`:
-
-```bash
-# Файл: agent01/.env
-OPENAI_API_KEY=sk-ваш-настоящий-ключ
-```
-
-> 🔑 **Где взять API ключ?** https://platform.openai.com/api-keys
-
-**Способ 2: Переменная окружения системы**
-
-```bash
-# Linux/Mac
-export OPENAI_API_KEY="sk-..."
-
-# Windows CMD
-set OPENAI_API_KEY=sk-...
-
-# Windows PowerShell
-$env:OPENAI_API_KEY="sk-..."
-```
-
-**Способ 3: В конфигурационном файле**
+### v3.0 режим (Diarization) 🆕
 
 ```json
 {
-  "openai_api_key": "env:OPENAI_API_KEY"
+  "file": "audio.m4a",
+  "openai_api_key": "env:OPENAI_API_KEY",
+  "huggingface_token": "env:HUGGINGFACE_TOKEN",
+  
+  "use_diarization": true,
+  "convert_to_wav": true,
+  "save_intermediate_results": true,
+  
+  "diarization_model": "pyannote/speaker-diarization-3.1",
+  "diarization_segments_dir": "diarization_segments"
 }
 ```
 
-> ⚠️ **Важно:** Файл `.env` уже добавлен в `.gitignore` - ваш API ключ не будет закоммичен в git.
+## 📊 Сравнение режимов
+
+| Параметр | v2.x (Chunking) | v3.0 (Diarization) |
+|----------|-----------------|-------------------|
+| **Разделение** | По размеру файла | По спикерам |
+| **Модель транскрипции** | gpt-4o-transcribe | whisper-1 |
+| **Диаризация** | Через API | pyannote.audio |
+| **Точность спикеров** | Средняя | Высокая |
+| **Мультиязычность** | Один язык | Авто для каждого |
+| **Скорость** | Быстрее | Медленнее |
+| **Токены** | OpenAI | OpenAI + HuggingFace |
+| **Подходит для** | Монологи, подкасты | Диалоги, интервью |
 
 ## 🛠️ Требования
 
 ### Python пакеты
+
+**Базовые (v2.x):**
 ```
 openai >= 1.0.0
 python-dotenv >= 0.19.0
 ```
 
+**Дополнительно для v3.0:**
+```
+pyannote.audio >= 3.0.0
+pydub >= 0.25.0
+```
+
 ### Системные
 - Python 3.8+
-- ffmpeg (для chunking)
-- ffprobe (для chunking)
+- ffmpeg (для конвертации и chunking)
+- ffprobe (для анализа аудио)
 
-## 📦 API Reference
+## 📦 Форматы результатов
 
-### Config
+### v2.x (Chunking)
 
-```python
-from agent01.core import Config
-
-# Из файла
-config = Config.from_file("config/default.json")
-
-# Программно
-config = Config({
-    "file": "audio.m4a",
-    "openai_api_key": "sk-...",
-    "pre_split": True,
-    "target_chunk_mb": 5
-})
+**Markdown:** `transcript.md`
+```markdown
+- 0.00 speaker_0: "Hello"
+- 2.50 speaker_1: "Hi there"
 ```
 
-### TranscriptionPipeline
+**JSON:** `openai_response.json`
 
-```python
-from agent01.services import TranscriptionPipeline
+### v3.0 (Diarization) 🆕
 
-pipeline = TranscriptionPipeline(config)
-
-# Обработать один файл
-md_path, json_path = pipeline.process_file("audio.m4a")
-
-# Обработать все файлы из конфига
-results = pipeline.process_all_files()
+**JSON:** `audio_transcript.json` (основной)
+```json
+[
+  {
+    "speaker": "SPEAKER_00",
+    "start": 0.5,
+    "end": 5.2,
+    "text": "Hello, how are you?",
+    "words": [
+      {"word": "Hello", "start": 0.5, "end": 1.0}
+    ],
+    "language": "en"
+  }
+]
 ```
 
-### AudioChunker
-
-```python
-from agent01.infrastructure.audio import AudioChunker
-
-chunker = AudioChunker("ffmpeg", "ffprobe")
-chunks = chunker.process_chunks_for_file(
-    source_path="audio.m4a",
-    target_mb=5.0,
-    workdir="chunks",
-    naming_pattern="{base}_part_%03d.m4a",
-    overlap_sec=2.0
-)
-```
-
-### OpenAITranscriptionClient
-
-```python
-from agent01.services import OpenAITranscriptionClient
-
-client = OpenAITranscriptionClient(
-    api_key="sk-...",
-    model="gpt-4o-transcribe-diarize"
-)
-
-response = client.transcribe("audio.m4a")
-segments = client.parse_segments(response)
-```
-
-### CacheManager
-
-```python
-from agent01.infrastructure.cache import CacheManager
-
-cache = CacheManager("cache")
-fingerprint = cache.get_file_fingerprint("audio.m4a")
-manifest = cache.load_manifest(cache.get_manifest_path("audio"))
-cached = cache.get_cached_response(manifest, "chunk.m4a", fingerprint)
-```
-
-### OutputWriter
-
-```python
-from agent01.infrastructure.io import OutputWriter
-
-writer = OutputWriter()
-writer.initialize_markdown("output.md")
-writer.append_segments_to_markdown("output.md", segments, offset=0.0, emit_guard=0.0)
-writer.finalize_markdown("output.md")
-```
-
-### Конвертация M4A → WAV
-
-```python
-from agent01.infrastructure.audio import AudioUtils
-
-# Конвертировать m4a в wav
-ffmpeg = "ffmpeg"  # или полный путь
-wav_path = AudioUtils.convert_to_wav(
-    ffmpeg_path=ffmpeg,
-    input_path="audio.m4a",
-    output_dir="converted_wav"  # опционально
-)
-print(f"Converted to: {wav_path}")
-```
-
-### Использование с конвертацией в pipeline
-
-```python
-from agent01 import Config, TranscriptionPipeline
-
-config = Config({
-    "file": "audio.m4a",
-    "convert_to_wav": True,  # Включить конвертацию
-    "wav_output_dir": "converted_wav",
-    "save_intermediate_results": True,  # Промежуточное сохранение
-    "intermediate_results_dir": "intermediate_results"
-})
-
-pipeline = TranscriptionPipeline(config)
-md_path, json_path = pipeline.process_file("audio.m4a")
-
-# Результаты:
-# - converted_wav/audio.wav (конвертированный файл)
-# - intermediate_results/audio_chunk_000_result.json (промежуточные результаты)
-# - intermediate_results/audio_chunk_001_result.json
-# - transcript.md (финальная транскрипция)
-# - openai_response.json (полный ответ API)
+**Markdown:** `audio_transcript.md` (для чтения)
+```markdown
+**[0.50s - 5.20s] SPEAKER_00:**
+Hello, how are you?
 ```
 
 ## 📄 Лицензия
@@ -382,4 +352,4 @@ MIT License - см. [LICENSE](LICENSE)
 
 ---
 
-**v2.1.0** - Enhanced with M4A→WAV Conversion & Intermediate Saves 🚀
+**v3.0.0** - Revolutionary Speaker Diarization 🎯🚀

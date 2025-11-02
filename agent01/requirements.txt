@@ -10,8 +10,12 @@ python-dotenv>=0.19.0
 # Speaker diarization (required for v3.0+)
 pyannote.audio>=3.0.0
 
-# Audio processing (required for segment extraction)
-pydub>=0.25.0
+# Audio processing (required for segment extraction, Python 3.13 compatible)
+numpy>=1.24.0
+soundfile>=0.12.0
+
+# Audio loading (required for diarization)
+torchaudio>=2.0.0
 
 # Optional: for better JSON handling
 # orjson>=3.9.0

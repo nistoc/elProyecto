@@ -47,6 +47,7 @@ setup(
         "python-dotenv>=0.19.0",
         "pyannote.audio>=3.0.0",
         "pydub>=0.25.0",
+        "torchaudio>=2.0.0",
     ],
     extras_require={
         "dev": [

@@ -80,7 +80,7 @@ class Config:
         sanitized = dict(self._config)
         for key in ["openai_api_key", "huggingface_token"]:
             if sanitized.get(key):
-                sanitized[key] = "*** (set) ***"
+                sanitized[key] = "*** (sanitized config) ***"
         return sanitized
     
     def to_dict(self) -> Dict[str, Any]:
