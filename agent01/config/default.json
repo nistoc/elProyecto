@@ -1,7 +1,7 @@
 {
   "file": "Voice 251022_191028-1-1-1.m4a",
   "model": "gpt-4o-transcribe-diarize",
-  "prompt": "Здравствуйте, как дела? Buenos días, ¿cómo estás? Хорошо, спасибо. Muy bien, gracias.",
+  "prompt": "Здравствуйте, que tal, Elena? Buenos días, отлично, Никита!, ¿cómo estás? Хорошо, спасибо Лен. Muy bien, gracias.",
   "language": null,
   "temperature": 0.0,
   "openai_api_key": "env:OPENAI_API_KEY",
