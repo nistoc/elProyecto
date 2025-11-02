@@ -2,11 +2,12 @@
 
 ## Overview
 
-Version 3.1 introduces two major improvements:
+Version 3.1 introduces three major improvements:
 1. **Workspace Organization**: A dedicated folder for each audio file being processed
 2. **Batch Processing**: Automatic processing of all audio files from a directory
+3. **Multi-Language Transcription**: Try multiple languages and select the best result
 
-All intermediate files, outputs, and working files are now organized within file-specific workspaces, making it easy to process multiple files automatically.
+All intermediate files, outputs, and working files are now organized within file-specific workspaces, making it easy to process multiple files automatically with improved multilingual support.
 
 ## What Changed
 
@@ -205,6 +206,64 @@ results = pipeline.process_all_files()  # Processes all files in directory
 - Resume capability via caching
 
 See [BATCH_PROCESSING.md](BATCH_PROCESSING.md) for detailed documentation.
+
+## New Feature: Multi-Language Transcription
+
+### languages Parameter
+
+Version 3.1 adds a new `languages` parameter that allows specifying multiple languages for transcription. Instead of relying solely on auto-detection or specifying a single language, you can now provide a list of candidate languages.
+
+**How it works:**
+
+1. For each audio segment, the system transcribes with each specified language
+2. Compares all results
+3. Selects the best transcription (longest non-empty text)
+
+**Configuration:**
+
+```json
+{
+  "languages": ["es", "ru"],
+  "use_diarization": true
+}
+```
+
+**Default**: `["es", "ru"]` (Spanish and Russian)
+
+**Benefits:**
+
+- **Better accuracy** for multilingual content (e.g., Spanish-Russian conversations)
+- **No more guessing** which language will work best
+- **Automatic selection** of the best result
+- **Backward compatible** - falls back to single `language` parameter if not specified
+
+**Example:**
+
+```python
+config = Config({
+    "file": "multilingual_audio.m4a",
+    "languages": ["es", "ru"],  # Try both Spanish and Russian
+    "use_diarization": True
+})
+
+pipeline = TranscriptionPipeline(config)
+md_path, json_path = pipeline.process_file("multilingual_audio.m4a")
+
+# System will:
+# 1. Try transcription with language="es"
+# 2. Try transcription with language="ru"
+# 3. Select the better result automatically
+```
+
+**Logging:**
+
+During processing, you'll see:
+```
+[INFO] Trying transcription with languages: ['es', 'ru']
+[INFO] Language 'es': transcribed 245 chars
+[INFO] Language 'ru': transcribed 312 chars
+[INFO] Selected best result: language='ru', length=312 chars
+```
 
 ## Related Changes
 

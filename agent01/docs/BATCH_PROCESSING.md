@@ -304,9 +304,15 @@ processing_workspaces/
 {
   "input_dir": "taskstoparse",
   "openai_api_key": "env:OPENAI_API_KEY",
-  "use_diarization": false
+  "use_diarization": true,
+  "languages": ["es", "ru"]
 }
 ```
+
+**Multilingual Support:** The `languages` parameter specifies which languages to try when transcribing. For each audio segment, the system will:
+1. Transcribe with each specified language
+2. Compare results and select the one with the longest text
+3. This ensures better accuracy for multilingual content
 
 ### Полная конфигурация для batch processing
 
@@ -326,10 +332,12 @@ processing_workspaces/
   "save_per_chunk_json": true,
   
   "workspace_root": "processing_workspaces",
-  "language": null,
+  "languages": ["es", "ru"],
   "prompt": null
 }
 ```
+
+**Note:** The `languages` parameter (v3.1+) allows specifying multiple languages to try for transcription. The system will transcribe with each language and select the best result. Default: `["es", "ru"]` (Spanish and Russian).
 
 ## Часто задаваемые вопросы
 

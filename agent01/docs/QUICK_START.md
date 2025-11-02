@@ -112,7 +112,8 @@ python -m cli.main --config config/default.json
   "openai_api_key": "env:OPENAI_API_KEY",
   "huggingface_token": "env:HUGGINGFACE_TOKEN",
   "use_diarization": true,
-  "convert_to_wav": true
+  "convert_to_wav": true,
+  "languages": ["es", "ru"]
 }
 ```
 
@@ -125,6 +126,8 @@ python -m cli.main --config config/default.json
 **Поддерживаемые форматы:** `.m4a`, `.mp3`, `.wav`, `.flac`, `.ogg`, `.aac`, `.wma`, `.opus`
 
 **Приоритет:** `input_dir` > `files` > `file`
+
+**Мультиязычность (v3.1+):** Параметр `languages` позволяет указать список языков для транскрипции. Система попробует каждый язык и выберет лучший результат. По умолчанию: `["es", "ru"]`
 
 Каждый файл получает свою workspace в `processing_workspaces/{filename}/output/`
 

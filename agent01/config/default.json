@@ -2,7 +2,7 @@
   "input_dir": "taskstoparse",
   "model": "gpt-4o-transcribe-diarize",
   "prompt": null,
-  "language": null,
+  "languages": ["es", "ru"],
   "temperature": 0.0,
   "openai_api_key": "env:OPENAI_API_KEY",
   "openai_base_url": null,

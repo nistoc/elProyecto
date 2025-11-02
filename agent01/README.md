@@ -8,6 +8,12 @@
 
 ## 🆕 Что нового в v3.1
 
+**Мультиязычная транскрипция:**
+- 🌍 Параметр `languages` для указания нескольких языков
+- 🎯 Система пробует каждый язык и выбирает лучший результат
+- 🇪🇸🇷🇺 По умолчанию: испанский и русский (`["es", "ru"]`)
+- 📊 Автоматический выбор на основе длины транскрипции
+
 **Пакетная обработка файлов:**
 - 🔄 Автоматическая обработка всех файлов из папки
 - 📂 Указываете `input_dir` вместо `file` в конфиге
@@ -154,7 +160,8 @@ from agent01 import Config, TranscriptionPipeline
 config = Config({
     "input_dir": "taskstoparse",    # Папка с аудиофайлами
     "use_diarization": True,
-    "convert_to_wav": True
+    "convert_to_wav": True,
+    "languages": ["es", "ru"]       # Языки для транскрипции
 })
 
 pipeline = TranscriptionPipeline(config)
@@ -172,9 +179,15 @@ results = pipeline.process_all_files()  # Обработает все файлы
 {
   "input_dir": "taskstoparse",
   "use_diarization": true,
-  "convert_to_wav": true
+  "convert_to_wav": true,
+  "languages": ["es", "ru"]
 }
 ```
+
+**Мультиязычная транскрипция (v3.1+):**
+- `languages` - список языков для попытки транскрипции
+- Система пробует каждый язык и выбирает лучший результат
+- По умолчанию: `["es", "ru"]` (испанский и русский)
 
 **CLI использование:**
 ```bash

@@ -58,6 +58,7 @@ class Config:
             "huggingface_token": None,  # HuggingFace token for pyannote.audio
             "diarization_model": "pyannote/speaker-diarization-3.1",  # Diarization model
             "diarization_segments_dir": "diarization_segments",  # Directory for diarized audio segments
+            "languages": ["es", "ru"],  # Languages to try for transcription (v3.1+)
         }
         for key, value in defaults.items():
             self._config.setdefault(key, value)
@@ -125,13 +126,17 @@ class Config:
         else:
             input_source = "No input files specified"
         
+        # Prepare language info
+        languages = self.get('languages')
+        language_info = f"Languages: {languages}" if languages else "Language: auto-detect"
+        
         plan_lines = [
             "Execution plan:",
             f"- Load config from: {config_path}",
             f"- {input_source}",
             f"- Files to process: {files}",
             f"- Model: {self.get('model')}",
-            f"- Language: {self.get('language')} (null => auto / multi-language)",
+            f"- {language_info}",
             f"- Temperature: {self.get('temperature')}",
             f"- Prompt provided: {'yes' if self.get('prompt') else 'no'}",
             f"- Request speaker labels from API: {bool(self.get('openai_speaker_diarization'))}",

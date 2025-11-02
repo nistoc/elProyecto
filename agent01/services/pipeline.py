@@ -391,8 +391,71 @@ class TranscriptionPipeline:
         """
         Transcribe audio segment using whisper-1 with verbose_json.
         
+        For multilingual content, tries transcription with each language from
+        the 'languages' config parameter and selects the best result.
+        
         Args:
             audio_path: Path to audio segment
+        
+        Returns:
+            Transcription result dictionary with best transcription
+        """
+        # Get languages list from config (defaults to ['es', 'ru'])
+        languages = self.config.get("languages")
+        
+        # Fallback to single language parameter for backward compatibility
+        if not languages:
+            single_lang = self.config.get("language")
+            languages = [single_lang] if single_lang else []
+        
+        # Get prompt if specified
+        prompt = self.config.get("prompt")
+        
+        # If no languages specified, use auto-detect (None)
+        if not languages:
+            print("[INFO] No languages specified, using auto-detection")
+            return self._transcribe_with_language(audio_path, None, prompt)
+        
+        # Try transcription with each language
+        print(f"[INFO] Trying transcription with languages: {languages}")
+        results = []
+        
+        for lang in languages:
+            try:
+                result = self._transcribe_with_language(audio_path, lang, prompt)
+                if result and result.get("text"):
+                    results.append(result)
+                    print(f"[INFO] Language '{lang}': transcribed {len(result.get('text', ''))} chars")
+            except Exception as e:
+                print(f"[WARN] Failed to transcribe with language '{lang}': {e}")
+                continue
+        
+        # Select best result (longest non-empty transcription)
+        if not results:
+            print("[WARN] All language attempts failed, returning empty result")
+            return {"text": "", "words": [], "language": "unknown"}
+        
+        best_result = max(results, key=lambda r: len(r.get("text", "")))
+        detected_lang = best_result.get("language", "unknown")
+        text_length = len(best_result.get("text", ""))
+        
+        print(f"[INFO] Selected best result: language='{detected_lang}', length={text_length} chars")
+        
+        return best_result
+    
+    def _transcribe_with_language(
+        self, 
+        audio_path: str, 
+        language: Optional[str], 
+        prompt: Optional[str]
+    ) -> Dict[str, Any]:
+        """
+        Transcribe audio with specific language hint.
+        
+        Args:
+            audio_path: Path to audio segment
+            language: Language code (None for auto-detect)
+            prompt: Optional transcription prompt
         
         Returns:
             Transcription result dictionary
@@ -405,19 +468,13 @@ class TranscriptionPipeline:
                 "response_format": "verbose_json"
             }
             
-            # Add language if specified (for single language)
-            # For multilingual audio (e.g., Russian + Spanish), leave as None for auto-detect
-            language = self.config.get("language")
+            # Add language if specified
             if language:
                 transcribe_params["language"] = language
-                print(f"[INFO] Using language hint: {language}")
             
-            # Add prompt if specified (helps with multilingual content and terminology)
-            # Example for Russian+Spanish: "Здравствуйте. Buenos días. Привет. Hola."
-            prompt = self.config.get("prompt")
+            # Add prompt if specified
             if prompt:
                 transcribe_params["prompt"] = prompt
-                print(f"[INFO] Using transcription prompt: {prompt[:50]}...")
             
             response = self.api_client.client.audio.transcriptions.create(**transcribe_params)
             
