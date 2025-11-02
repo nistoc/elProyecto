@@ -69,10 +69,34 @@ class Config:
     def get_files(self) -> List[str]:
         """Get list of input files from configuration."""
         files = []
-        if isinstance(self._config.get("files"), list) and self._config["files"]:
-            files = self._config["files"]
-        elif self._config.get("file"):
-            files = [self._config["file"]]
+        
+        # Check if input_dir is specified - scan for audio files
+        if self._config.get("input_dir"):
+            input_dir = self._config["input_dir"]
+            if os.path.isdir(input_dir):
+                # Audio file extensions to look for
+                audio_extensions = {'.m4a', '.mp3', '.wav', '.flac', '.ogg', '.aac', '.wma', '.opus'}
+                
+                # Scan directory for audio files
+                for filename in sorted(os.listdir(input_dir)):
+                    file_path = os.path.join(input_dir, filename)
+                    if os.path.isfile(file_path):
+                        _, ext = os.path.splitext(filename)
+                        if ext.lower() in audio_extensions:
+                            files.append(file_path)
+                
+                if files:
+                    print(f"[INFO] Found {len(files)} audio file(s) in directory: {input_dir}")
+            else:
+                print(f"[WARN] Input directory not found: {input_dir}")
+        
+        # Fall back to explicit file list or single file
+        if not files:
+            if isinstance(self._config.get("files"), list) and self._config["files"]:
+                files = self._config["files"]
+            elif self._config.get("file"):
+                files = [self._config["file"]]
+        
         return files
     
     def get_sanitized(self) -> Dict[str, Any]:
@@ -89,11 +113,24 @@ class Config:
     
     def print_plan(self, config_path: str):
         """Print execution plan with configuration details."""
+        files = self.get_files()
+        
+        # Prepare input source info
+        if self._config.get("input_dir"):
+            input_source = f"Input directory: {self._config['input_dir']} ({len(files)} file(s) found)"
+        elif self._config.get("files"):
+            input_source = f"File list: {len(files)} file(s)"
+        elif self._config.get("file"):
+            input_source = f"Single file: {self._config['file']}"
+        else:
+            input_source = "No input files specified"
+        
         plan_lines = [
             "Execution plan:",
             f"- Load config from: {config_path}",
+            f"- {input_source}",
+            f"- Files to process: {files}",
             f"- Model: {self.get('model')}",
-            f"- Files: {self.get_files()}",
             f"- Language: {self.get('language')} (null => auto / multi-language)",
             f"- Temperature: {self.get('temperature')}",
             f"- Prompt provided: {'yes' if self.get('prompt') else 'no'}",

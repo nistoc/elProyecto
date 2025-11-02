@@ -1,8 +1,12 @@
-# Changelog v3.1: Workspace Organization
+# Changelog v3.1: Workspace Organization & Batch Processing
 
 ## Overview
 
-Version 3.1 introduces a new workspace organization system that creates a dedicated folder for each audio file being processed. All intermediate files, outputs, and working files are now organized within file-specific workspaces.
+Version 3.1 introduces two major improvements:
+1. **Workspace Organization**: A dedicated folder for each audio file being processed
+2. **Batch Processing**: Automatic processing of all audio files from a directory
+
+All intermediate files, outputs, and working files are now organized within file-specific workspaces, making it easy to process multiple files automatically.
 
 ## What Changed
 
@@ -141,9 +145,71 @@ If you're upgrading from v3.0, your existing files will continue to work. The ne
 - Empty workspaces can be safely deleted
 - The system creates all necessary subdirectories automatically
 
+## New Feature: Batch Processing
+
+### input_dir Parameter
+
+Version 3.1 adds support for automatic batch processing of multiple audio files. Instead of specifying individual files, you can now point to a directory, and all supported audio files will be processed sequentially.
+
+**Supported formats:**
+- `.m4a`, `.mp3`, `.wav`, `.flac`, `.ogg`, `.aac`, `.wma`, `.opus`
+
+**Configuration:**
+
+```json
+{
+  "input_dir": "taskstoparse",
+  "use_diarization": true
+}
+```
+
+**Three ways to specify input files:**
+
+1. **Directory scan (new)**: `"input_dir": "path/to/directory"`
+   - Automatically finds all audio files
+   - Processes them in alphabetical order
+   
+2. **File list**: `"files": ["file1.m4a", "file2.mp3"]`
+   - Process specific files
+   
+3. **Single file**: `"file": "audio.m4a"`
+   - Process one file
+
+**Priority**: `input_dir` > `files` > `file`
+
+**Example:**
+
+```python
+from core import Config
+from services import TranscriptionPipeline
+
+config = Config({
+    "input_dir": "taskstoparse",
+    "use_diarization": True,
+    "convert_to_wav": True
+})
+
+pipeline = TranscriptionPipeline(config)
+results = pipeline.process_all_files()  # Processes all files in directory
+
+# Each file gets its own workspace:
+# processing_workspaces/file1/output/
+# processing_workspaces/file2/output/
+# processing_workspaces/file3/output/
+```
+
+**Benefits:**
+- No need to manually specify each file
+- Each file gets its own workspace automatically
+- Sequential processing with progress tracking
+- Resume capability via caching
+
+See [BATCH_PROCESSING.md](BATCH_PROCESSING.md) for detailed documentation.
+
 ## Related Changes
 
 - **Python 3.13 Compatibility**: Replaced `pydub` with `soundfile` for audio segment extraction
 - **Improved Error Handling**: Better diagnostics for audio loading issues
 - **Progress Indicators**: Added duration estimates for diarization process
+- **Backward Compatibility**: All existing configurations continue to work unchanged
 

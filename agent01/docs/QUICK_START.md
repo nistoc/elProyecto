@@ -102,6 +102,34 @@ python -m cli.main --config config/default.json
 }
 ```
 
+### Пакетная обработка (v3.1+)
+
+Автоматическая обработка всех файлов из папки:
+
+```json
+{
+  "input_dir": "taskstoparse",
+  "openai_api_key": "env:OPENAI_API_KEY",
+  "huggingface_token": "env:HUGGINGFACE_TOKEN",
+  "use_diarization": true,
+  "convert_to_wav": true
+}
+```
+
+**Три способа указания файлов:**
+
+1. **Папка** (v3.1+): `"input_dir": "taskstoparse"` - обрабатывает все файлы
+2. **Список**: `"files": ["file1.m4a", "file2.mp3"]` - конкретные файлы
+3. **Один файл**: `"file": "audio.m4a"` - один файл
+
+**Поддерживаемые форматы:** `.m4a`, `.mp3`, `.wav`, `.flac`, `.ogg`, `.aac`, `.wma`, `.opus`
+
+**Приоритет:** `input_dir` > `files` > `file`
+
+Каждый файл получает свою workspace в `processing_workspaces/{filename}/output/`
+
+📖 **Подробнее:** [BATCH_PROCESSING.md](BATCH_PROCESSING.md)
+
 ---
 
 ## 4️⃣ Формат результатов

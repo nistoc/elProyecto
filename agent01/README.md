@@ -8,6 +8,12 @@
 
 ## 🆕 Что нового в v3.1
 
+**Пакетная обработка файлов:**
+- 🔄 Автоматическая обработка всех файлов из папки
+- 📂 Указываете `input_dir` вместо `file` в конфиге
+- ⚡ Последовательная обработка с отдельными workspace
+- 🎯 Поддержка всех популярных форматов (m4a, mp3, wav, flac и др.)
+
 **Организованная структура workspace:**
 - 📁 Каждый файл обрабатывается в своей папке
 - 🗂️ Все промежуточные и финальные файлы в одном месте
@@ -137,6 +143,47 @@ agent01 --config config/default.json
 
 ## 💡 Примеры использования
 
+### 🔄 Пакетная обработка (v3.1+) 🆕
+
+**Обработка всех файлов из папки автоматически:**
+
+```python
+from agent01 import Config, TranscriptionPipeline
+
+# Конфигурация с указанием директории
+config = Config({
+    "input_dir": "taskstoparse",    # Папка с аудиофайлами
+    "use_diarization": True,
+    "convert_to_wav": True
+})
+
+pipeline = TranscriptionPipeline(config)
+results = pipeline.process_all_files()  # Обработает все файлы
+
+# Каждый файл получит свою workspace:
+# processing_workspaces/
+#   ├── file1/output/file1_transcript.md
+#   ├── file2/output/file2_transcript.md
+#   └── file3/output/file3_transcript.md
+```
+
+**Конфигурация (config/default.json):**
+```json
+{
+  "input_dir": "taskstoparse",
+  "use_diarization": true,
+  "convert_to_wav": true
+}
+```
+
+**CLI использование:**
+```bash
+# Просто положите все файлы в taskstoparse/ и запустите
+agent01 --config config/default.json
+```
+
+**📖 Подробная документация:** см. [docs/BATCH_PROCESSING.md](docs/BATCH_PROCESSING.md)
+
 ### Полный pipeline (v3.0)
 
 ```python
@@ -258,12 +305,39 @@ pytest tests/test_core.py
 ## 📚 Документация
 
 - **[QUICK_START.md](docs/QUICK_START.md)** - установка и использование
+- **[BATCH_PROCESSING.md](docs/BATCH_PROCESSING.md)** - пакетная обработка файлов 🆕
 - **[MULTILINGUAL_SETUP.md](docs/MULTILINGUAL_SETUP.md)** - настройка мультиязычного распознавания (русский + испанский и др.)
 - **[CHANGELOG_v3.1.md](docs/CHANGELOG_v3.1.md)** - что нового в v3.1
 - **[CHANGELOG_v3.0.md](docs/CHANGELOG_v3.0.md)** - что нового в v3.0
 - **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - детальная архитектура
 
 ## 🔧 Конфигурация
+
+### Указание входных файлов (v3.1+) 🆕
+
+**Вариант 1: Папка с файлами (batch processing)**
+```json
+{
+  "input_dir": "taskstoparse",
+  "openai_api_key": "env:OPENAI_API_KEY"
+}
+```
+
+**Вариант 2: Один файл**
+```json
+{
+  "file": "audio.m4a",
+  "openai_api_key": "env:OPENAI_API_KEY"
+}
+```
+
+**Вариант 3: Список файлов**
+```json
+{
+  "files": ["audio1.m4a", "audio2.mp3"],
+  "openai_api_key": "env:OPENAI_API_KEY"
+}
+```
 
 ### v2.x режим (Chunking)
 
