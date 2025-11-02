@@ -31,9 +31,14 @@
   "per_chunk_json_dir": "chunks_json",
   "cache_dir": "cache",
   
-  "convert_to_wav": false,
+  "convert_to_wav": true,
   "wav_output_dir": "converted_wav",
   "save_intermediate_results": true,
-  "intermediate_results_dir": "intermediate_results"
+  "intermediate_results_dir": "intermediate_results",
+
+  "use_diarization": true,
+  "huggingface_token": "env:HUGGINGFACE_TOKEN",
+  "diarization_model": "pyannote/speaker-diarization-3.1",
+  "diarization_segments_dir": "diarization_segments"
 }
 

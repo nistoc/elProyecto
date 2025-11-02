@@ -13,7 +13,7 @@ if readme_file.exists():
 
 setup(
     name="agent01",
-    version="2.0.0",
+    version="3.0.0",
     author="Agent01 Team",
     author_email="",
     description="Modular transcription system with OpenAI API",
@@ -45,6 +45,8 @@ setup(
     install_requires=[
         "openai>=1.0.0",
         "python-dotenv>=0.19.0",
+        "pyannote.audio>=3.0.0",
+        "pydub>=0.25.0",
     ],
     extras_require={
         "dev": [

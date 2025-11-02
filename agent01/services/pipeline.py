@@ -3,10 +3,11 @@
 Main transcription pipeline orchestrator.
 """
 import os
-from typing import List, Optional
+import json
+from typing import List, Optional, Dict, Any
 from core.config import Config
 from core.models import ChunkInfo, TranscriptionResult
-from infrastructure.audio import AudioUtils, AudioChunker
+from infrastructure.audio import AudioUtils, AudioChunker, AudioDiarizer, DiarizationSegment
 from infrastructure.cache import CacheManager
 from infrastructure.io import OutputWriter
 from .api_client import OpenAITranscriptionClient
@@ -20,13 +21,14 @@ class TranscriptionPipeline:
         
         # Initialize components
         self._init_chunker()
+        self._init_diarizer()
         self._init_api_client()
         self._init_cache_manager()
         self._init_output_writer()
     
     def _init_chunker(self):
         """Initialize audio chunker if pre-splitting is enabled."""
-        if self.config.get("pre_split"):
+        if self.config.get("pre_split") and not self.config.get("use_diarization"):
             ffmpeg = AudioUtils.which_or(self.config.get("ffmpeg_path"), "ffmpeg")
             ffprobe = AudioUtils.which_or(self.config.get("ffprobe_path"), "ffprobe")
             
@@ -37,6 +39,16 @@ class TranscriptionPipeline:
                 self.chunker = None
         else:
             self.chunker = None
+    
+    def _init_diarizer(self):
+        """Initialize audio diarizer if diarization is enabled."""
+        if self.config.get("use_diarization"):
+            self.diarizer = AudioDiarizer(
+                huggingface_token=self.config.get("huggingface_token"),
+                model_name=self.config.get("diarization_model")
+            )
+        else:
+            self.diarizer = None
     
     def _init_api_client(self):
         """Initialize OpenAI API client."""
@@ -155,6 +167,10 @@ class TranscriptionPipeline:
         if working_file_path != file_path:
             print(f"[INFO] Working with converted file: {working_file_path}")
         
+        # Check if diarization mode is enabled
+        if self.config.get("use_diarization"):
+            return self._process_file_with_diarization(file_path, working_file_path)
+        
         # Get output paths (use original file basename for consistency)
         base_name = os.path.splitext(os.path.basename(file_path))[0]
         md_path, json_path = self.output_writer.get_output_paths(
@@ -215,6 +231,140 @@ class TranscriptionPipeline:
             print(f"  - Intermediate results: {self.config.get('intermediate_results_dir')}/")
         
         return md_path, json_path
+    
+    def _process_file_with_diarization(self, original_file_path: str, wav_file_path: str) -> tuple:
+        """
+        Process file using diarization mode (v3.0+).
+        
+        Args:
+            original_file_path: Original input file path
+            wav_file_path: Converted WAV file path
+        
+        Returns:
+            Tuple of (markdown_path, json_path)
+        """
+        base_name = os.path.splitext(os.path.basename(original_file_path))[0]
+        
+        # === STAGE 4: Diarization ===
+        print("\n[STAGE 4] Running speaker diarization...")
+        diarization_segments = self.diarizer.diarize(wav_file_path)
+        
+        # Save diarization results
+        diarization_json_path = f"{base_name}_diarization.json"
+        self.diarizer.save_segments_to_json(diarization_segments, diarization_json_path)
+        
+        # === STAGE 5-6: Extract and transcribe each segment ===
+        print(f"\n[STAGE 5-6] Processing {len(diarization_segments)} diarized segments...")
+        
+        segments_dir = self.config.get("diarization_segments_dir") or "diarization_segments"
+        os.makedirs(segments_dir, exist_ok=True)
+        
+        all_transcriptions = []
+        
+        for idx, dia_seg in enumerate(diarization_segments):
+            print(f"\n--- Processing segment {idx+1}/{len(diarization_segments)} ---")
+            print(f"    Speaker: {dia_seg.speaker}, Time: {dia_seg.start:.2f}s - {dia_seg.end:.2f}s")
+            
+            # Extract audio segment
+            segment_filename = f"{base_name}_seg_{idx:04d}_{dia_seg.speaker}.wav"
+            segment_path = os.path.join(segments_dir, segment_filename)
+            
+            self.diarizer.extract_audio_segment(
+                wav_file_path,
+                segment_path,
+                dia_seg.start,
+                dia_seg.end
+            )
+            
+            # Transcribe with whisper-1
+            print(f"[INFO] Transcribing segment with whisper-1...")
+            transcription = self._transcribe_segment_whisper(segment_path)
+            
+            # Combine diarization + transcription
+            result = {
+                "speaker": dia_seg.speaker,
+                "start": dia_seg.start,
+                "end": dia_seg.end,
+                "text": transcription.get("text", ""),
+                "words": transcription.get("words", []),
+                "language": transcription.get("language", "unknown")
+            }
+            
+            all_transcriptions.append(result)
+            
+            # Save intermediate result
+            if self.config.get("save_intermediate_results"):
+                intermediate_dir = self.config.get("intermediate_results_dir") or "intermediate_results"
+                os.makedirs(intermediate_dir, exist_ok=True)
+                intermediate_path = os.path.join(
+                    intermediate_dir,
+                    f"{base_name}_seg_{idx:04d}_result.json"
+                )
+                with open(intermediate_path, 'w', encoding='utf-8') as f:
+                    json.dump(result, f, ensure_ascii=False, indent=2)
+                print(f"[INFO] Saved intermediate result: {intermediate_path}")
+        
+        # === STAGE 7: Sort by start time ===
+        print("\n[STAGE 7] Sorting results by start time...")
+        all_transcriptions.sort(key=lambda x: x["start"])
+        
+        # === STAGE 8: Save final results ===
+        print("\n[STAGE 8] Saving final results...")
+        
+        # Save as JSON
+        json_path = f"{base_name}_transcript.json"
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(all_transcriptions, f, ensure_ascii=False, indent=2)
+        print(f"[INFO] Saved final JSON: {json_path}")
+        
+        # Save as Markdown (optional, for compatibility)
+        md_path = f"{base_name}_transcript.md"
+        with open(md_path, 'w', encoding='utf-8') as f:
+            f.write("# Transcription with Speaker Diarization\n\n")
+            for item in all_transcriptions:
+                f.write(f"**[{item['start']:.2f}s - {item['end']:.2f}s] {item['speaker']}:**\n")
+                f.write(f"{item['text']}\n\n")
+        print(f"[INFO] Saved Markdown: {md_path}")
+        
+        print(f"\n[DONE] Diarization-based processing complete!")
+        print(f"  - JSON: {json_path}")
+        print(f"  - Markdown: {md_path}")
+        print(f"  - Total segments: {len(all_transcriptions)}")
+        
+        return md_path, json_path
+    
+    def _transcribe_segment_whisper(self, audio_path: str) -> Dict[str, Any]:
+        """
+        Transcribe audio segment using whisper-1 with verbose_json.
+        
+        Args:
+            audio_path: Path to audio segment
+        
+        Returns:
+            Transcription result dictionary
+        """
+        try:
+            with open(audio_path, "rb") as f:
+                response = self.api_client.client.audio.transcriptions.create(
+                    file=f,
+                    model="whisper-1",
+                    response_format="verbose_json"
+                    # Note: language not specified - let model auto-detect
+                )
+            
+            # Convert to dict
+            if hasattr(response, "model_dump"):
+                return response.model_dump()
+            elif hasattr(response, "model_dump_json"):
+                return json.loads(response.model_dump_json())
+            elif isinstance(response, dict):
+                return response
+            else:
+                return json.loads(json.dumps(response, default=lambda o: getattr(o, "__dict__", str(o))))
+        
+        except Exception as e:
+            print(f"[ERROR] Failed to transcribe segment: {e}")
+            return {"text": "", "words": [], "language": "unknown"}
     
     def _prepare_chunks(self, file_path: str) -> List[ChunkInfo]:
         """Prepare chunks from file (split if needed)."""

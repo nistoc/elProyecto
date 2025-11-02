@@ -54,6 +54,10 @@ class Config:
             "wav_output_dir": "converted_wav",  # Directory for converted wav files
             "save_intermediate_results": True,  # Save results after each chunk
             "intermediate_results_dir": "intermediate_results",  # Directory for intermediate saves
+            "use_diarization": False,  # Use pyannote.audio for speaker diarization (v3.0+)
+            "huggingface_token": None,  # HuggingFace token for pyannote.audio
+            "diarization_model": "pyannote/speaker-diarization-3.1",  # Diarization model
+            "diarization_segments_dir": "diarization_segments",  # Directory for diarized audio segments
         }
         for key, value in defaults.items():
             self._config.setdefault(key, value)
@@ -74,7 +78,7 @@ class Config:
     def get_sanitized(self) -> Dict[str, Any]:
         """Get sanitized config dict (masks sensitive data)."""
         sanitized = dict(self._config)
-        for key in ["openai_api_key"]:
+        for key in ["openai_api_key", "huggingface_token"]:
             if sanitized.get(key):
                 sanitized[key] = "*** (set) ***"
         return sanitized
@@ -95,6 +99,7 @@ class Config:
             f"- Prompt provided: {'yes' if self.get('prompt') else 'no'}",
             f"- Request speaker labels from API: {bool(self.get('openai_speaker_diarization'))}",
             f"- Convert to WAV: {bool(self.get('convert_to_wav'))} -> dir: {self.get('wav_output_dir')}",
+            f"- Use diarization (v3.0+): {bool(self.get('use_diarization'))} -> model: {self.get('diarization_model')}",
             f"- Pre-splitting: {bool(self.get('pre_split'))} (target <= {self.get('target_chunk_mb')} MB)",
             f"- Chunk overlap: {float(self.get('chunk_overlap_sec') or 0.0)} sec",
             f"- Split workdir: {self.get('split_workdir')} | ffmpeg: {self.get('ffmpeg_path')} | ffprobe: {self.get('ffprobe_path')}",
