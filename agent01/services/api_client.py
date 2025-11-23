@@ -9,6 +9,11 @@ import time
 from typing import Dict, Any, List, Optional
 from core.models import ASRSegment
 
+
+class RetryableAPIError(Exception):
+    """Exception for errors that can be retried later (e.g., Server 500)."""
+    pass
+
 # Load environment variables from .env file
 try:
     from dotenv import load_dotenv
@@ -42,7 +47,8 @@ class OpenAITranscriptionClient:
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=base_url,
-            organization=organization
+            organization=organization,
+            timeout=300.0  # 5 minutes timeout for API calls
         )
         self.model = model
         self.fallback_models = fallback_models or ["gpt-4o-mini-transcribe", "whisper-1"]
@@ -54,7 +60,8 @@ class OpenAITranscriptionClient:
         prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         response_format: Optional[str] = None,
-        timestamp_granularities: Optional[List[str]] = None
+        timestamp_granularities: Optional[List[str]] = None,
+        chunk_label: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Transcribe audio file using OpenAI API with retry and fallback logic.
@@ -66,6 +73,7 @@ class OpenAITranscriptionClient:
             temperature: Sampling temperature
             response_format: Response format (e.g., "json")
             timestamp_granularities: List of granularities (e.g., ["segment"])
+            chunk_label: Optional label for logging (e.g., "chunk 3/14")
         
         Returns:
             Raw API response as dictionary
@@ -85,6 +93,9 @@ class OpenAITranscriptionClient:
             if "prompt" in base_kwargs:
                 print("[WARN] Prompt is not supported for diarization models; dropping 'prompt'.")
                 base_kwargs.pop("prompt", None)
+            if "timestamp_granularities" in base_kwargs:
+                print("[WARN] timestamp_granularities is not supported for diarization models; dropping it.")
+                base_kwargs.pop("timestamp_granularities", None)
             if "chunking_strategy" not in base_kwargs:
                 base_kwargs["chunking_strategy"] = "auto"
         
@@ -92,6 +103,7 @@ class OpenAITranscriptionClient:
         models_to_try = [self.model] + [m for m in self.fallback_models if m != self.model]
         
         last_err = None
+        is_server_500 = False
         for model in models_to_try:
             # Generate variations of parameters to try
             variations = self._generate_param_variations(base_kwargs)
@@ -100,6 +112,8 @@ class OpenAITranscriptionClient:
                 for attempt_no in range(3):
                     try:
                         # Send to API without showing progress indicator
+                        if attempt_no > 0:
+                            print(f"[API] Retry attempt {attempt_no+1}/3 for model {model}")
                         with open(audio_path, "rb") as f:
                             resp = self.client.audio.transcriptions.create(
                                 file=f,
@@ -118,14 +132,19 @@ class OpenAITranscriptionClient:
                         last_err = e
                         msg = str(e)
                         
-                        # Retry on server errors
+                        # Check if this is a Server 500 error
                         if "InternalServerError" in msg or "status_code=500" in msg or "Error code: 500" in msg:
-                            sleep_s = 2 ** attempt_no
-                            print(f"[WARN] Server 500 on model {model}, variant {idx}. Retrying in {sleep_s}s…")
-                            time.sleep(sleep_s)
-                            continue
+                            is_server_500 = True
+                            if attempt_no < 2:
+                                # Retry on server errors (only 2 times max)
+                                sleep_s = min(2 ** attempt_no, 4)  # Max 4 seconds
+                                chunk_info = f" ({chunk_label})" if chunk_label else ""
+                                print(f"[WARN] Server 500{chunk_info} on model {model}, variant {idx}. Retry {attempt_no+1}/2 in {sleep_s}s…")
+                                time.sleep(sleep_s)
+                                continue
                         
-                        print(f"[WARN] Non-retryable error on model {model}, variant {idx}: {msg}")
+                        chunk_info = f" ({chunk_label})" if chunk_label else ""
+                        print(f"[WARN] Non-retryable error{chunk_info} on model {model}, variant {idx}: {msg}")
                         break
             
             print(f"[INFO] Model {model} failed; trying next fallback if any…")
@@ -134,6 +153,13 @@ class OpenAITranscriptionClient:
         print("[FATAL] All models/variations failed.", file=sys.stderr)
         if last_err:
             print(f"[DETAILS] Last error: {last_err}", file=sys.stderr)
+        
+        # If this was a Server 500 error, mark it as retryable
+        if is_server_500:
+            chunk_info = f" for {chunk_label}" if chunk_label else ""
+            print(f"[INFO] Marking{chunk_info} for retry later due to Server 500 errors")
+            raise RetryableAPIError(f"Server 500 errors{chunk_info}")
+        
         raise RuntimeError("Transcription failed for all models")
     
     def _generate_param_variations(self, base_kwargs: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -175,6 +201,7 @@ class OpenAITranscriptionClient:
     def parse_segments(raw_response: Dict[str, Any]) -> List[ASRSegment]:
         """
         Parse ASR segments from API response.
+        Supports both verbose_json and diarized_json formats.
         
         Args:
             raw_response: Raw API response dictionary
@@ -190,12 +217,15 @@ class OpenAITranscriptionClient:
                     start = max(0.0, float(s.get("start", 0.0)))
                     end = max(start, float(s.get("end", start)))
                     text = (s.get("text") or "").strip()
+                    # Support both 'speaker' field (verbose_json) and single-letter speakers (diarized_json)
                     speaker = s.get("speaker") or s.get("speaker_label")
                     segments.append(ASRSegment(start, end, text, speaker))
         
         elif "text" in raw_response:
+            # Fallback for simple json format (no segments)
             txt = (raw_response.get("text") or "").strip()
-            segments.append(ASRSegment(0.0, 0.0, txt, None))
+            if txt:  # Only create segment if there's actual text
+                segments.append(ASRSegment(0.0, 0.0, txt, None))
         
         else:
             # Fallback: dump entire response as text

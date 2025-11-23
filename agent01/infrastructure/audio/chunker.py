@@ -74,6 +74,8 @@ class AudioChunker:
             # Precise cut using ffmpeg
             cmd = [
                 self.ffmpeg_path, "-y",
+                "-loglevel", "error",  # Suppress verbose ffmpeg output
+                "-hide_banner",         # Hide configuration details
                 "-i", source_path,
                 "-ss", f"{t:.3f}",
                 "-t", f"{win_dur:.3f}",

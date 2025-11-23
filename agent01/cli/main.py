@@ -58,18 +58,9 @@ def main():
         print("TRANSCRIPTION COMPLETE")
         print("="*60)
         for md_path, json_path in results:
-            print(f"✓ Markdown: {md_path}")
-            print(f"✓ JSON: {json_path}")
+            print(f"OK Markdown: {md_path}")
+            print(f"OK JSON: {json_path}")
         
-    except KeyboardInterrupt:
-        print("\n" + "="*60)
-        print("⚠  PROCESSING INTERRUPTED")
-        print("="*60)
-        print("[INFO] You pressed Ctrl+C to stop the transcription.")
-        print("[INFO] Any completed chunks have been saved to cache.")
-        print("[INFO] Run the script again to resume from where you left off.")
-        print("="*60 + "\n")
-        sys.exit(130)
     except Exception as e:
         print(f"[FATAL] {e}", file=sys.stderr)
         import traceback

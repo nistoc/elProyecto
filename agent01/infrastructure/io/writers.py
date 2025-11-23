@@ -23,9 +23,9 @@ class OutputWriter:
     
     def initialize_markdown(self, md_path: str):
         """Initialize markdown file with header."""
-        if not os.path.isfile(md_path):
-            with open(md_path, 'w', encoding='utf-8') as f:
-                f.write(">>>>>>>\n")
+        # Always overwrite to ensure clean start
+        with open(md_path, 'w', encoding='utf-8') as f:
+            f.write(">>>>>>>\n")
     
     def append_segments_to_markdown(
         self,

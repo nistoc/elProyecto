@@ -59,7 +59,10 @@ class AudioUtils:
         if ext.lower() == '.wav':
             output_path = root + "_re.wav"
             cmd = [
-                ffmpeg_path, "-y", "-i", input_path,
+                ffmpeg_path, "-y",
+                "-loglevel", "error",  # Suppress verbose ffmpeg output
+                "-hide_banner",         # Hide configuration details
+                "-i", input_path,
                 "-ac", "1", "-ar", "16000",
                 "-acodec", "pcm_s16le",  # Keep PCM for WAV
                 output_path,
@@ -67,7 +70,10 @@ class AudioUtils:
         else:
             output_path = root + "_re.m4a"
             cmd = [
-                ffmpeg_path, "-y", "-i", input_path,
+                ffmpeg_path, "-y",
+                "-loglevel", "error",  # Suppress verbose ffmpeg output
+                "-hide_banner",         # Hide configuration details
+                "-i", input_path,
                 "-ac", "1", "-ar", "16000",
                 "-b:a", f"{bitrate_kbps}k",
                 output_path,
@@ -117,15 +123,17 @@ class AudioUtils:
         print(f"[INFO] Converting to WAV: {input_path} -> {output_path}")
         cmd = [
             ffmpeg_path, "-y",
+            "-loglevel", "error",     # Suppress verbose ffmpeg output
+            "-hide_banner",           # Hide configuration details
             "-i", input_path,
-            "-acodec", "pcm_s16le",  # 16-bit PCM
+            "-acodec", "pcm_s16le",   # 16-bit PCM
             "-ar", "16000",           # 16kHz sample rate
             "-ac", "1",               # Mono
             output_path
         ]
         
         try:
-            subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+            subprocess.check_call(cmd)
             size_mb = os.path.getsize(output_path) / 1024 / 1024
             print(f"[INFO] Conversion complete: {size_mb:.2f} MB")
             return output_path

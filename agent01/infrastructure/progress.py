@@ -98,12 +98,8 @@ class ProgressIndicator:
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
-        if exc_type is KeyboardInterrupt:
-            self.stop(final_message="[INFO] Operation interrupted by user (Ctrl+C)")
-            return False  # Re-raise the exception
-        else:
-            self.stop()
-            return False
+        self.stop()
+        return False
 
 
 class ChunkProgress:
@@ -147,15 +143,24 @@ class ChunkProgress:
             seconds: Time in seconds
             
         Returns:
-            Formatted time string (e.g., "001:045.3" for MMM:SSS.M format)
+            Formatted time string (e.g., "00:00:17.5" for HH:MM:SS.M format)
         """
-        minutes = int(seconds // 60)
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
         remaining_seconds = seconds % 60
         sec_int = int(remaining_seconds)
         sec_decimal = int((remaining_seconds - sec_int) * 10)
         
-        # Format according to mask: MMM:SSS.M
-        return f"{minutes:03d}:{sec_int:03d}.{sec_decimal}"
+        # Parse time_format to determine output format
+        # HH:MM:SS.M -> "00:00:17.5"
+        # MMM:SSS.M -> "001:017.5"
+        if "HH" in self.time_format or "H" in self.time_format:
+            # Hours format
+            return f"{hours:02d}:{minutes:02d}:{sec_int:02d}.{sec_decimal}"
+        else:
+            # Minutes format (default)
+            total_minutes = int(seconds // 60)
+            return f"{total_minutes:03d}:{sec_int:03d}.{sec_decimal}"
     
     def update(self):
         """Update and display current progress in compact format."""
@@ -177,11 +182,11 @@ class ChunkProgress:
                 time_str = self._format_time(elapsed)
                 chunks_display.append(f"[{i+1}:{time_str}]")
             else:
-                # Waiting chunk
-                chunks_display.append(f"[{i+1}:---:--.-]")
+                # Waiting chunk - just show number
+                chunks_display.append(f"[{i+1}]")
         
-        # Print compact progress line
-        progress_line = "".join(chunks_display)
+        # Print compact progress line with spacing between chunks
+        progress_line = " ".join(chunks_display)
         print(f"\r{progress_line}", end="", flush=True)
     
     def complete(self):
@@ -202,5 +207,5 @@ class ChunkProgress:
             mins = int((elapsed % 3600) // 60)
             time_str = f"{hours}h {mins}m"
         
-        print(f"\n\n✓ All {self.total} chunks processed successfully! Total time: {time_str}\n")
+        print(f"\n\n✅ All {self.total} chunks processed successfully! Total time: {time_str}\n")
 

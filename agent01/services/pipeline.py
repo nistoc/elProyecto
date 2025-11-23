@@ -4,6 +4,7 @@ Main transcription pipeline orchestrator.
 """
 import os
 import shutil
+import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional, Tuple
@@ -13,7 +14,7 @@ from infrastructure.audio import AudioUtils, AudioChunker
 from infrastructure.cache import CacheManager
 from infrastructure.io import OutputWriter
 from infrastructure.progress import ChunkProgress
-from .api_client import OpenAITranscriptionClient
+from .api_client import OpenAITranscriptionClient, RetryableAPIError
 
 
 class TranscriptionPipeline:
@@ -94,13 +95,13 @@ class TranscriptionPipeline:
                         items_removed += 1
                 
                 if items_removed > 0:
-                    print(f"[CLEANUP] ✓ Cleaned: {folder} ({items_removed} item(s))")
+                    print(f"[CLEANUP] OK Cleaned: {folder} ({items_removed} item(s))")
                     cleaned_count += 1
                 else:
-                    print(f"[CLEANUP] ○ Empty: {folder}")
+                    print(f"[CLEANUP] - Empty: {folder}")
                     
             except Exception as e:
-                print(f"[CLEANUP] ✗ Failed to clean {folder}: {e}")
+                print(f"[CLEANUP] ERROR Failed to clean {folder}: {e}")
         
         if cleaned_count > 0:
             print(f"[CLEANUP] Cleaned {cleaned_count} folder(s)\n")
@@ -234,7 +235,6 @@ class TranscriptionPipeline:
         
         # === STAGE 5-9: Process each chunk ===
         print(f"\n[STAGE 5-9] Processing {len(chunk_infos)} chunk(s)...")
-        print(f"[INFO] You can interrupt processing at any time with Ctrl+C")
         
         # Get parallel workers setting
         max_workers = max(1, int(self.config.get("parallel_transcription_workers", 3)))
@@ -242,35 +242,37 @@ class TranscriptionPipeline:
             print(f"[INFO] Using {max_workers} parallel workers for transcription")
         
         results: List[Tuple[int, TranscriptionResult]] = []  # (index, result) pairs
+        failed_chunks: List[Tuple[int, ChunkInfo]] = []  # (index, chunk_info) pairs for retry
         time_format = self.config.get("progress_time_format", "MMM:SSS.M")
         chunk_progress = ChunkProgress(len(chunk_infos), parallel_workers=max_workers, time_format=time_format)
         
-        try:
-            # Use parallel processing if workers > 1
-            if max_workers > 1 and len(chunk_infos) > 1:
-                results = self._process_chunks_parallel(
-                    chunk_infos, manifest, manifest_path, base_name,
-                    md_path, chunk_progress, max_workers
-                )
-            else:
-                results = self._process_chunks_sequential(
-                    chunk_infos, manifest, manifest_path, base_name,
-                    md_path, chunk_progress
-                )
+        # Use parallel processing if workers > 1
+        if max_workers > 1 and len(chunk_infos) > 1:
+            results, failed_chunks = self._process_chunks_parallel(
+                chunk_infos, manifest, manifest_path, base_name,
+                md_path, chunk_progress, max_workers
+            )
+        else:
+            results, failed_chunks = self._process_chunks_sequential(
+                chunk_infos, manifest, manifest_path, base_name,
+                md_path, chunk_progress
+            )
+        
+        # Show completion
+        chunk_progress.complete()
+        
+        # Retry failed chunks if any
+        if failed_chunks:
+            print(f"\n[RETRY] Found {len(failed_chunks)} chunk(s) that failed with Server 500 errors")
+            print(f"[RETRY] Attempting to reprocess these chunks...")
             
-            # Show completion
-            chunk_progress.complete()
+            retry_results = self._retry_failed_chunks(
+                failed_chunks, manifest, manifest_path, base_name, md_path
+            )
             
-        except KeyboardInterrupt:
-            print("\n\n[WARN] Processing interrupted by user!")
-            print(f"[INFO] Processed {len(results)}/{len(chunk_infos)} chunks before interruption")
-            print(f"[INFO] Partial results saved:")
-            print(f"  - Markdown: {md_path}")
-            if self.config.get("save_intermediate_results"):
-                print(f"  - Intermediate results: {self.config.get('intermediate_results_dir')}/")
-            print("\n[INFO] You can resume processing by running the script again.")
-            print("[INFO] Already processed chunks will be loaded from cache.\n")
-            raise  # Re-raise to propagate to main()
+            # Merge retry results with main results
+            results.extend(retry_results)
+            print(f"[RETRY] Successfully recovered {len(retry_results)}/{len(failed_chunks)} chunk(s)")
         
         # === STAGE 10: Finalize outputs ===
         print("\n[STAGE 10] Finalizing outputs...")
@@ -318,9 +320,10 @@ class TranscriptionPipeline:
         base_name: str,
         md_path: str,
         chunk_progress: ChunkProgress
-    ) -> List[Tuple[int, TranscriptionResult]]:
+    ) -> Tuple[List[Tuple[int, TranscriptionResult]], List[Tuple[int, ChunkInfo]]]:
         """Process chunks sequentially (single-threaded)."""
         results = []
+        failed_chunks = []
         
         # Initial progress display
         chunk_progress.update()
@@ -332,31 +335,63 @@ class TranscriptionPipeline:
             chunk_progress.update()
             print(f"\n--- Processing chunk {i+1}/{len(chunk_infos)} ---")
             
-            result = self._process_chunk(
-                chunk_info, i, len(chunk_infos),
-                manifest, manifest_path
-            )
-            results.append((i, result))
-            
-            # Mark as completed
-            chunk_progress.mark_completed(i)
-            
-            # Save intermediate result
-            self._save_intermediate_result(result, base_name, i)
-            
-            # Write to markdown incrementally
-            self.output_writer.append_segments_to_markdown(
-                md_path,
-                result.segments,
-                result.offset,
-                result.emit_guard
-            )
-            print(f"[INFO] ✓ Appended {len(result.segments)} segments to Markdown (guard {result.emit_guard:.2f}s).")
-            
-            # Update progress
-            chunk_progress.update()
+            try:
+                result = self._process_chunk(
+                    chunk_info, i, len(chunk_infos),
+                    manifest, manifest_path
+                )
+                results.append((i, result))
+                
+                # Mark as completed
+                chunk_progress.mark_completed(i)
+                
+                # Save intermediate result
+                self._save_intermediate_result(result, base_name, i)
+                
+                # Write to markdown incrementally
+                self.output_writer.append_segments_to_markdown(
+                    md_path,
+                    result.segments,
+                    result.offset,
+                    result.emit_guard
+                )
+                print(f"[INFO] OK Appended {len(result.segments)} segments to Markdown (guard {result.emit_guard:.2f}s).")
+                
+                # Update progress
+                chunk_progress.update()
+                
+            except RetryableAPIError as e:
+                # Server 500 error - save for retry later
+                print(f"\n[WARN] Chunk {i+1}/{len(chunk_infos)} failed with Server 500, will retry later")
+                chunk_progress.mark_completed(i)
+                failed_chunks.append((i, chunk_infos[i]))
+                continue  # Continue with next chunk
+                
+            except Exception as e:
+                error_msg = str(e)
+                print(f"\n[ERROR] Failed processing chunk {i+1}/{len(chunk_infos)}: {e}")
+                chunk_progress.mark_completed(i)
+                
+                # Check if this is a fatal error
+                fatal_errors = [
+                    "authentication",
+                    "api_key",
+                    "invalid_api_key",
+                    "insufficient_quota",
+                    "rate_limit_exceeded",
+                    "permission_denied",
+                    "invalid_request_error"
+                ]
+                
+                if any(err in error_msg.lower() for err in fatal_errors):
+                    print(f"[FATAL] Critical API error detected - stopping all processing")
+                    raise RuntimeError(f"Critical API error: {e}")
+                else:
+                    # Non-fatal error - could continue but in sequential mode better to stop
+                    print(f"[ERROR] Cannot continue processing remaining chunks")
+                    raise
         
-        return results
+        return results, failed_chunks
     
     def _process_chunks_parallel(
         self,
@@ -367,9 +402,10 @@ class TranscriptionPipeline:
         md_path: str,
         chunk_progress: ChunkProgress,
         max_workers: int
-    ) -> List[Tuple[int, TranscriptionResult]]:
+    ) -> Tuple[List[Tuple[int, TranscriptionResult]], List[Tuple[int, ChunkInfo]]]:
         """Process chunks in parallel using ThreadPoolExecutor."""
         results = []
+        failed_chunks = []
         completed_count = 0
         stop_progress_update = threading.Event()
         
@@ -403,35 +439,97 @@ class TranscriptionPipeline:
                     chunk_progress.mark_started(idx)
                 
                 # Process results as they complete
-                for future in as_completed(future_to_index):
-                    idx = future_to_index[future]
-                    try:
-                        result = future.result()
-                        results.append((idx, result))
-                        
-                        # Mark as completed
-                        chunk_progress.mark_completed(idx)
-                        completed_count += 1
-                        
-                        print(f"\n[INFO] ✓ Chunk {idx+1}/{len(chunk_infos)} completed ({completed_count}/{len(chunk_infos)} total)")
-                        
-                        # Save intermediate result
-                        self._save_intermediate_result(result, base_name, idx)
-                        
-                        # Start next chunk if available
-                        next_idx = completed_count + max_workers - 1
-                        if next_idx < len(chunk_infos):
-                            chunk_progress.mark_started(next_idx)
-                        
-                    except Exception as e:
-                        print(f"\n[ERROR] Chunk {idx+1} failed: {e}")
-                        chunk_progress.mark_completed(idx)
-                        raise
+                # Set timeout based on number of chunks (5 min per chunk)
+                fatal_error = None
+                timeout_seconds = len(chunk_infos) * 300  # 5 minutes per chunk
+                print(f"[INFO] Total timeout: {timeout_seconds//60} minutes")
+                
+                try:
+                    for future in as_completed(future_to_index, timeout=timeout_seconds):
+                        idx = future_to_index[future]
+                        try:
+                            result = future.result(timeout=5)  # 5 seconds to get ready result
+                            results.append((idx, result))
+                            
+                            # Mark as completed
+                            chunk_progress.mark_completed(idx)
+                            completed_count += 1
+                            
+                            print(f"\n[INFO] OK Chunk {idx+1}/{len(chunk_infos)} completed ({completed_count}/{len(chunk_infos)} total)")
+                            
+                            # Save intermediate result
+                            self._save_intermediate_result(result, base_name, idx)
+                            
+                            # Start next chunk if available
+                            next_idx = completed_count + max_workers - 1
+                            if next_idx < len(chunk_infos):
+                                chunk_progress.mark_started(next_idx)
+                            
+                        except TimeoutError as e:
+                            print(f"\n[ERROR] Chunk {idx+1} timed out getting result: {e}")
+                            chunk_progress.mark_completed(idx)
+                            completed_count += 1
+                            # Timeout is not fatal - continue with other chunks
+                            
+                        except RetryableAPIError as e:
+                            # Server 500 error - save for retry later
+                            print(f"\n[WARN] Chunk {idx+1} failed with Server 500, will retry later")
+                            chunk_progress.mark_completed(idx)
+                            failed_chunks.append((idx, chunk_infos[idx]))
+                            completed_count += 1
+                            # Continue with other chunks
+                            
+                        except Exception as e:
+                            error_msg = str(e)
+                            print(f"\n[ERROR] Chunk {idx+1} failed: {e}")
+                            chunk_progress.mark_completed(idx)
+                            
+                            # Check if this is a fatal error that should stop all processing
+                            fatal_errors = [
+                                "authentication",
+                                "api_key",
+                                "invalid_api_key", 
+                                "insufficient_quota",
+                                "rate_limit_exceeded",
+                                "permission_denied",
+                                "invalid_request_error"
+                            ]
+                            
+                            if any(err in error_msg.lower() for err in fatal_errors):
+                                print(f"[FATAL] Critical API error detected - stopping all processing")
+                                fatal_error = e
+                                break  # Stop processing more chunks
+                            else:
+                                # Non-fatal error - continue with other chunks
+                                completed_count += 1
+                                print(f"[WARN] Continuing with remaining chunks...")
+                
+                except TimeoutError:
+                    print(f"\n[ERROR] Timeout waiting for chunks to complete")
+                    print(f"[INFO] {completed_count}/{len(chunk_infos)} chunks completed before timeout")
+                    print(f"[WARN] Some chunks are taking too long - they will be skipped")
+                    # Note: We can't actually stop threads that are already running
+                    # They will continue but we won't wait for their results
             
         finally:
             # Stop progress updater
             stop_progress_update.set()
-            progress_thread.join(timeout=1.0)
+            if progress_thread.is_alive():
+                progress_thread.join(timeout=2.0)
+                if progress_thread.is_alive():
+                    print("\n[WARN] Progress updater thread did not stop cleanly")
+        
+        # Check for fatal error
+        if fatal_error:
+            print(f"\n[FATAL] Processing stopped due to critical error: {fatal_error}")
+            print(f"[INFO] {completed_count}/{len(chunk_infos)} chunks completed before error")
+            raise RuntimeError(f"Transcription failed with critical error: {fatal_error}")
+        
+        # Check if all chunks completed
+        if len(results) < len(chunk_infos):
+            missing_chunks = set(range(len(chunk_infos))) - {idx for idx, _ in results}
+            print(f"\n[WARN] Not all chunks completed! Missing: {sorted(missing_chunks)}")
+            print(f"[INFO] Processed {len(results)}/{len(chunk_infos)} chunks")
         
         # Sort results by index to maintain order
         results.sort(key=lambda x: x[0])
@@ -445,7 +543,47 @@ class TranscriptionPipeline:
                 result.offset,
                 result.emit_guard
             )
-        print(f"[INFO] ✓ All segments written to Markdown")
+        print(f"[INFO] OK All segments written to Markdown")
+        
+        return results, failed_chunks
+    
+    def _retry_failed_chunks(
+        self,
+        failed_chunks: List[Tuple[int, ChunkInfo]],
+        manifest: dict,
+        manifest_path: str,
+        base_name: str,
+        md_path: str
+    ) -> List[Tuple[int, TranscriptionResult]]:
+        """Retry processing failed chunks (one at a time to avoid overwhelming the server)."""
+        results = []
+        
+        for idx, chunk_info in failed_chunks:
+            try:
+                print(f"\n[RETRY] Processing chunk {idx+1} (attempt 2/2)...")
+                # Add delay before retry to give server time to recover
+                time.sleep(2)
+                
+                result = self._process_chunk(
+                    chunk_info, idx, len(failed_chunks),
+                    manifest, manifest_path, base_name
+                )
+                
+                # Append segments to markdown
+                self.output_writer.append_segments_to_markdown(
+                    md_path,
+                    result.segments,
+                    result.offset,
+                    result.emit_guard
+                )
+                
+                results.append((idx, result))
+                print(f"[RETRY] ✓ Chunk {idx+1} successfully recovered")
+                
+            except Exception as e:
+                print(f"[RETRY] ✗ Chunk {idx+1} failed again: {e}")
+                print(f"[RETRY] Skipping this chunk...")
+                continue
         
         return results
     
@@ -474,14 +612,21 @@ class TranscriptionPipeline:
             raw_response = cached_response
         else:
             # Transcribe with API
-            raw_response = self.api_client.transcribe(
-                audio_path=chunk_info.path,
-                language=self.config.get("language"),
-                prompt=self.config.get("prompt"),
-                temperature=self.config.get("temperature"),
-                response_format=self.config.get("response_format"),
-                timestamp_granularities=self.config.get("timestamp_granularities")
-            )
+            print(f"[API] Sending chunk {index+1}/{total} to API...")
+            try:
+                raw_response = self.api_client.transcribe(
+                    audio_path=chunk_info.path,
+                    language=self.config.get("language"),
+                    prompt=self.config.get("prompt"),
+                    temperature=self.config.get("temperature"),
+                    response_format=self.config.get("response_format"),
+                    timestamp_granularities=self.config.get("timestamp_granularities"),
+                    chunk_label=f"chunk {index+1}/{total}"
+                )
+                print(f"[API] Chunk {index+1}/{total} API response received")
+            except Exception as e:
+                print(f"[ERROR] API call failed for chunk {index+1}/{total}: {e}")
+                raise
             
             # Cache the response
             self.cache_manager.cache_response(
