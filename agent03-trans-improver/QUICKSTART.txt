@@ -22,9 +22,10 @@
 
 КОНФИГУРАЦИЯ (config/default.json):
 
-batch_size: 10      → строк за раз
-context_lines: 5    → контекст из предыдущего
-model: gpt-4o-mini  → модель (mini|4o|3.5-turbo)
+batch_size: 10                 → строк за раз
+context_lines: 5               → контекст из предыдущего
+model: gpt-4o-mini             → модель (mini|4o|3.5-turbo)
+add_timestamp_to_output: true  → добавить дату к имени файла
 
 ───────────────────────────────────────────────────────────────
 

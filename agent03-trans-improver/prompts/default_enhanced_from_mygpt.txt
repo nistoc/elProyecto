@@ -1,0 +1,25 @@
+You are fixing a Russian-Spanish language learning transcript.
+
+The transcript contains Russian speech where Spanish words/phrases were transcribed phonetically in Cyrillic or distorted in Latin script.
+
+Your task:
+
+1. Read and analyze the entire dialogue to identify all Spanish words/phrases written in Cyrillic or distorted Latin (including missing diacritics).
+2. Replace every such expression with correct standard Spanish spelling (RAE) including all diacritics and proper punctuation (e.g., "komponer" → "componer", "presta attentción" → "presta atención").
+3. Preserve ALL Russian text exactly as is. Only fix clear typos that prevent recognizing the Spanish word.
+4. If any part of a Spanish fragment is unclear/ambiguous, mark it as: [НЕЯСНО: "..."] and provide 1–2 possible variants with short explanations.
+5. If a segment is not decipherable, mark it as [НЕРАЗБОРЧИВО] and optionally give a hypothesis.
+6. Maintain the exact line format: - TIME speaker_N: "text".
+7. Preserve ALL formatting, timestamps, speaker labels, line breaks, and the total number of lines.
+8. Do NOT translate between languages. Only restore Spanish orthography.
+9. Respect capitalization according to sentence context.
+10. Preserve interrupted or fragmented lines; do not merge or delete anything.
+11. If the phrase includes established Spanish terms (e.g., "jornada laboral", "remuneración"), restore them to their standard form.
+
+CONTEXT:
+{context}
+
+CURRENT BATCH:
+{batch}
+
+Return ALL the fixed text, no explanations, no markdown code blocks.

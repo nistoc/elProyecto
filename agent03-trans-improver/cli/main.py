@@ -4,9 +4,26 @@ CLI entry point for Agent03: Transcript Improver.
 """
 import sys
 import os
+from datetime import datetime
 
 from core.config import Config
 from services.fixer import TranscriptFixer
+
+
+def add_timestamp_to_filename(filename: str) -> str:
+    """
+    Add timestamp to filename before extension.
+    
+    Example: 'transcript_fixed.md' -> 'transcript_fixed_2024-11-23_15-30-45.md'
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    
+    # Split filename and extension
+    if '.' in filename:
+        name, ext = filename.rsplit('.', 1)
+        return f"{name}_{timestamp}.{ext}"
+    else:
+        return f"{filename}_{timestamp}"
 
 
 def main():
@@ -49,8 +66,15 @@ def main():
         print(f"  cp /path/to/transcript.md {input_file}")
         sys.exit(1)
     
-    # Check if output exists and skip_if_exists is set
+    # Prepare output filename
     output_file = config.get("output_file")
+    
+    # Add timestamp if configured
+    if config.get("add_timestamp_to_output", False):
+        output_file = add_timestamp_to_filename(output_file)
+        print(f"[INFO] Output will be saved to: {output_file}")
+    
+    # Check if output exists and skip_if_exists is set
     if config.get("skip_if_exists") and os.path.exists(output_file):
         print(f"[INFO] Output file already exists, skipping: {output_file}")
         sys.exit(0)
@@ -62,7 +86,8 @@ def main():
             model=config.get("model"),
             temperature=config.get("temperature"),
             base_url=config.get("openai_base_url"),
-            organization=config.get("openai_organization")
+            organization=config.get("openai_organization"),
+            prompt_file=config.get("prompt_file")
         )
     except Exception as e:
         print(f"[ERROR] Failed to initialize fixer: {e}")

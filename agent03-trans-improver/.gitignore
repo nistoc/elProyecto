@@ -38,6 +38,10 @@ transcript_fixed.md
 intermediate_fixes/
 *.log
 
+# Custom prompts (keep template prompts)
+prompts/my_*.txt
+prompts/*_custom.txt
+
 # OS
 .DS_Store
 Thumbs.db

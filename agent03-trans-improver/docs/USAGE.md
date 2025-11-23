@@ -109,6 +109,8 @@ Agent03 ожидает файл в формате:
   "temperature": 0.2,
   "batch_size": 10,
   "context_lines": 5,
+  "prompt_file": "prompts/default.txt",
+  "add_timestamp_to_output": true,
   "save_intermediate": true,
   "intermediate_dir": "intermediate_fixes",
   "skip_if_exists": false,
@@ -127,6 +129,13 @@ Agent03 ожидает файл в формате:
 Куда сохранить исправленный файл.
 - **По умолчанию:** `transcript_fixed.md`
 - **Совет:** используйте суффикс `_fixed` для ясности
+
+#### add_timestamp_to_output
+Добавлять ли дату и время к имени выходного файла.
+- **По умолчанию:** `false`
+- **true:** создаст файл типа `transcript_fixed_2024-11-23_15-30-45.md`
+- **false:** использовать имя из `output_file` как есть
+- **Полезно:** для версионирования и истории обработки
 
 #### model
 Какую модель GPT использовать.
@@ -157,6 +166,12 @@ Agent03 ожидает файл в формате:
 - **По умолчанию:** 3
 - **Больше:** лучше понимание диалога, но дороже
 - **Меньше:** дешевле, но может терять контекст
+
+#### prompt_file
+Путь к файлу с кастомным промптом.
+- **По умолчанию:** `null` (используется встроенный промпт)
+- **Пример:** `"prompts/default.txt"` или `"prompts/my_custom.txt"`
+- **См.:** [prompts/README.md](../prompts/README.md) для деталей
 
 #### save_intermediate
 Сохранять ли промежуточные результаты каждого batch.
@@ -347,6 +362,42 @@ for file in transcript*.md; do
         --input "$file" \
         --output "${file%.md}_fixed.md"
 done
+```
+
+### Сценарий 5: Версионирование с timestamp
+
+Полезно для отслеживания истории обработки:
+
+```json
+{
+  "output_file": "transcript_fixed.md",
+  "add_timestamp_to_output": true
+}
+```
+
+```bash
+python -m cli.main
+```
+
+**Результат:** 
+- Первый запуск: `transcript_fixed_2024-11-23_15-30-45.md`
+- Второй запуск: `transcript_fixed_2024-11-23_16-12-08.md`
+- Третий запуск: `transcript_fixed_2024-11-24_10-05-33.md`
+
+**Преимущества:**
+- Сохраняется история всех обработок
+- Можно сравнивать результаты разных промптов/настроек
+- Не перезаписывается предыдущий результат
+
+**Пример сравнения версий:**
+
+```bash
+# Сравнить две версии
+diff transcript_fixed_2024-11-23_15-30-45.md \
+     transcript_fixed_2024-11-23_16-12-08.md
+
+# Найти самый новый файл
+ls -t transcript_fixed_*.md | head -1
 ```
 
 ## Workflow с Agent01

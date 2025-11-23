@@ -9,6 +9,10 @@
   "batch_size": 10,
   "context_lines": 5,
   
+  "prompt_file": "prompts/default_enhanced_from_mygpt.txt",
+  
+  "add_timestamp_to_output": true,
+  
   "save_intermediate": true,
   "intermediate_dir": "intermediate_fixes",
   

@@ -19,7 +19,8 @@ class TranscriptFixer:
         model: str = "gpt-4o-mini",
         temperature: float = 0.0,
         base_url: Optional[str] = None,
-        organization: Optional[str] = None
+        organization: Optional[str] = None,
+        prompt_file: Optional[str] = None
     ):
         """
         Initialize TranscriptFixer.
@@ -30,6 +31,7 @@ class TranscriptFixer:
             temperature: Sampling temperature
             base_url: Optional custom API base URL
             organization: Optional OpenAI organization ID
+            prompt_file: Path to custom prompt file (optional)
         """
         client_kwargs = {"api_key": api_key}
         if base_url:
@@ -40,6 +42,25 @@ class TranscriptFixer:
         self.client = OpenAI(**client_kwargs)
         self.model = model
         self.temperature = temperature
+        self.prompt_template = self._load_prompt_template(prompt_file)
+    
+    def _load_prompt_template(self, prompt_file: Optional[str]) -> Optional[str]:
+        """Load prompt template from file if provided."""
+        if not prompt_file:
+            return None
+        
+        try:
+            if os.path.exists(prompt_file):
+                with open(prompt_file, 'r', encoding='utf-8') as f:
+                    template = f.read().strip()
+                print(f"[INFO] Loaded custom prompt from {prompt_file}")
+                return template
+            else:
+                print(f"[WARN] Prompt file not found: {prompt_file}, using default prompt")
+                return None
+        except Exception as e:
+            print(f"[WARN] Failed to load prompt file: {e}, using default prompt")
+            return None
     
     def fix_transcript_file(
         self,
@@ -243,6 +264,43 @@ class TranscriptFixer:
     
     def _build_fix_prompt(self, batch_info: BatchInfo) -> str:
         """Build prompt for fixing a batch."""
+        
+        # Use custom prompt template if loaded
+        if self.prompt_template:
+            return self._build_prompt_from_template(batch_info)
+        
+        # Fallback to default prompt
+        return self._build_default_prompt(batch_info)
+    
+    def _build_prompt_from_template(self, batch_info: BatchInfo) -> str:
+        """Build prompt using custom template with placeholders."""
+        
+        # Format context
+        context_text = ""
+        if batch_info.context:
+            context_lines = ["Context from previous batch (for continuity):", "```"]
+            for line in batch_info.context:
+                context_lines.append(line.rstrip())
+            context_lines.append("```")
+            context_text = "\n".join(context_lines)
+        else:
+            context_text = "No previous context available."
+        
+        # Format batch
+        batch_lines = ["```"]
+        for line in batch_info.lines:
+            batch_lines.append(line.rstrip())
+        batch_lines.append("```")
+        batch_text = "\n".join(batch_lines)
+        
+        # Replace placeholders
+        prompt = self.prompt_template.replace("{context}", context_text)
+        prompt = prompt.replace("{batch}", batch_text)
+        
+        return prompt
+    
+    def _build_default_prompt(self, batch_info: BatchInfo) -> str:
+        """Build default prompt."""
         
         prompt_parts = [
             "You are fixing a Russian-Spanish language learning transcript.",

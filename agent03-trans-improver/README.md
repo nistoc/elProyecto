@@ -45,7 +45,9 @@ python -m cli.main
   "output_file": "transcript_fixed.md",
   "model": "gpt-4o-mini",
   "batch_size": 10,
-  "context_lines": 3
+  "context_lines": 3,
+  "prompt_file": "prompts/default.txt",
+  "add_timestamp_to_output": true
 }
 ```
 
@@ -53,6 +55,21 @@ python -m cli.main
 - `batch_size` - строк за один запрос (5-30)
 - `context_lines` - строк контекста из предыдущего batch (1-5)
 - `model` - `gpt-4o-mini` / `gpt-4o` / `gpt-3.5-turbo`
+- `prompt_file` - путь к файлу с кастомным промптом (опционально)
+- `add_timestamp_to_output` - добавить дату-время к имени файла (`true` / `false`)
+
+### Кастомные промпты
+
+Вы можете написать свой промпт! См. [`prompts/README.md`](prompts/README.md) для деталей.
+
+```bash
+# Создайте свой промпт
+cp prompts/custom_example.txt prompts/my_prompt.txt
+vim prompts/my_prompt.txt
+
+# Укажите в конфиге
+# "prompt_file": "prompts/my_prompt.txt"
+```
 
 ## Стоимость
 
