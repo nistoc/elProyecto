@@ -2,54 +2,26 @@
 
 Полное руководство по использованию Agent03: Transcript Improver.
 
-## Подготовка
+> 💡 **Для быстрого старта** см. [README.md](../README.md) или [QUICKSTART.txt](../QUICKSTART.txt)
 
-### Системные требования
+## Требования
 
 - Python 3.8+
-- OpenAI API ключ
-- ~50 MB свободного места
+- OpenAI API ключ ([получить](https://platform.openai.com/api-keys))
+- `python-dotenv` и `openai` (установятся автоматически)
 
-### Установка зависимостей
+## Установка
 
 ```bash
-cd agent03-trans-improver
 pip install -r requirements.txt
 ```
 
-Или установка как пакет:
+Опционально - как пакет:
 
 ```bash
 pip install -e .
+agent03-improver  # теперь доступна команда
 ```
-
-После установки доступна команда:
-
-```bash
-agent03-improver
-```
-
-### Настройка API ключа
-
-**Вариант 1: Переменная окружения (рекомендуется)**
-
-```bash
-# Windows PowerShell
-$env:OPENAI_API_KEY = "sk-your-key-here"
-
-# Linux/Mac/Git Bash
-export OPENAI_API_KEY="sk-your-key-here"
-```
-
-**Вариант 2: В конфиге**
-
-```json
-{
-  "openai_api_key": "sk-your-actual-key"
-}
-```
-
-⚠️ Не коммитьте ключ в git!
 
 ## Подготовка файла для обработки
 

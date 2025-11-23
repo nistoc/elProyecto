@@ -6,6 +6,14 @@ import sys
 import os
 from datetime import datetime
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # python-dotenv not installed, skip
+    pass
+
 from core.config import Config
 from services.fixer import TranscriptFixer
 

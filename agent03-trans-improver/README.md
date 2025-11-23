@@ -15,7 +15,13 @@ Agent03 исправляет транскрипции, где испанские
 cd agent03-trans-improver
 pip install -r requirements.txt
 
-# 2. API ключ
+# 2. API ключ (выберите способ)
+
+# Способ A: .env файл (рекомендуется)
+cp env.example .env
+# Отредактируйте .env и впишите свой ключ
+
+# Способ B: Переменная окружения
 export OPENAI_API_KEY="sk-..."  # Linux/Mac
 $env:OPENAI_API_KEY = "sk-..."  # Windows
 
@@ -25,7 +31,7 @@ cp ../agent01/transcript.md .
 # 4. Запуск
 python -m cli.main
 
-# 5. Результат в transcript_fixed.md ✓
+# 5. Результат в transcript_fixed_YYYY-MM-DD_HH-MM-SS.md ✓
 ```
 
 ## Ключевые особенности
