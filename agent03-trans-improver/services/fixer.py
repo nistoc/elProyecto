@@ -62,6 +62,21 @@ class TranscriptFixer:
             print(f"[WARN] Failed to load prompt file: {e}, using default prompt")
             return None
     
+    def _clean_intermediate_dir(self, intermediate_dir: str) -> None:
+        """Clean intermediate directory before processing."""
+        if not os.path.exists(intermediate_dir):
+            return
+        
+        try:
+            import shutil
+            file_count = len([f for f in os.listdir(intermediate_dir) if os.path.isfile(os.path.join(intermediate_dir, f))])
+            
+            if file_count > 0:
+                print(f"[INFO] Cleaning {file_count} old files from {intermediate_dir}/")
+                shutil.rmtree(intermediate_dir)
+        except Exception as e:
+            print(f"[WARN] Failed to clean intermediate directory: {e}")
+    
     def fix_transcript_file(
         self,
         input_path: str,
@@ -100,8 +115,9 @@ class TranscriptFixer:
             print("[WARN] No content to process!")
             return
         
-        # Create intermediate directory if needed
+        # Clean and create intermediate directory if needed
         if save_intermediate:
+            self._clean_intermediate_dir(intermediate_dir)
             os.makedirs(intermediate_dir, exist_ok=True)
         
         # Process in batches
@@ -236,17 +252,14 @@ class TranscriptFixer:
             # Parse fixed lines
             fixed_lines = []
             for line in fixed_text.split('\n'):
-                fixed_lines.append(line + '\n')
+                if line.strip():  # Skip empty lines
+                    fixed_lines.append(line + '\n')
             
-            # Validate line count matches
+            # Log line count change (e.g., when GPT merges lines)
             if len(fixed_lines) != len(batch_info.lines):
-                print(f"[WARN] Line count mismatch: expected {len(batch_info.lines)}, got {len(fixed_lines)}")
-                return BatchResult(
-                    batch_index=batch_info.index,
-                    fixed_lines=batch_info.lines,
-                    success=False,
-                    error="Line count mismatch"
-                )
+                diff = len(fixed_lines) - len(batch_info.lines)
+                action = "merged" if diff < 0 else "split"
+                print(f"[INFO] GPT {action} lines: {len(batch_info.lines)} → {len(fixed_lines)} (Δ{diff:+d})")
             
             return BatchResult(
                 batch_index=batch_info.index,
