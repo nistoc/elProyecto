@@ -1,7 +1,7 @@
 {
   "chunks": [
     {
-      "chunk": "audio1210697591_part_000.m4a",
+      "chunk": "audio1210697591_part_000.wav",
       "offset": 0.0,
       "emit_guard": 0.0,
       "response": {
@@ -20,30 +20,30 @@
       }
     },
     {
-      "chunk": "audio1210697591_part_001.m4a",
+      "chunk": "audio1210697591_part_001.wav",
       "offset": 55.0,
       "emit_guard": 5.0,
       "response": {
-        "text": "Al muy bien, estoy conectándome. Todo bien. ¿Por qué no quieres trabajar en Teams? ¿Sabes que ya he empezado a trabajar en Yandex? Madre, qué locura, pero yo tengo que trabajar en Yandex. No hay conexiones, no hay conexiones, ni sonido ni nada. Ты работаешь на Яндекс .Д.Браузер?\nSe claro. Ahora yo tengo eso, una cosa firmada, firme, en enlace firme o fijada, fija, bueno, А, fija, ты что? porque plena, yo escribí, David, David, fija, fija.",
+        "text": "Ah, muy bien, estoy conectándome, todo bien. ¿Por qué no quieres trabajar en Teams? Sabes que ya he empezado a trabajar en Yandex. Vale, qué locura, pero yo tengo que trabajar en Yandex, no hay conexiones, no hay conexiones, ni sonido ni nada. Ты работаешь на Яндекс браузер?\nСекляро. Аура, я тенго, эсо, уна конфе фирмада, фирме, эленласе фирме, о фихада, фиха, э, bueno, А где-то что? фиха, прикреплена, жестко, фиксар, да, фикс, фиха.",
         "logprobs": null,
         "usage": {
-          "input_tokens": 421,
-          "output_tokens": 1207,
-          "total_tokens": 1628,
+          "input_tokens": 425,
+          "output_tokens": 1204,
+          "total_tokens": 1629,
           "type": "tokens",
           "input_token_details": {
-            "audio_tokens": 421,
+            "audio_tokens": 425,
             "text_tokens": 0
           }
         }
       }
     },
     {
-      "chunk": "audio1210697591_part_002.m4a",
+      "chunk": "audio1210697591_part_002.wav",
       "offset": 110.0,
       "emit_guard": 5.0,
       "response": {
-        "text": "That fixed fijo. Ah, mhm. Fijo. Pero tengo un enlace fijo y yo, bueno, tengo que, y a buenos días nada, yo tengo que trabajar en Yandex porque no hay conexión. Tú sabes cómo trabajé ayer con Moscú. Aquí tuve la cámara y aquí tuve el teléfono hablando una hora.\nNo es normal. И это на баз Pero dice poquito. не будет становиться нормальным. Me parece que sí. No será, no será.\nNo será, No puede ser será futuro. no será, будет становиться нормальным, как устроить. Dale, dale, hacer será, será entonces. No será, dale, hacer será. No será normal. Но...",
+        "text": "Dar fixt fija. Ah, uh-huh. Fija. Io tengo un enlace fijo y yo, bueno, tengo que, ya voy a ir a la oficina, ¿verdad? Yo tengo que trabajar en Yandex porque no hay conexión. Tú sabes cómo trabajé ayer con Moscú. Aquí tuve la cámara y aquí tuve el teléfono hablando una hora.\nNo es normal. И это на бас Parece poquito. не будет становиться нормальным. Me parece que sí. No será, no será.\nНе будет, да? Сер, сера, футуро. Но сыра, а будет становиться нормальным, как мы сказали. Да, да, а серсе, но се ара тогда. Но се ара, серсе. Но се ара нормаль.",
         "logprobs": null,
         "usage": {
           "input_tokens": 591,
@@ -58,111 +58,35 @@
       }
     },
     {
-      "chunk": "audio1210697591_part_003.m4a",
+      "chunk": "audio1210697591_part_003.wav",
       "offset": 165.0,
       "emit_guard": 5.0,
       "response": {
-        "text": "O sea, hará hacerse. No será normal. Но сейчас No tiene ninguna lógica. я подожди, но с... O sea, ese día la hacen esta. Hacerse rico, Ah, desbaratarse, вот, но hacerse с Ара pobre. нормально. Esto no es normal. No sea hará normal y lógico. Y bueno, con una chica de piatigors, yo trabajo con la cámara y el teléfono. Está en la misma ciudad.\nPhénoménal, phénoménal. Ah, es posible utilizar el VPN. VPN, ils mettent le VPN installé et bueno, c'est bloqué. Ils se bloquent et bueno. VPN está bloqueando.\nSi se bloquea, la gente que vive cerca del hospital no puede usar internet o está bloqueado y por eso bueno funciona o después de un día.",
+        "text": "Se hará hacerse. No será normal. Но сейчас No tiene ninguna lógica. я подожди но с ара Hacerse de dilatarse a establecerse rico, enriquecerse, вот но с ара нормально enriquecerse. No será normal y lógico. Y bueno, con una chica de Piatigorsk, yo trabajo con la cámara y el teléfono. Está en la misma ciudad.\nFenomenal. Ven, Ah, ven. é possível utilizar VPN. VPN y pone el VPN instalado y bueno se bloquea y se bloquea y bueno. VPN está bloqueando.\nSi se bloquea, la gente que vive cerca del hospital no puede usar internet o está bloqueado y por eso bueno funciona o después de un tiempo.",
         "logprobs": null,
         "usage": {
-          "input_tokens": 602,
-          "output_tokens": 1743,
-          "total_tokens": 2345,
+          "input_tokens": 601,
+          "output_tokens": 1653,
+          "total_tokens": 2254,
           "type": "tokens",
           "input_token_details": {
-            "audio_tokens": 602,
+            "audio_tokens": 601,
             "text_tokens": 0
           }
         }
       }
     },
     {
-      "chunk": "audio1210697591_part_004.m4a",
+      "chunk": "audio1210697591_part_004.wav",
       "offset": 220.0,
       "emit_guard": 5.0,
       "response": {
-        "text": "Neto está bloqueado y por eso bueno funciona o después de un tiempo no funciona por ejemplo nosotros hablamos normal y cuando él ya dice no la oigo cuando digo yo me oye muy bien ha sonido y su micrófono no funciona por eso yo hablo y llamo por teléfono y le explico la tarea y comunicamos por el teléfono como el segundo canal\nUh И -huh. Uh трёхе L проблема, к примеру, -huh. S...\nКачество для качества для Calidad, для calidad, качество для качество для интернет VPN, для entonces la calidad de VPN, porque hay bueno, yo bueno, bastante firme ese fijo VPN que funcionan muy bien y bueno, todo el mundo los tiene, la gente sigue estando.",
-        "logprobs": null,
-        "usage": {
-          "input_tokens": 605,
-          "output_tokens": 1663,
-          "total_tokens": 2268,
-          "type": "tokens",
-          "input_token_details": {
-            "audio_tokens": 605,
-            "text_tokens": 0
-          }
-        }
-      }
-    },
-    {
-      "chunk": "audio1210697591_part_005.m4a",
-      "offset": 275.0,
-      "emit_guard": 5.0,
-      "response": {
-        "text": "Hmm. y bueno todo el mundo los tiene la gente Что sigue вы про фирму? están firma Лена, ты про фирму сейчас говоришь? Это о чем? esta es firme o estoiche firme esta o stoiche firme Фирма или мэ? la firma esta firma moda Да. caeta da la primera no ya ni es na united caru benito no zara es la firma\nТо есть La все campaña, связки, ¿cómo la campaña? ирмы это твердые устойчивые, эльдоны фирмы, эль эльдоны фирмы, эль аконексион фирмы, на ге не меняет рода, да? Лаконексион фирмы, устойчивая связь, усоединение.\nEstá bien. Vale. Y bueno, ¿qué hacer? Vivimos en el mundo tecnológico. Y bueno, hoy he discutido con mis estudiantes la pérdida de los puestos de trabajo. ¿Verdad? Ага, да, да, да. La pérdida, la pérdida japonesa.",
-        "logprobs": null,
-        "usage": {
-          "input_tokens": 604,
-          "output_tokens": 1783,
-          "total_tokens": 2387,
-          "type": "tokens",
-          "input_token_details": {
-            "audio_tokens": 604,
-            "text_tokens": 0
-          }
-        }
-      }
-    },
-    {
-      "chunk": "audio1210697591_part_006.m4a",
-      "offset": 330.0,
-      "emit_guard": 5.0,
-      "response": {
-        "text": "Раз, два, три. Да, да. Ляперды, да. Вот ляперды я понял. Пуэсто, пуэсто это эти рабочие места, пуэсто де trabajo. Ляперды, да. Ляперды, да. Ляперды, да. Ляперды, да. Ага, ла перде да пердер терять.\nPerder, tirar, perder, perder, acentográfico. Ага, ага. La pérdida de los puestos de trabajo relacionados con inteligencia artificial. Pero bueno, cuando no funciona nada, no hay inteligencia artificial. Bueno, no tendremos este problema. И не puedes conectar con los estudiantes.\nSí, claro. Yo no puedo ponerme en contacto sin hacer nada. Ponerme en contacto, ponerse en contacto sin hacer nada. Bueno, Yo bueno. no puedo ponerme en contacto con mis estudiantes. ¿Sabes que, bueno, es más fácil?",
-        "logprobs": null,
-        "usage": {
-          "input_tokens": 597,
-          "output_tokens": 1827,
-          "total_tokens": 2424,
-          "type": "tokens",
-          "input_token_details": {
-            "audio_tokens": 597,
-            "text_tokens": 0
-          }
-        }
-      }
-    },
-    {
-      "chunk": "audio1210697591_part_007.m4a",
-      "offset": 385.0,
-      "emit_guard": 5.0,
-      "response": {
-        "text": "6 estudiantes sabes que bueno es más fácil conectarme con méxico que con la ciudad de piaticos o con moscú А есть задержки? cortos cortos cortos cortar realizar cortes los cortes de conexión\nLas cortes de agua, las cortes de luz, Так, las cortes корты, de agua, корты, las cortes de electricidad, корты. las cortes... Лоскортес, лоскортес. Las cortes de conexión. Те нас лоскортес де комисксион антис де до. Между. No, no, con México todo funciona bien, yo no sé por qué.\nOye, con España no hay problema, con Moscú sí.",
-        "logprobs": null,
-        "usage": {
-          "input_tokens": 603,
-          "output_tokens": 3039,
-          "total_tokens": 3642,
-          "type": "tokens",
-          "input_token_details": {
-            "audio_tokens": 603,
-            "text_tokens": 0
-          }
-        }
-      }
-    },
-    {
-      "chunk": "audio1210697591_part_008.m4a",
-      "offset": 440.0,
-      "emit_guard": 5.0,
-      "response": {
-        "text": "Si por qué? A ver, con España no hay problema, con Moscú si hay, con Pitigors si hay, con Kislovodsk si hay.\nNo funciona. Vale, ¿Normal? vale, esta Esta es nuestra época medieval. país, nuestra Vale. país, el país, El nuestro país. país. Ajá, vale. Bueno, país de progreso. Progresista, progresista. Y sabes que, bueno, tengo que hacer una actividad con un estudiante colombiano, un chico de Colombia que vive y trabaja en nuestra universidad.\nDesprogramador, también programador. Parece que su especialidad es database, no, seguridad de datos. Ajá, vale. Y bueno, le quería proponer el problema de nuestro futuro con inteligencia artificial. Parece que no, parece que hay que discutir la seguridad de conexión.",
+        "text": "Neto está bloqueado y por eso bueno funciona o después de un tiempo no funciona por ejemplo nosotros hablamos normal y cuando él ya dice no la oigo cuando digo yo me oye muy bien hay sonido y su micrófono no funciona por eso yo hablo y llamo por teléfono y le explico la tarea y comunicamos por el teléfono como el segundo canal\nAjá, И yo креативная sí. эль проблема, к примеру, эль с...\nКачество для качества для Калидат, калидат, калидат, калидат для калидат для интернет. VPN, mi parese, la calidad de VPN, porque hay bueno, bastante firmes y fijos VPN que funcionan muy bien y bueno, todo el mundo los tiene, Что la gente за sí que фирма? están.",
         "logprobs": null,
         "usage": {
           "input_tokens": 608,
-          "output_tokens": 1814,
-          "total_tokens": 2422,
+          "output_tokens": 1680,
+          "total_tokens": 2288,
           "type": "tokens",
           "input_token_details": {
             "audio_tokens": 608,
@@ -172,35 +96,111 @@
       }
     },
     {
-      "chunk": "audio1210697591_part_009.m4a",
-      "offset": 495.0,
+      "chunk": "audio1210697591_part_005.wav",
+      "offset": 275.0,
       "emit_guard": 5.0,
       "response": {
-        "text": "Cierto, parece que no, parece que hay que discutir la seguridad de conexión de internet. A ver, vale. Creo que no hay conexión, no hay problema. Sí, claro.\nNo hay gente, no hay cadáver, no hay problema. No hay persona, no hay problema. No hay conexión ni internet, tampoco lo tenemos. Sí, Sí, claro, sí, sí, sí, claro. sí. Ajá, ajá, ajá. Normal. Entonces, en dos palabras en cuanto a estos diálogos, porque bueno, ajá. Ah, dame el permiso, por favor. Dame Hoy el permiso sí, de sí, abrir, sí, perdón. ajá, de abrir la pantalla.\nЛист Это не плеба, от... это было, да. Собас Эль Санкито де ла Парабла плеба. Смотри, плеба это пробовать, это примерять и это испытывать и доказывать. Вот она имеет совершенно разные значения. То есть плеба Да, мы что такое может пробу создали. быть.",
+        "text": "Hmm. и bueno todo el mundo los tiene la Что gente за sigue фирма? esta firma Лен, ты про фирму сейчас говоришь, ты о чем? esta firme esta firme la фирма или мэ? firma esta firma esta firma a moda alguna por ejemplo no lo sé United Color of Benetton o Zara es la firma\nТо La есть то, compañía, что фирма ¿cómo la compañía? это твердый устойчивый, эль доллар фирма, эль евро фирма, эль аконексион фирма на е не меняет рода, да? Лаконексион фирма, устойчивая связь, усоединение.\nEstá bien. Vale. Y bueno, ¿qué hacer? Y vivimos, vivimos en el mundo tecnológico. Y bueno, hoy he discutido con mis estudiantes la pérdida de los puestos de trabajo relacionados La pérdida, de la pérdida, la pérdida de los empleo. puestos.",
         "logprobs": null,
         "usage": {
-          "input_tokens": 603,
-          "output_tokens": 1860,
-          "total_tokens": 2463,
+          "input_tokens": 604,
+          "output_tokens": 1761,
+          "total_tokens": 2365,
           "type": "tokens",
           "input_token_details": {
-            "audio_tokens": 603,
+            "audio_tokens": 604,
             "text_tokens": 0
           }
         }
       }
     },
     {
-      "chunk": "audio1210697591_part_010.m4a",
+      "chunk": "audio1210697591_part_006.wav",
+      "offset": 330.0,
+      "emit_guard": 5.0,
+      "response": {
+        "text": "Работа, релаксия, Да, да, ля перде, да, вот ля перде, или я не понял. лос пуэстос. Пуэсто это эти рабочие места, лос пуэстос де трабахо. Лос пуэстос де трабахо. Ага, ля перде, да, пердер терять.\nPerder, tirar, perder, perder, acento Mm-hmm. gráfico. Mm-hmm. La pérdida de los puestos de trabajo relacionados con inteligencia artificial. Mm-hmm. Pero bueno, cuando no funciona nada, no hay inteligencia artificial. Bueno, no tendremos este problema. Y no puedes conectar con los estudiantes.\nSí, claro. Yo no puedo ponerme en contacto, es decir, ponerme en contacto, ponerse en contacto, es decir, yo no puedo ponerme en contacto con mis estudiantes. Sabes que, bueno, es más fácil.",
+        "logprobs": null,
+        "usage": {
+          "input_tokens": 600,
+          "output_tokens": 1773,
+          "total_tokens": 2373,
+          "type": "tokens",
+          "input_token_details": {
+            "audio_tokens": 600,
+            "text_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "chunk": "audio1210697591_part_007.wav",
+      "offset": 385.0,
+      "emit_guard": 5.0,
+      "response": {
+        "text": "Все студенты. Сабес, О, ке, bueno, а эс мас фасиль конектарме кон Мехико, ке кон ла сиудаде Пятигорск, о кон Москву, пор ejemplo. есть задержки? Кортос, кортос. Смотри, cortar, резать, cortes. Los cortes de conexión. Задержки, прерывания.\nВас Кортес была как выключение, Лос Кортес де Лус, Лос Лос Кортес де Агуа, Лос Кортес де Электрисидат, Лос Кортес Преланье. Лоскортес, Лоскортес. Да, Лос Кортес де Конексион. Те нас Лоскортес де Конексион Антес де До. Энтре Пятигорск и Мехико. Но, но, кон Мехико todo funciona bien, я не знаю почему.\nA ver, con España no hay problema con Moscú.",
+        "logprobs": null,
+        "usage": {
+          "input_tokens": 602,
+          "output_tokens": 1749,
+          "total_tokens": 2351,
+          "type": "tokens",
+          "input_token_details": {
+            "audio_tokens": 602,
+            "text_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "chunk": "audio1210697591_part_008.wav",
+      "offset": 440.0,
+      "emit_guard": 5.0,
+      "response": {
+        "text": "Зачем? Посыпал кейк. А вер, кон Испания, но ай проблема, кон Москос и ай, кон Пятигорс и ай, кон Кисловодск и ай.\nNo funciona. Vale, ¿Normal? vale, esta ¿Es es nuestra la época medieval? país, la Vale. país, el país, El nuestro país. país. Ajá, vale. Bueno, país de, bueno, progresista, progresista. Y sabes que, bueno, tengo que hacer una actividad con un estudiante colombiano, un chico de Colombia que vive y trabaja en nuestra universidad.\nAdes programador, también programador. Parece que su especialidad es database, no, seguridad de datos. Uh-huh. Vale. Y bueno, le quería proponer el problema de nuestro futuro con inteligencia artificial. Parece que no, parece que hay que discutir la seguridad de conexión.",
+        "logprobs": null,
+        "usage": {
+          "input_tokens": 608,
+          "output_tokens": 1820,
+          "total_tokens": 2428,
+          "type": "tokens",
+          "input_token_details": {
+            "audio_tokens": 608,
+            "text_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "chunk": "audio1210697591_part_009.wav",
+      "offset": 495.0,
+      "emit_guard": 5.0,
+      "response": {
+        "text": "Parece que no. Parece que hay que discutir la seguridad de conexión de internet. A ver. Vale. Creo que no hay conexión, no hay problema. Sí, claro.\nNo hay gente, no hay cadáver, no hay problema, no hay persona, no hay problema, no hay conexión ni internet, tampoco lo tenemos. Sí, Sí, claro, sí, sí, claro. sí, sí. Ajá, ajá, ajá, normal. Entonces, en dos palabras en cuanto a estos diálogos, porque bueno, ajá, dame el permiso, por favor, dame Hoy el permiso sí, de sí, abrir, perdona. ajá, de abrir la pantalla.\nЛисток. Это не проба, это было, да. Самое эльсентидо де ла palabra prueba. Смотри, пробар, это пробовать, это примерять, и это испытывать и доказывать. Вот она имеет совершенно разные значения. То есть пробар Да, мы что такое пробуем, может быть. да, Дарья?",
+        "logprobs": null,
+        "usage": {
+          "input_tokens": 602,
+          "output_tokens": 1823,
+          "total_tokens": 2425,
+          "type": "tokens",
+          "input_token_details": {
+            "audio_tokens": 602,
+            "text_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "chunk": "audio1210697591_part_010.wav",
       "offset": 550.0,
       "emit_guard": 5.0,
       "response": {
-        "text": "Да, но имеет совершенно разные значения, то есть Да, проверить мы что-то такое пробовали, может быть. да, Дарья? Попробовать, да, una prueba, как проба.\nВторое испытание, допустим, es el año de pruebas, да, o es una prueba, это прям испытание, и оно же доказательство, es la prueba en este crimen, да, это доказательство этого преступления. Mm-hmm. Видите, какое широкое, да, и prueba как примерка, el probador.\nИ это запись, рекорды? Это рекорды? Ah, grabación, grabación, grabación, Грабасион. grabación, da, esta grabación. Грабасион.",
+        "text": "Она имеет совершенно разные значения, то есть Да, проебать мы все такое пробовали, может быть. да, Дарья. Попробовать, да, уна проеба, как проба.\nВторое. Испытание. Допустим, es un año de pruebas. Да? О es una prueba. Это прям испытание. И оно же доказательство. Es la prueba en este crimen. Да? Это доказательство этого преступления. Mm-hmm. Какое широкое, да? И prueba как примерка. El probador.\nИ это запись, рекорды? Это рекорды? Ah, grabación, grabación, grabación, Да. grabación, da esta grabación.",
         "logprobs": null,
         "usage": {
           "input_tokens": 489,
-          "output_tokens": 1462,
-          "total_tokens": 1951,
+          "output_tokens": 1451,
+          "total_tokens": 1940,
           "type": "tokens",
           "input_token_details": {
             "audio_tokens": 489,

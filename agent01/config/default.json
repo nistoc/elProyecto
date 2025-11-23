@@ -30,13 +30,14 @@
   "per_chunk_json_dir": "chunks_json",
   "cache_dir": "cache",
   
-  "convert_to_wav": false,
+  "convert_to_wav": true,
   "wav_output_dir": "converted_wav",
   "save_intermediate_results": true,
   "intermediate_results_dir": "intermediate_results",
   
   "max_duration_minutes": 10,
   "parallel_transcription_workers": 3,
-  "progress_time_format": "MMM:SSS.M"
+  "progress_time_format": "HH:MM:SS.M",
+  "clean_before_run": true
 }
 

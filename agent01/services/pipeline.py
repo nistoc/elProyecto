@@ -3,6 +3,7 @@
 Main transcription pipeline orchestrator.
 """
 import os
+import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional, Tuple
@@ -59,6 +60,52 @@ class TranscriptionPipeline:
     def _init_output_writer(self):
         """Initialize output writer."""
         self.output_writer = OutputWriter()
+    
+    def _clean_folders(self):
+        """Clean cache and intermediate result folders if enabled in config."""
+        if not self.config.get("clean_before_run", True):
+            return
+        
+        print("\n[CLEANUP] Cleaning cache and intermediate folders...")
+        
+        folders_to_clean = [
+            self.config.get("cache_dir", "cache"),
+            self.config.get("split_workdir", "chunks"),
+            self.config.get("per_chunk_json_dir", "chunks_json"),
+            self.config.get("intermediate_results_dir", "intermediate_results"),
+            self.config.get("wav_output_dir", "converted_wav"),
+        ]
+        
+        cleaned_count = 0
+        for folder in folders_to_clean:
+            try:
+                # Create folder if it doesn't exist
+                os.makedirs(folder, exist_ok=True)
+                
+                # Remove all contents but keep the folder
+                items_removed = 0
+                for item in os.listdir(folder):
+                    item_path = os.path.join(folder, item)
+                    if os.path.isfile(item_path):
+                        os.remove(item_path)
+                        items_removed += 1
+                    elif os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                        items_removed += 1
+                
+                if items_removed > 0:
+                    print(f"[CLEANUP] ✓ Cleaned: {folder} ({items_removed} item(s))")
+                    cleaned_count += 1
+                else:
+                    print(f"[CLEANUP] ○ Empty: {folder}")
+                    
+            except Exception as e:
+                print(f"[CLEANUP] ✗ Failed to clean {folder}: {e}")
+        
+        if cleaned_count > 0:
+            print(f"[CLEANUP] Cleaned {cleaned_count} folder(s)\n")
+        else:
+            print(f"[CLEANUP] All folders are empty\n")
     
     def _convert_to_wav_if_needed(self, file_path: str) -> str:
         """
@@ -152,6 +199,9 @@ class TranscriptionPipeline:
         
         print(f"\n[FILE] {file_path}")
         
+        # Clean folders if enabled
+        self._clean_folders()
+        
         # === STAGE 3: Convert to WAV if needed ===
         print("\n[STAGE 3] Converting to WAV if needed...")
         working_file_path = self._convert_to_wav_if_needed(file_path)
@@ -243,11 +293,17 @@ class TranscriptionPipeline:
         if not self.chunker or not self.config.get("pre_split"):
             return [ChunkInfo(path=file_path, offset=0.0, emit_guard=0.0)]
         
+        # Adjust naming pattern based on file extension
+        naming_pattern = self.config.get("chunk_naming")
+        if file_path.lower().endswith('.wav'):
+            # Change extension to .wav for WAV files
+            naming_pattern = naming_pattern.replace('.m4a', '.wav')
+        
         return self.chunker.process_chunks_for_file(
             source_path=file_path,
             target_mb=float(self.config.get("target_chunk_mb")),
             workdir=self.config.get("split_workdir"),
-            naming_pattern=self.config.get("chunk_naming"),
+            naming_pattern=naming_pattern,
             overlap_sec=float(self.config.get("chunk_overlap_sec")),
             reencode=bool(self.config.get("reencode_if_needed")),
             reencode_bitrate=int(self.config.get("reencode_bitrate_kbps")),

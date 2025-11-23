@@ -8,7 +8,6 @@ import json
 import time
 from typing import Dict, Any, List, Optional
 from core.models import ASRSegment
-from infrastructure.progress import ProgressIndicator
 
 # Load environment variables from .env file
 try:
@@ -100,18 +99,13 @@ class OpenAITranscriptionClient:
             for idx, kwargs in enumerate(variations, 1):
                 for attempt_no in range(3):
                     try:
-                        print(f"[INFO] Sending file to OpenAI transcription API… (model={model}, variant={idx}, attempt={attempt_no})")
-                        
-                        # Show progress indicator during API call
-                        with ProgressIndicator(f"Waiting for API response (model={model})") as progress:
-                            with open(audio_path, "rb") as f:
-                                resp = self.client.audio.transcriptions.create(
-                                    file=f,
-                                    model=model,
-                                    **kwargs
-                                )
-                        
-                        print(f"[INFO] ✓ Transcription received successfully")
+                        # Send to API without showing progress indicator
+                        with open(audio_path, "rb") as f:
+                            resp = self.client.audio.transcriptions.create(
+                                file=f,
+                                model=model,
+                                **kwargs
+                            )
                         
                         # Convert response to dict
                         if hasattr(resp, "model_dump_json"):

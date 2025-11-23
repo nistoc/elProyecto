@@ -53,13 +53,26 @@ class AudioUtils:
             return input_path
         
         root, ext = os.path.splitext(input_path)
-        output_path = root + "_re.m4a"
-        cmd = [
-            ffmpeg_path, "-y", "-i", input_path,
-            "-ac", "1", "-ar", "16000",
-            "-b:a", f"{bitrate_kbps}k",
-            output_path,
-        ]
+        
+        # Keep same extension as input file
+        # For WAV files, use PCM encoding; for others use compressed format
+        if ext.lower() == '.wav':
+            output_path = root + "_re.wav"
+            cmd = [
+                ffmpeg_path, "-y", "-i", input_path,
+                "-ac", "1", "-ar", "16000",
+                "-acodec", "pcm_s16le",  # Keep PCM for WAV
+                output_path,
+            ]
+        else:
+            output_path = root + "_re.m4a"
+            cmd = [
+                ffmpeg_path, "-y", "-i", input_path,
+                "-ac", "1", "-ar", "16000",
+                "-b:a", f"{bitrate_kbps}k",
+                output_path,
+            ]
+        
         subprocess.check_call(cmd)
         return output_path
     

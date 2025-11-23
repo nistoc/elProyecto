@@ -57,6 +57,7 @@ class Config:
             "max_duration_minutes": 1,  # Max duration to process in minutes (0 = all)
             "parallel_transcription_workers": 3,  # Number of parallel API calls
             "progress_time_format": "MMM:SSS.M",  # Time format for progress display
+            "clean_before_run": True,  # Clean cache and intermediate folders before processing
         }
         for key, value in defaults.items():
             self._config.setdefault(key, value)
