@@ -26,7 +26,6 @@
   "chunk_naming": "{base}_part_%03d.m4a",
   "fallback_models": ["gpt-4o-mini-transcribe", "whisper-1"],
 
-  "parallel_workers": 4,
   "save_per_chunk_json": true,
   "per_chunk_json_dir": "chunks_json",
   "cache_dir": "cache",
@@ -34,6 +33,10 @@
   "convert_to_wav": false,
   "wav_output_dir": "converted_wav",
   "save_intermediate_results": true,
-  "intermediate_results_dir": "intermediate_results"
+  "intermediate_results_dir": "intermediate_results",
+  
+  "max_duration_minutes": 10,
+  "parallel_transcription_workers": 3,
+  "progress_time_format": "MMM:SSS.M"
 }
 

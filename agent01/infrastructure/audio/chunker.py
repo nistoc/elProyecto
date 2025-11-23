@@ -23,7 +23,8 @@ class AudioChunker:
         segment_time: int,
         overlap_sec: float,
         workdir: str,
-        naming_pattern: str
+        naming_pattern: str,
+        max_duration_sec: float = 0
     ) -> List[ChunkInfo]:
         """
         Create overlapped chunks using fixed window and stride.
@@ -42,6 +43,10 @@ class AudioChunker:
         
         # Get duration
         dur, _ = AudioUtils.get_duration_and_size(self.ffprobe_path, source_path)
+        
+        # Apply duration limit if specified
+        if max_duration_sec > 0:
+            dur = min(dur, max_duration_sec)
         
         # Clamp overlap to reasonable range
         overlap = max(0.0, min(float(overlap_sec), max(0.0, segment_time - 0.5)))
@@ -102,10 +107,14 @@ class AudioChunker:
         naming_pattern: str,
         overlap_sec: float,
         reencode: bool = True,
-        reencode_bitrate: int = 64
+        reencode_bitrate: int = 64,
+        max_duration_minutes: float = 0
     ) -> List[ChunkInfo]:
         """
         Main entry point: split file into chunks if needed.
+        
+        Args:
+            max_duration_minutes: Maximum duration to process in minutes (0 = all)
         
         Returns:
             List of ChunkInfo objects (single item if no split needed)
@@ -117,7 +126,14 @@ class AudioChunker:
         dur, size = AudioUtils.get_duration_and_size(self.ffprobe_path, source_path)
         print(f"[INFO] Source duration: {dur:.2f}s | size: {AudioUtils.format_mb(size)}")
         
-        if size <= target_mb * 1024 * 1024:
+        # Apply duration limit if specified
+        if max_duration_minutes > 0:
+            max_duration_sec = max_duration_minutes * 60
+            if dur > max_duration_sec:
+                print(f"[INFO] Limiting processing to first {max_duration_minutes} minute(s) ({max_duration_sec:.0f}s)")
+                dur = max_duration_sec
+        
+        if size <= target_mb * 1024 * 1024 and max_duration_minutes == 0:
             print("[INFO] Source is under target size; no split needed.")
             return [ChunkInfo(path=source_path, offset=0.0, emit_guard=0.0)]
         
@@ -126,8 +142,9 @@ class AudioChunker:
         print(f"[INFO] Overlap slicing: window ~{seg_time}s, overlap {overlap_sec:.2f}s")
         
         # Slice with overlap
+        max_duration_sec = max_duration_minutes * 60 if max_duration_minutes > 0 else 0
         chunk_infos = self.slice_with_overlap(
-            source_path, seg_time, overlap_sec, workdir, naming_pattern
+            source_path, seg_time, overlap_sec, workdir, naming_pattern, max_duration_sec
         )
         
         # Re-encode if needed

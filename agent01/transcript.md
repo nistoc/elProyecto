@@ -44,3 +44,9 @@ Se claro. Ahora yo tengo eso, una cosa firmada, firme, en enlace firme o fijada,
 Tengo que y a veces no, ¿verdad? Yo tengo que trabajar en grandes porque no hay conexión. ¿No sabes cómo trabajé ayer con Moscú? Aquí tuve la cámara y aquí tuve el teléfono hablando una hora. No es normal. Мы, и это, но, это, Parece но, poquito. бас, но бас.
 Не будет становиться нормальным. Me parece que sí. No será, no será. Не будет, да? Ser será futuro. Но сэра будет становиться нормальным, как устроить. Dale, dale. Hacerse, no será, dale. No se hará, hacerse. No será normal. No tiene ninguna lógica. Сейчас я подожди, но с...
 Así Да. se tiene que estandarizar. Hacerse rico, desbordarse. А вот. Но Hacerse все famoso. ора нормаль. Hacerse famoso. No se hará normal y lógico. Y bueno, con una chica de pie a figuras, yo trabajo con la cámara y el teléfono. Está en la misma ciudad. Fenomenal."
+- 0.00 speaker_0: ""
+<<<<<
+- 0.00 speaker_0: ""
+<<<<<
+- 0.00 speaker_0: ""
+<<<<<

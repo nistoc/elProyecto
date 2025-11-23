@@ -204,6 +204,9 @@ pytest tests/test_core.py
   "model": "gpt-4o-transcribe-diarize",
   "openai_api_key": "env:OPENAI_API_KEY",
   
+  "max_duration_minutes": 1,
+  "parallel_transcription_workers": 3,
+  
   "convert_to_wav": true,
   "wav_output_dir": "converted_wav",
   
@@ -220,6 +223,24 @@ pytest tests/test_core.py
   "intermediate_results_dir": "intermediate_results"
 }
 ```
+
+#### Ключевые параметры
+
+- **`max_duration_minutes`** - количество минут аудио для обработки (0 = весь файл, по умолчанию 1)
+- **`parallel_transcription_workers`** - количество параллельных API вызовов (по умолчанию 3)
+- **`progress_time_format`** - формат отображения времени в прогрессе (по умолчанию "MMM:SSS.M")
+
+#### Формат прогресса
+
+Прогресс отображается в виде компактной строки, где каждый чанк имеет свою ячейку:
+
+```
+[1:✓][2:✓][3:001:45.3][4:002:28.5][5:000:05.2][6:---:--.-][7:---:--.-]
+```
+
+- `[N:✓]` - чанк N завершен
+- `[N:001:45.3]` - чанк N обрабатывается (формат: минуты:секунды.десятые)
+- `[N:---:--.-]` - чанк N в ожидании
 
 ### Переменные окружения и .env файл
 

@@ -109,58 +109,86 @@ class ProgressIndicator:
 class ChunkProgress:
     """Simple progress tracker for chunk processing."""
     
-    def __init__(self, total_chunks: int):
+    def __init__(self, total_chunks: int, parallel_workers: int = 1, time_format: str = "MMM:SSS.M"):
         """
         Initialize chunk progress tracker.
         
         Args:
             total_chunks: Total number of chunks to process
+            parallel_workers: Number of parallel workers
+            time_format: Format for time display (e.g., "MMM:SSS.M")
         """
         self.total = total_chunks
         self.current = 0
+        self.parallel_workers = parallel_workers
+        self.time_format = time_format
         self.start_time = time.time()
+        self._completed_chunks = set()  # Track completed chunks
+        self._chunk_start_times = {}  # Track start time for each active chunk
+        self._lock = threading.Lock()
     
-    def update(self, chunk_idx: int):
+    def mark_started(self, chunk_idx: int):
+        """Mark chunk as started."""
+        with self._lock:
+            self._chunk_start_times[chunk_idx] = time.time()
+    
+    def mark_completed(self, chunk_idx: int):
+        """Mark chunk as completed."""
+        with self._lock:
+            self._completed_chunks.add(chunk_idx)
+            self._chunk_start_times.pop(chunk_idx, None)
+            self.current += 1
+    
+    def _format_time(self, seconds: float) -> str:
         """
-        Update progress to specific chunk.
+        Format time according to the time_format mask.
         
         Args:
-            chunk_idx: Current chunk index (0-based)
-        """
-        self.current = chunk_idx + 1
-        elapsed = time.time() - self.start_time
-        
-        # Calculate ETA
-        if self.current > 0:
-            avg_time_per_chunk = elapsed / self.current
-            remaining_chunks = self.total - self.current
-            eta_seconds = avg_time_per_chunk * remaining_chunks
+            seconds: Time in seconds
             
-            if eta_seconds < 60:
-                eta_str = f"{eta_seconds:.0f}s"
-            elif eta_seconds < 3600:
-                mins = int(eta_seconds // 60)
-                eta_str = f"{mins}m"
+        Returns:
+            Formatted time string (e.g., "001:045.3" for MMM:SSS.M format)
+        """
+        minutes = int(seconds // 60)
+        remaining_seconds = seconds % 60
+        sec_int = int(remaining_seconds)
+        sec_decimal = int((remaining_seconds - sec_int) * 10)
+        
+        # Format according to mask: MMM:SSS.M
+        return f"{minutes:03d}:{sec_int:03d}.{sec_decimal}"
+    
+    def update(self):
+        """Update and display current progress in compact format."""
+        with self._lock:
+            completed = self._completed_chunks.copy()
+            active_times = self._chunk_start_times.copy()
+        
+        # Build compact progress display
+        chunks_display = []
+        current_time = time.time()
+        
+        for i in range(self.total):
+            if i in completed:
+                # Completed chunk
+                chunks_display.append(f"[{i+1}:✓]")
+            elif i in active_times:
+                # Active chunk - show elapsed time
+                elapsed = current_time - active_times[i]
+                time_str = self._format_time(elapsed)
+                chunks_display.append(f"[{i+1}:{time_str}]")
             else:
-                hours = int(eta_seconds // 3600)
-                mins = int((eta_seconds % 3600) // 60)
-                eta_str = f"{hours}h {mins}m"
-        else:
-            eta_str = "calculating..."
+                # Waiting chunk
+                chunks_display.append(f"[{i+1}:---:--.-]")
         
-        # Print progress
-        percent = (self.current / self.total) * 100
-        bar_length = 30
-        filled = int(bar_length * self.current / self.total)
-        bar = '█' * filled + '░' * (bar_length - filled)
-        
-        print(f"\n{'='*60}")
-        print(f"Progress: [{bar}] {percent:.1f}% ({self.current}/{self.total})")
-        print(f"Estimated time remaining: {eta_str}")
-        print(f"{'='*60}")
+        # Print compact progress line
+        progress_line = "".join(chunks_display)
+        print(f"\r{progress_line}", end="", flush=True)
     
     def complete(self):
         """Mark progress as complete."""
+        # Final update to show all completed
+        self.update()
+        
         elapsed = time.time() - self.start_time
         
         if elapsed < 60:
@@ -174,8 +202,5 @@ class ChunkProgress:
             mins = int((elapsed % 3600) // 60)
             time_str = f"{hours}h {mins}m"
         
-        print(f"\n{'='*60}")
-        print(f"✓ All {self.total} chunks processed successfully!")
-        print(f"Total time: {time_str}")
-        print(f"{'='*60}\n")
+        print(f"\n\n✓ All {self.total} chunks processed successfully! Total time: {time_str}\n")
 

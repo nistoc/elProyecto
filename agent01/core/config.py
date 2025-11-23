@@ -54,6 +54,9 @@ class Config:
             "wav_output_dir": "converted_wav",  # Directory for converted wav files
             "save_intermediate_results": True,  # Save results after each chunk
             "intermediate_results_dir": "intermediate_results",  # Directory for intermediate saves
+            "max_duration_minutes": 1,  # Max duration to process in minutes (0 = all)
+            "parallel_transcription_workers": 3,  # Number of parallel API calls
+            "progress_time_format": "MMM:SSS.M",  # Time format for progress display
         }
         for key, value in defaults.items():
             self._config.setdefault(key, value)
@@ -85,11 +88,16 @@ class Config:
     
     def print_plan(self, config_path: str):
         """Print execution plan with configuration details."""
+        max_dur = self.get('max_duration_minutes')
+        max_dur_str = f"{max_dur} min" if max_dur > 0 else "full file"
+        
         plan_lines = [
             "Execution plan:",
             f"- Load config from: {config_path}",
             f"- Model: {self.get('model')}",
             f"- Files: {self.get_files()}",
+            f"- Max duration to process: {max_dur_str}",
+            f"- Parallel transcription workers: {self.get('parallel_transcription_workers')}",
             f"- Language: {self.get('language')} (null => auto / multi-language)",
             f"- Temperature: {self.get('temperature')}",
             f"- Prompt provided: {'yes' if self.get('prompt') else 'no'}",

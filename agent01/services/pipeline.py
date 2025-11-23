@@ -3,7 +3,9 @@
 Main transcription pipeline orchestrator.
 """
 import os
-from typing import List, Optional
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Optional, Tuple
 from core.config import Config
 from core.models import ChunkInfo, TranscriptionResult
 from infrastructure.audio import AudioUtils, AudioChunker
@@ -184,32 +186,27 @@ class TranscriptionPipeline:
         print(f"\n[STAGE 5-9] Processing {len(chunk_infos)} chunk(s)...")
         print(f"[INFO] You can interrupt processing at any time with Ctrl+C")
         
-        results: List[TranscriptionResult] = []
-        chunk_progress = ChunkProgress(len(chunk_infos))
+        # Get parallel workers setting
+        max_workers = max(1, int(self.config.get("parallel_transcription_workers", 3)))
+        if max_workers > 1 and len(chunk_infos) > 1:
+            print(f"[INFO] Using {max_workers} parallel workers for transcription")
+        
+        results: List[Tuple[int, TranscriptionResult]] = []  # (index, result) pairs
+        time_format = self.config.get("progress_time_format", "MMM:SSS.M")
+        chunk_progress = ChunkProgress(len(chunk_infos), parallel_workers=max_workers, time_format=time_format)
         
         try:
-            for i, chunk_info in enumerate(chunk_infos):
-                # Update progress
-                chunk_progress.update(i)
-                print(f"\n--- Processing chunk {i+1}/{len(chunk_infos)} ---")
-                
-                result = self._process_chunk(
-                    chunk_info, i, len(chunk_infos),
-                    manifest, manifest_path
+            # Use parallel processing if workers > 1
+            if max_workers > 1 and len(chunk_infos) > 1:
+                results = self._process_chunks_parallel(
+                    chunk_infos, manifest, manifest_path, base_name,
+                    md_path, chunk_progress, max_workers
                 )
-                results.append(result)
-                
-                # === STAGE 8: Save intermediate result ===
-                self._save_intermediate_result(result, base_name, i)
-                
-                # Write to markdown incrementally
-                self.output_writer.append_segments_to_markdown(
-                    md_path,
-                    result.segments,
-                    result.offset,
-                    result.emit_guard
+            else:
+                results = self._process_chunks_sequential(
+                    chunk_infos, manifest, manifest_path, base_name,
+                    md_path, chunk_progress
                 )
-                print(f"[INFO] ✓ Appended {len(result.segments)} segments to Markdown (guard {result.emit_guard:.2f}s).")
             
             # Show completion
             chunk_progress.complete()
@@ -228,7 +225,10 @@ class TranscriptionPipeline:
         # === STAGE 10: Finalize outputs ===
         print("\n[STAGE 10] Finalizing outputs...")
         self.output_writer.finalize_markdown(md_path)
-        self.output_writer.save_combined_json(json_path, results)
+        
+        # Extract just the results (without indices) for saving
+        sorted_results = [result for _, result in sorted(results, key=lambda x: x[0])]
+        self.output_writer.save_combined_json(json_path, sorted_results)
         
         print(f"\n[DONE] Processing complete!")
         print(f"  - Markdown: {md_path}")
@@ -250,8 +250,148 @@ class TranscriptionPipeline:
             naming_pattern=self.config.get("chunk_naming"),
             overlap_sec=float(self.config.get("chunk_overlap_sec")),
             reencode=bool(self.config.get("reencode_if_needed")),
-            reencode_bitrate=int(self.config.get("reencode_bitrate_kbps"))
+            reencode_bitrate=int(self.config.get("reencode_bitrate_kbps")),
+            max_duration_minutes=float(self.config.get("max_duration_minutes", 0))
         )
+    
+    def _process_chunks_sequential(
+        self,
+        chunk_infos: List[ChunkInfo],
+        manifest: dict,
+        manifest_path: str,
+        base_name: str,
+        md_path: str,
+        chunk_progress: ChunkProgress
+    ) -> List[Tuple[int, TranscriptionResult]]:
+        """Process chunks sequentially (single-threaded)."""
+        results = []
+        
+        # Initial progress display
+        chunk_progress.update()
+        print()  # New line after progress
+        
+        for i, chunk_info in enumerate(chunk_infos):
+            # Mark as started
+            chunk_progress.mark_started(i)
+            chunk_progress.update()
+            print(f"\n--- Processing chunk {i+1}/{len(chunk_infos)} ---")
+            
+            result = self._process_chunk(
+                chunk_info, i, len(chunk_infos),
+                manifest, manifest_path
+            )
+            results.append((i, result))
+            
+            # Mark as completed
+            chunk_progress.mark_completed(i)
+            
+            # Save intermediate result
+            self._save_intermediate_result(result, base_name, i)
+            
+            # Write to markdown incrementally
+            self.output_writer.append_segments_to_markdown(
+                md_path,
+                result.segments,
+                result.offset,
+                result.emit_guard
+            )
+            print(f"[INFO] ✓ Appended {len(result.segments)} segments to Markdown (guard {result.emit_guard:.2f}s).")
+            
+            # Update progress
+            chunk_progress.update()
+        
+        return results
+    
+    def _process_chunks_parallel(
+        self,
+        chunk_infos: List[ChunkInfo],
+        manifest: dict,
+        manifest_path: str,
+        base_name: str,
+        md_path: str,
+        chunk_progress: ChunkProgress,
+        max_workers: int
+    ) -> List[Tuple[int, TranscriptionResult]]:
+        """Process chunks in parallel using ThreadPoolExecutor."""
+        results = []
+        completed_count = 0
+        stop_progress_update = threading.Event()
+        
+        def progress_updater():
+            """Background thread to update progress display."""
+            while not stop_progress_update.is_set():
+                chunk_progress.update()
+                stop_progress_update.wait(0.5)  # Update every 0.5 seconds
+        
+        # Start progress updater thread
+        progress_thread = threading.Thread(target=progress_updater, daemon=True)
+        progress_thread.start()
+        
+        # Initial display
+        print()  # New line for progress
+        
+        try:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all chunks
+                future_to_index = {
+                    executor.submit(
+                        self._process_chunk,
+                        chunk_info, i, len(chunk_infos),
+                        manifest, manifest_path
+                    ): i
+                    for i, chunk_info in enumerate(chunk_infos)
+                }
+                
+                # Mark chunks as started when they begin processing
+                for idx in range(min(max_workers, len(chunk_infos))):
+                    chunk_progress.mark_started(idx)
+                
+                # Process results as they complete
+                for future in as_completed(future_to_index):
+                    idx = future_to_index[future]
+                    try:
+                        result = future.result()
+                        results.append((idx, result))
+                        
+                        # Mark as completed
+                        chunk_progress.mark_completed(idx)
+                        completed_count += 1
+                        
+                        print(f"\n[INFO] ✓ Chunk {idx+1}/{len(chunk_infos)} completed ({completed_count}/{len(chunk_infos)} total)")
+                        
+                        # Save intermediate result
+                        self._save_intermediate_result(result, base_name, idx)
+                        
+                        # Start next chunk if available
+                        next_idx = completed_count + max_workers - 1
+                        if next_idx < len(chunk_infos):
+                            chunk_progress.mark_started(next_idx)
+                        
+                    except Exception as e:
+                        print(f"\n[ERROR] Chunk {idx+1} failed: {e}")
+                        chunk_progress.mark_completed(idx)
+                        raise
+            
+        finally:
+            # Stop progress updater
+            stop_progress_update.set()
+            progress_thread.join(timeout=1.0)
+        
+        # Sort results by index to maintain order
+        results.sort(key=lambda x: x[0])
+        
+        # Write all segments to markdown in correct order
+        print("\n[INFO] Writing all segments to Markdown in order...")
+        for idx, result in results:
+            self.output_writer.append_segments_to_markdown(
+                md_path,
+                result.segments,
+                result.offset,
+                result.emit_guard
+            )
+        print(f"[INFO] ✓ All segments written to Markdown")
+        
+        return results
     
     def _process_chunk(
         self,
