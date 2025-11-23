@@ -9,6 +9,7 @@ from core.models import ChunkInfo, TranscriptionResult
 from infrastructure.audio import AudioUtils, AudioChunker
 from infrastructure.cache import CacheManager
 from infrastructure.io import OutputWriter
+from infrastructure.progress import ChunkProgress
 from .api_client import OpenAITranscriptionClient
 
 
@@ -181,27 +182,48 @@ class TranscriptionPipeline:
         
         # === STAGE 5-9: Process each chunk ===
         print(f"\n[STAGE 5-9] Processing {len(chunk_infos)} chunk(s)...")
+        print(f"[INFO] You can interrupt processing at any time with Ctrl+C")
+        
         results: List[TranscriptionResult] = []
-        for i, chunk_info in enumerate(chunk_infos):
-            print(f"\n--- Processing chunk {i+1}/{len(chunk_infos)} ---")
+        chunk_progress = ChunkProgress(len(chunk_infos))
+        
+        try:
+            for i, chunk_info in enumerate(chunk_infos):
+                # Update progress
+                chunk_progress.update(i)
+                print(f"\n--- Processing chunk {i+1}/{len(chunk_infos)} ---")
+                
+                result = self._process_chunk(
+                    chunk_info, i, len(chunk_infos),
+                    manifest, manifest_path
+                )
+                results.append(result)
+                
+                # === STAGE 8: Save intermediate result ===
+                self._save_intermediate_result(result, base_name, i)
+                
+                # Write to markdown incrementally
+                self.output_writer.append_segments_to_markdown(
+                    md_path,
+                    result.segments,
+                    result.offset,
+                    result.emit_guard
+                )
+                print(f"[INFO] ✓ Appended {len(result.segments)} segments to Markdown (guard {result.emit_guard:.2f}s).")
             
-            result = self._process_chunk(
-                chunk_info, i, len(chunk_infos),
-                manifest, manifest_path
-            )
-            results.append(result)
+            # Show completion
+            chunk_progress.complete()
             
-            # === STAGE 8: Save intermediate result ===
-            self._save_intermediate_result(result, base_name, i)
-            
-            # Write to markdown incrementally
-            self.output_writer.append_segments_to_markdown(
-                md_path,
-                result.segments,
-                result.offset,
-                result.emit_guard
-            )
-            print(f"[INFO] Appended {len(result.segments)} segments to Markdown (guard {result.emit_guard:.2f}s).")
+        except KeyboardInterrupt:
+            print("\n\n[WARN] Processing interrupted by user!")
+            print(f"[INFO] Processed {len(results)}/{len(chunk_infos)} chunks before interruption")
+            print(f"[INFO] Partial results saved:")
+            print(f"  - Markdown: {md_path}")
+            if self.config.get("save_intermediate_results"):
+                print(f"  - Intermediate results: {self.config.get('intermediate_results_dir')}/")
+            print("\n[INFO] You can resume processing by running the script again.")
+            print("[INFO] Already processed chunks will be loaded from cache.\n")
+            raise  # Re-raise to propagate to main()
         
         # === STAGE 10: Finalize outputs ===
         print("\n[STAGE 10] Finalizing outputs...")

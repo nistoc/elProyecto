@@ -73,13 +73,29 @@ print(f"Done! {md_path}")
 
 ### CLI использование
 
-```bash
-# После установки
-agent01 --config config/default.json
+**После установки пакета:**
 
-# Или напрямую
+```bash
+agent01 --config config/default.json
+```
+
+**Запуск БЕЗ установки пакета:**
+
+**Способ 1: Через Python модуль (рекомендуется)**
+```bash
+cd agent01
+pip install -r requirements.txt
 python -m cli.main --config config/default.json
 ```
+
+**Способ 2: Запуск главного скрипта напрямую**
+```bash
+cd agent01
+pip install -r requirements.txt
+python cli/main.py --config config/default.json
+```
+
+> 💡 **Прерывание обработки:** Нажмите `Ctrl+C` в любой момент для остановки. Уже обработанные чанки сохраняются в кеш, и обработка продолжится с места остановки при повторном запуске.
 
 ## 💡 Примеры использования
 
@@ -120,6 +136,7 @@ from agent01.infrastructure.cache import CacheManager
 
 cache = CacheManager("cache")
 cached = cache.get_cached_response(manifest, "chunk.m4a", fingerprint)
+
 ```
 
 ## 🎨 Ключевые возможности
