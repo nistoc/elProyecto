@@ -13,7 +13,7 @@ if readme_file.exists():
 
 setup(
     name="agent01",
-    version="2.0.0",
+    version="2.1.0",
     author="Agent01 Team",
     author_email="",
     description="Modular transcription system with OpenAI API",
