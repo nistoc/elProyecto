@@ -1,4 +1,4 @@
-import { JobSnapshot, StreamEvent } from "./types";
+import type { JobSnapshot, StreamEvent } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3001";
 

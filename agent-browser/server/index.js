@@ -207,6 +207,7 @@ async function runTranscriber(job, jobDir, transcriptPath, rawJsonPath) {
     command: PYTHON_BIN,
     args: ["-m", "cli.main", "--config", configPath],
     cwd: AGENT01_DIR,
+    env: {},
   });
 }
 
@@ -227,6 +228,12 @@ async function runRefiner(job, jobDir, transcriptPath, refinedPath) {
   const runnerSource = `
 import sys, os
 sys.path.insert(0, r"${AGENT03_DIR.replace(/\\/g, "/")}")
+# Load environment variables from .env if available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
 from core.config import Config
 from services.fixer import TranscriptFixer
 
@@ -261,6 +268,7 @@ fixer.fix_transcript_file(
     command: PYTHON_BIN,
     args: [runnerPath],
     cwd: AGENT03_DIR,
+    env: {},
   });
 }
 
@@ -268,7 +276,12 @@ function spawnAndStream({ jobId, label, command, args, cwd, env = {} }) {
   return new Promise((resolve, reject) => {
     const proc = spawn(command, args, {
       cwd,
-      env: { ...process.env, ...env },
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: "utf-8",
+        PYTHONUTF8: "1",
+        ...env,
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
 

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { LogEntry } from "../types";
 
 type Props = {
@@ -7,6 +7,13 @@ type Props = {
 };
 
 export function LogPanel({ logs, emptyLabel }: Props) {
+  const endRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    // Scroll to the latest log when list changes.
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [logs]);
+
   if (!logs.length) {
     return <div className="log-empty">{emptyLabel}</div>;
   }
@@ -21,6 +28,7 @@ export function LogPanel({ logs, emptyLabel }: Props) {
           <span className="log-message">{log.message}</span>
         </div>
       ))}
+      <div ref={endRef} />
     </div>
   );
 }

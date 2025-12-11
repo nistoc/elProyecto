@@ -44,11 +44,20 @@ class OpenAITranscriptionClient:
             print("[FATAL] Missing 'openai' package. Install: pip install openai", file=sys.stderr)
             raise
         
+        timeout_s = None
+        # allow config to override timeout if provided
+        try:
+            from core.config import Config
+            cfg = Config.current()
+            timeout_s = cfg.get("api_timeout_seconds")
+        except Exception:
+            timeout_s = None
+
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=base_url,
             organization=organization,
-            timeout=300.0  # 5 minutes timeout for API calls
+            timeout=timeout_s or 300.0  # default 5 minutes
         )
         self.model = model
         self.fallback_models = fallback_models or ["gpt-4o-mini-transcribe", "whisper-1"]

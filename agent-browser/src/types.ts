@@ -29,3 +29,8 @@ export type StreamEvent =
   | { type: "status"; payload: Partial<JobSnapshot> }
   | { type: "done"; payload?: unknown };
 
+// Runtime placeholders to satisfy value imports (bundler strips types).
+export const JobSnapshot = {} as JobSnapshot;
+export const LogEntry = {} as LogEntry;
+export const StreamEvent = {} as StreamEvent;
+

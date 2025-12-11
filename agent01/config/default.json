@@ -9,12 +9,13 @@
   "openai_organization": null,
   "response_format": "diarized_json",
   "openai_speaker_diarization": true,
+  "api_timeout_seconds": 240,
   "md_output_path": "transcript.md",
   "raw_json_output_path": "openai_response.json",
 
   "pre_split": true,
   "chunk_overlap_sec": 1.0,
-  "target_chunk_mb": 6,
+  "target_chunk_mb": 2,
   "chunking_strategy": "auto",
   "split_workdir": "chunks",
   "ffmpeg_path": "ffmpeg",
@@ -35,7 +36,7 @@
   "intermediate_results_dir": "intermediate_results",
   
   "max_duration_minutes": 0,
-  "parallel_transcription_workers": 7,
+  "parallel_transcription_workers": 12,
   "progress_time_format": "HH:MM:SS.M",
   "clean_before_run": true
 }

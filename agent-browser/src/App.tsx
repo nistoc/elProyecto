@@ -288,12 +288,19 @@ function LogsSection({
   logs: LogEntry[];
   emptyLabel: string;
 }) {
+  const lastLine = logs.length ? logs[logs.length - 1].message : "";
   return (
-    <div className="card">
+    <div className="card log-card">
       <div className="card__header">
         <h3>{title}</h3>
       </div>
       <LogPanel logs={logs} emptyLabel={emptyLabel} />
+      <div className="log-latest">
+        <span className="log-latest__label">Latest:</span>
+        <span className="log-latest__text">
+          {lastLine || "—"}
+        </span>
+      </div>
     </div>
   );
 }

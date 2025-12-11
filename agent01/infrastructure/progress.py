@@ -174,8 +174,8 @@ class ChunkProgress:
         
         for i in range(self.total):
             if i in completed:
-                # Completed chunk
-                chunks_display.append(f"[{i+1}:✓]")
+                # Completed chunk (ASCII-safe marker to avoid Windows cp1251 issues)
+                chunks_display.append(f"[{i+1}:OK]")
             elif i in active_times:
                 # Active chunk - show elapsed time
                 elapsed = current_time - active_times[i]

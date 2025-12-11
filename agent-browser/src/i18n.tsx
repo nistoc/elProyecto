@@ -110,3 +110,6 @@ export function useI18n() {
   return ctx;
 }
 
+// runtime placeholder to satisfy value imports when types are erased
+export const TranslationKey = null as unknown as TranslationKey;
+
