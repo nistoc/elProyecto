@@ -62,10 +62,20 @@ app.post("/api/jobs", upload.single("file"), async (req, res) => {
     status: "queued",
     phase: "idle",
     logs: [],
+    dir: jobDir,
+    cancelDir: path.join(jobDir, "cancel_signals"),
+    chunks: {
+      total: 0,
+      active: [],
+      completed: [],
+      cancelled: [],
+      failed: [],
+    },
     audio: savedAudioPath,
     result: {},
   };
   jobs.set(jobId, job);
+  fs.mkdirSync(job.cancelDir, { recursive: true });
 
   res.json({ jobId });
 
@@ -87,8 +97,30 @@ app.get("/api/jobs/:id", (req, res) => {
     status: job.status,
     phase: job.phase,
     logs: job.logs,
+    chunks: job.chunks,
     result: job.result,
   });
+});
+
+app.post("/api/jobs/:id/chunks/:idx/cancel", (req, res) => {
+  const job = jobs.get(req.params.id);
+  if (!job) {
+    return res.status(404).json({ error: "job not found" });
+  }
+  const idx = Number.parseInt(req.params.idx, 10);
+  if (Number.isNaN(idx) || idx < 0) {
+    return res.status(400).json({ error: "invalid chunk index" });
+  }
+  try {
+    fs.mkdirSync(job.cancelDir, { recursive: true });
+    const flagPath = path.join(job.cancelDir, `cancel_${idx}.flag`);
+    fs.writeFileSync(flagPath, "cancelled");
+    pushLog(job.id, `[${aliases.transcriber}] requested cancel for chunk #${idx + 1}`);
+    broadcast(job.id, { type: "chunk", payload: { status: "cancelled", idx } });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || "failed to cancel" });
+  }
 });
 
 app.get("/api/jobs/:id/stream", (req, res) => {
@@ -117,6 +149,7 @@ app.get("/api/jobs/:id/stream", (req, res) => {
       status: job.status,
       phase: job.phase,
       logs: job.logs,
+      chunks: job.chunks,
       result: job.result,
     },
   });
@@ -158,6 +191,63 @@ function updateJob(jobId, patch) {
   broadcast(jobId, { type: "status", payload: patch });
 }
 
+const CHUNK_MARKER = "@@CHUNK_EVENT";
+
+function updateChunksState(jobId, payload) {
+  const job = jobs.get(jobId);
+  if (!job) return;
+  if (!job.chunks) {
+    job.chunks = { total: 0, active: [], completed: [], cancelled: [], failed: [] };
+  }
+  const state = job.chunks;
+  if (typeof payload.total === "number" && payload.total >= 0) {
+    state.total = payload.total;
+  }
+  if (typeof payload.idx !== "number") {
+    broadcast(jobId, { type: "chunk", payload });
+    return;
+  }
+  const idx = payload.idx;
+  const remove = (arr) => {
+    const pos = arr.indexOf(idx);
+    if (pos >= 0) arr.splice(pos, 1);
+  };
+  remove(state.active);
+  remove(state.completed);
+  remove(state.cancelled);
+  remove(state.failed);
+
+  switch (payload.status) {
+    case "started":
+      state.active.push(idx);
+      break;
+    case "completed":
+      state.completed.push(idx);
+      break;
+    case "cancelled":
+      state.cancelled.push(idx);
+      break;
+    case "failed":
+      state.failed.push(idx);
+      break;
+    default:
+      break;
+  }
+  broadcast(jobId, { type: "chunk", payload });
+}
+
+function tryProcessChunkEvent(jobId, line) {
+  const markerIndex = line.indexOf(CHUNK_MARKER);
+  if (markerIndex === -1) return;
+  const data = line.slice(markerIndex + CHUNK_MARKER.length).trim();
+  try {
+    const payload = JSON.parse(data);
+    updateChunksState(jobId, payload);
+  } catch (err) {
+    console.warn("Failed to parse chunk event", err);
+  }
+}
+
 async function runPipeline(job, jobDir) {
   updateJob(job.id, { status: "running", phase: "transcriber" });
   const transcriptPath = path.join(jobDir, "transcript.md");
@@ -197,6 +287,7 @@ async function runTranscriber(job, jobDir, transcriptPath, rawJsonPath) {
   config.wav_output_dir = path.join(jobDir, "converted_wav");
   config.save_intermediate_results = true;
   config.intermediate_results_dir = path.join(jobDir, "intermediate_results");
+  config.cancel_dir = job.cancelDir;
   config.clean_before_run = false;
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
@@ -223,7 +314,24 @@ async function runRefiner(job, jobDir, transcriptPath, refinedPath) {
   config.save_intermediate = true;
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
+  const apiKey =
+    process.env.OPENAI_API_KEY ||
+    config.openai_api_key ||
+    process.env.AGENT03_OPENAI_API_KEY;
+  if (!apiKey) {
+    pushLog(
+      job.id,
+      `${aliases.refiner}: missing OPENAI_API_KEY (refiner will not start)`,
+      "error",
+    );
+    throw new Error("Refiner missing OPENAI_API_KEY");
+  }
+
   pushLog(job.id, `${aliases.refiner}: starting`);
+  pushLog(
+    job.id,
+    `${aliases.refiner}: cmd=${PYTHON_BIN} args=[${["run_refiner.py"].join(", ")}] cwd=${AGENT03_DIR}`,
+  );
   const runnerPath = path.join(jobDir, "run_refiner.py");
   const runnerSource = `
 import sys, os
@@ -268,7 +376,9 @@ fixer.fix_transcript_file(
     command: PYTHON_BIN,
     args: [runnerPath],
     cwd: AGENT03_DIR,
-    env: {},
+    env: {
+      OPENAI_API_KEY: apiKey,
+    },
   });
 }
 
@@ -285,19 +395,26 @@ function spawnAndStream({ jobId, label, command, args, cwd, env = {} }) {
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    const prefix = `[${label}]`;
+    pushLog(jobId, `${label}: pid ${proc.pid} started (cwd=${cwd})`);
 
-    proc.stdout.on("data", (data) => {
-      pushLog(jobId, `${prefix} ${data.toString().trimEnd()}`);
-    });
-    proc.stderr.on("data", (data) => {
-      pushLog(jobId, `${prefix} ${data.toString().trimEnd()}`, "warn");
-    });
+    const prefix = `[${label}]`;
+    const handleStream = (data, level = "info") => {
+      const text = data.toString();
+      text.split(/\r?\n/).forEach((line) => {
+        if (!line.trim()) return;
+        tryProcessChunkEvent(jobId, line);
+        pushLog(jobId, `${prefix} ${line.trimEnd()}`, level);
+      });
+    };
+
+    proc.stdout.on("data", (data) => handleStream(data, "info"));
+    proc.stderr.on("data", (data) => handleStream(data, "warn"));
     proc.on("error", (err) => {
       pushLog(jobId, `${prefix} failed to start: ${err.message}`, "error");
       reject(err);
     });
     proc.on("close", (code) => {
+      pushLog(jobId, `${label} exited with code ${code}`);
       if (code === 0) {
         pushLog(jobId, `${prefix} finished`);
         resolve(null);

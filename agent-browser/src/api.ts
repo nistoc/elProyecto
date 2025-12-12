@@ -25,6 +25,16 @@ export async function fetchJob(jobId: string): Promise<JobSnapshot> {
   return (await res.json()) as JobSnapshot;
 }
 
+export async function cancelChunk(jobId: string, idx: number) {
+  const res = await fetch(`${API_BASE}/api/jobs/${jobId}/chunks/${idx}/cancel`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    throw new Error(`Cancel failed: ${res.statusText}`);
+  }
+  return (await res.json()) as { ok: boolean };
+}
+
 export function subscribeToJob(
   jobId: string,
   onEvent: (event: StreamEvent) => void,

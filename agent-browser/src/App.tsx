@@ -1,7 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { createJob, fetchJob, subscribeToJob } from "./api";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { cancelChunk, createJob, fetchJob, subscribeToJob } from "./api";
 import { I18nProvider, TranslationKey, useI18n } from "./i18n";
-import { LogEntry, JobSnapshot } from "./types";
+import type {
+  ChunkEventPayload,
+  ChunkState,
+  LogEntry,
+  JobSnapshot,
+} from "./types";
 import { StepCard, StepStatus } from "./components/StepCard";
 import { LogPanel } from "./components/LogPanel";
 
@@ -19,6 +24,60 @@ function AppShell() {
   const [job, setJob] = useState<JobSnapshot | null>(null);
   const [activeStep, setActiveStep] = useState<StepId>("upload");
   const [isSubmitting, setSubmitting] = useState(false);
+  const [logsPaused, setLogsPaused] = useState(false);
+  const [bufferedLogs, setBufferedLogs] = useState<LogEntry[]>([]);
+  const pauseRef = useRef(false);
+
+  const applyChunkEvent = (payload: ChunkEventPayload) => {
+    setJob((prev) => {
+      if (!prev) return prev;
+      const base: ChunkState = prev.chunks || {
+        total: payload.total ?? 0,
+        active: [],
+        completed: [],
+        cancelled: [],
+        failed: [],
+      };
+      const next: ChunkState = {
+        total:
+          typeof payload.total === "number" && payload.total >= 0
+            ? payload.total
+            : base.total,
+        active: [...base.active],
+        completed: [...base.completed],
+        cancelled: [...base.cancelled],
+        failed: [...base.failed],
+      };
+
+      if (typeof payload.idx === "number") {
+        const idx = payload.idx;
+        const remove = (arr: number[]) => arr.filter((x) => x !== idx);
+        next.active = remove(next.active);
+        next.completed = remove(next.completed);
+        next.cancelled = remove(next.cancelled);
+        next.failed = remove(next.failed);
+
+        switch (payload.status) {
+          case "started":
+            next.active.push(idx);
+            break;
+          case "completed":
+            next.completed.push(idx);
+            break;
+          case "cancelled":
+            next.cancelled.push(idx);
+            break;
+          case "failed":
+            next.failed.push(idx);
+            break;
+          default:
+            break;
+        }
+      }
+
+      return { ...prev, chunks: next };
+    });
+  };
 
   useEffect(() => {
     if (!jobId) return;
@@ -34,11 +93,19 @@ function AppShell() {
             return;
           }
           if (event.type === "log") {
+            if (pauseRef.current) {
+              setBufferedLogs((prev) => [...prev, event.payload]);
+              return;
+            }
             setJob((prev) =>
               prev
                 ? { ...prev, logs: [...prev.logs, event.payload] }
                 : prev,
             );
+            return;
+          }
+          if (event.type === "chunk") {
+            applyChunkEvent(event.payload);
             return;
           }
           if (event.type === "status") {
@@ -104,11 +171,40 @@ function AppShell() {
     }
   };
 
+  const handleToggleLogs = () => {
+    if (logsPaused) {
+      pauseRef.current = false;
+      setLogsPaused(false);
+      setJob((prev) =>
+        prev
+          ? { ...prev, logs: [...(prev.logs || []), ...bufferedLogs] }
+          : prev,
+      );
+      setBufferedLogs([]);
+      return;
+    }
+    pauseRef.current = true;
+    setLogsPaused(true);
+  };
+
   const handleReset = () => {
     setFile(null);
     setJobId(null);
     setJob(null);
     setActiveStep("upload");
+    setLogsPaused(false);
+    setBufferedLogs([]);
+    pauseRef.current = false;
+  };
+
+  const handleCancelChunk = async (idx: number) => {
+    if (!jobId) return;
+    try {
+      await cancelChunk(jobId, idx);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to cancel chunk, see server logs.");
+    }
   };
 
   const steps: { id: StepId; title: string; desc: string; badge?: string }[] = [
@@ -205,17 +301,30 @@ function AppShell() {
           )}
 
           {activeStep === "transcriber" && (
-            <LogsSection
-              title={alias.transcriber}
-              logs={logsByStep.transcriber}
-              emptyLabel={t("noLogs")}
-            />
+            <>
+              <ChunkControlPanel
+                state={job?.chunks}
+                onCancel={handleCancelChunk}
+                disabled={!jobId}
+              />
+              <LogsSection
+                title={alias.transcriber}
+                logs={logsByStep.transcriber}
+                emptyLabel={t("noLogs")}
+                paused={logsPaused}
+                bufferedCount={bufferedLogs.length}
+                onTogglePause={handleToggleLogs}
+              />
+            </>
           )}
           {activeStep === "refiner" && (
             <LogsSection
               title={alias.refiner}
               logs={logsByStep.refiner}
               emptyLabel={t("noLogs")}
+              paused={logsPaused}
+              bufferedCount={bufferedLogs.length}
+              onTogglePause={handleToggleLogs}
             />
           )}
           {activeStep === "result" && (
@@ -279,22 +388,131 @@ function UploadCard({
   );
 }
 
+function ChunkControlPanel({
+  state,
+  onCancel,
+  disabled,
+}: {
+  state?: ChunkState;
+  onCancel: (idx: number) => void;
+  disabled?: boolean;
+}) {
+  if (!state) return null;
+  const active = state.active || [];
+  const cancelled = state.cancelled || [];
+  const completed = state.completed || [];
+  const failed = state.failed || [];
+
+  return (
+    <div className="card chunk-card">
+      <div className="card__header">
+        <h3>Chunks</h3>
+        <span className="muted">
+          total: {state.total ?? "—"} • done: {completed.length} • cancelled:{" "}
+          {cancelled.length}
+        </span>
+      </div>
+
+      <div className="chunk-section">
+        <div className="chunk-section__title">Active</div>
+        <div className="chunk-chips">
+          {active.length === 0 && <span className="muted">No active chunks</span>}
+          {active.map((idx) => (
+            <div key={idx} className="chip chip--action">
+              <span>Chunk #{idx + 1}</span>
+              <button
+                className="ghost"
+                onClick={() => onCancel(idx)}
+                disabled={disabled}
+                title="Cancel this chunk"
+              >
+                cancel
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="chunk-section">
+        <div className="chunk-section__title">Cancelled</div>
+        <div className="chunk-chips">
+          {cancelled.length === 0 && (
+            <span className="muted">None cancelled</span>
+          )}
+          {cancelled.map((idx) => (
+            <span key={idx} className="chip chip--muted">
+              #{idx + 1}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="chunk-section">
+        <div className="chunk-section__title">Completed</div>
+        <div className="chunk-chips">
+          {completed.length === 0 && (
+            <span className="muted">Not completed yet</span>
+          )}
+          {completed.map((idx) => (
+            <span key={idx} className="chip chip--ok">
+              #{idx + 1}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {failed.length > 0 && (
+        <div className="chunk-section">
+          <div className="chunk-section__title">Failed</div>
+          <div className="chunk-chips">
+            {failed.map((idx) => (
+              <span key={idx} className="chip chip--warn">
+                #{idx + 1}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LogsSection({
   title,
   logs,
   emptyLabel,
+  paused,
+  bufferedCount,
+  onTogglePause,
 }: {
   title: string;
   logs: LogEntry[];
   emptyLabel: string;
+  paused?: boolean;
+  bufferedCount?: number;
+  onTogglePause?: () => void;
 }) {
   const lastLine = logs.length ? logs[logs.length - 1].message : "";
   return (
     <div className="card log-card">
       <div className="card__header">
         <h3>{title}</h3>
+        {onTogglePause && (
+          <div className="log-toolbar">
+            <button className="ghost" onClick={onTogglePause}>
+              {paused ? "Resume" : "Pause"}
+            </button>
+            {paused && bufferedCount ? (
+              <span className="badge">{bufferedCount} queued</span>
+            ) : null}
+          </div>
+        )}
       </div>
-      <LogPanel logs={logs} emptyLabel={emptyLabel} />
+      <LogPanel
+        logs={logs}
+        emptyLabel={emptyLabel}
+        autoScroll={!paused}
+      />
       <div className="log-latest">
         <span className="log-latest__label">Latest:</span>
         <span className="log-latest__text">

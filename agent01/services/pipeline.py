@@ -3,18 +3,25 @@
 Main transcription pipeline orchestrator.
 """
 import os
+import json
 import shutil
 import time
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+from collections import deque
 from typing import List, Optional, Tuple
 from core.config import Config
 from core.models import ChunkInfo, TranscriptionResult
 from infrastructure.audio import AudioUtils, AudioChunker
 from infrastructure.cache import CacheManager
+from infrastructure.cancellation import CancellationManager
 from infrastructure.io import OutputWriter
 from infrastructure.progress import ChunkProgress
 from .api_client import OpenAITranscriptionClient, RetryableAPIError
+
+
+class ChunkCancelled(Exception):
+    """Raised when a chunk was cancelled by user request."""
 
 
 class TranscriptionPipeline:
@@ -28,6 +35,7 @@ class TranscriptionPipeline:
         self._init_api_client()
         self._init_cache_manager()
         self._init_output_writer()
+        self._init_cancellation()
     
     def _init_chunker(self):
         """Initialize audio chunker if pre-splitting is enabled."""
@@ -61,6 +69,11 @@ class TranscriptionPipeline:
     def _init_output_writer(self):
         """Initialize output writer."""
         self.output_writer = OutputWriter()
+
+    def _init_cancellation(self):
+        """Initialize cancellation manager."""
+        cancel_dir = self.config.get("cancel_dir") or "cancel_signals"
+        self.cancel_manager = CancellationManager(cancel_dir)
     
     def _clean_folders(self):
         """Clean cache and intermediate result folders if enabled in config."""
@@ -184,6 +197,28 @@ class TranscriptionPipeline:
             json.dump(intermediate_data, f, ensure_ascii=False, indent=2)
         
         print(f"[INFO] Saved intermediate result: {intermediate_path}")
+
+    def _emit_chunk_event(
+        self,
+        status: str,
+        index: Optional[int] = None,
+        total: Optional[int] = None,
+        basename: Optional[str] = None,
+        message: Optional[str] = None
+    ):
+        """
+        Emit a structured chunk event line that the Node server can parse.
+        """
+        payload = {
+            "status": status,
+            "idx": index,
+            "total": total,
+            "basename": basename,
+            "message": message,
+        }
+        # Ensure None values are stripped for cleaner payloads
+        payload = {k: v for k, v in payload.items() if v is not None}
+        print(f"@@CHUNK_EVENT {json.dumps(payload)}")
     
     def process_file(self, file_path: str) -> tuple:
         """
@@ -232,6 +267,7 @@ class TranscriptionPipeline:
         # === STAGE 4: Chunk the file if needed ===
         print("\n[STAGE 4] Chunking audio file...")
         chunk_infos = self._prepare_chunks(working_file_path)
+        self._emit_chunk_event("prepared", total=len(chunk_infos))
         
         # === STAGE 5-9: Process each chunk ===
         print(f"\n[STAGE 5-9] Processing {len(chunk_infos)} chunk(s)...")
@@ -243,6 +279,7 @@ class TranscriptionPipeline:
         
         results: List[Tuple[int, TranscriptionResult]] = []  # (index, result) pairs
         failed_chunks: List[Tuple[int, ChunkInfo]] = []  # (index, chunk_info) pairs for retry
+        cancelled_chunks: set = set()
         time_format = self.config.get("progress_time_format", "MMM:SSS.M")
         chunk_progress = ChunkProgress(len(chunk_infos), parallel_workers=max_workers, time_format=time_format)
         
@@ -250,16 +287,22 @@ class TranscriptionPipeline:
         if max_workers > 1 and len(chunk_infos) > 1:
             results, failed_chunks = self._process_chunks_parallel(
                 chunk_infos, manifest, manifest_path, base_name,
-                md_path, chunk_progress, max_workers
+                md_path, chunk_progress, max_workers, cancelled_chunks
             )
         else:
             results, failed_chunks = self._process_chunks_sequential(
                 chunk_infos, manifest, manifest_path, base_name,
-                md_path, chunk_progress
+                md_path, chunk_progress, cancelled_chunks
             )
         
         # Show completion
+        print("[INFO] Back from chunk processing, showing completion...")
+        import sys
+        sys.stdout.flush()
         chunk_progress.complete()
+
+        if cancelled_chunks:
+            print(f"\n[INFO] Skipped cancelled chunk(s): {sorted(cancelled_chunks)}")
         
         # Retry failed chunks if any
         if failed_chunks:
@@ -276,6 +319,8 @@ class TranscriptionPipeline:
         
         # === STAGE 10: Finalize outputs ===
         print("\n[STAGE 10] Finalizing outputs...")
+        import sys
+        sys.stdout.flush()
         self.output_writer.finalize_markdown(md_path)
         
         # Extract just the results (without indices) for saving
@@ -288,6 +333,8 @@ class TranscriptionPipeline:
         if self.config.get("save_intermediate_results"):
             print(f"  - Intermediate results: {self.config.get('intermediate_results_dir')}/")
         
+        import sys
+        sys.stdout.flush()
         return md_path, json_path
     
     def _prepare_chunks(self, file_path: str) -> List[ChunkInfo]:
@@ -311,6 +358,15 @@ class TranscriptionPipeline:
             reencode_bitrate=int(self.config.get("reencode_bitrate_kbps")),
             max_duration_minutes=float(self.config.get("max_duration_minutes", 0))
         )
+
+    @staticmethod
+    def _silence_future(future):
+        """Consume future result to avoid 'exception was never retrieved' warnings."""
+        try:
+            future.result()
+        except Exception:
+            pass
+
     
     def _process_chunks_sequential(
         self,
@@ -319,7 +375,8 @@ class TranscriptionPipeline:
         manifest_path: str,
         base_name: str,
         md_path: str,
-        chunk_progress: ChunkProgress
+        chunk_progress: ChunkProgress,
+        cancelled_chunks: set
     ) -> Tuple[List[Tuple[int, TranscriptionResult]], List[Tuple[int, ChunkInfo]]]:
         """Process chunks sequentially (single-threaded)."""
         results = []
@@ -330,8 +387,16 @@ class TranscriptionPipeline:
         print()  # New line after progress
         
         for i, chunk_info in enumerate(chunk_infos):
+            # Skip if already cancelled
+            if self.cancel_manager.is_cancelled(i):
+                cancelled_chunks.add(i)
+                chunk_progress.mark_cancelled(i)
+                self._emit_chunk_event("cancelled", i, len(chunk_infos))
+                continue
+
             # Mark as started
             chunk_progress.mark_started(i)
+            self._emit_chunk_event("started", i, len(chunk_infos), os.path.basename(chunk_info.path))
             chunk_progress.update()
             print(f"\n--- Processing chunk {i+1}/{len(chunk_infos)} ---")
             
@@ -344,6 +409,7 @@ class TranscriptionPipeline:
                 
                 # Mark as completed
                 chunk_progress.mark_completed(i)
+                self._emit_chunk_event("completed", i, len(chunk_infos), os.path.basename(chunk_info.path))
                 
                 # Save intermediate result
                 self._save_intermediate_result(result, base_name, i)
@@ -366,6 +432,13 @@ class TranscriptionPipeline:
                 chunk_progress.mark_completed(i)
                 failed_chunks.append((i, chunk_infos[i]))
                 continue  # Continue with next chunk
+
+            except ChunkCancelled:
+                print(f"\n[INFO] Chunk {i+1} cancelled by user request")
+                cancelled_chunks.add(i)
+                chunk_progress.mark_cancelled(i)
+                self._emit_chunk_event("cancelled", i, len(chunk_infos))
+                continue
                 
             except Exception as e:
                 error_msg = str(e)
@@ -401,13 +474,15 @@ class TranscriptionPipeline:
         base_name: str,
         md_path: str,
         chunk_progress: ChunkProgress,
-        max_workers: int
+        max_workers: int,
+        cancelled_chunks: set
     ) -> Tuple[List[Tuple[int, TranscriptionResult]], List[Tuple[int, ChunkInfo]]]:
         """Process chunks in parallel using ThreadPoolExecutor."""
         results = []
         failed_chunks = []
         completed_count = 0
         stop_progress_update = threading.Event()
+        fatal_error = None
         
         def progress_updater():
             """Background thread to update progress display."""
@@ -422,94 +497,131 @@ class TranscriptionPipeline:
         # Initial display
         print()  # New line for progress
         
+        executor = ThreadPoolExecutor(max_workers=max_workers)
         try:
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # Submit all chunks
-                future_to_index = {
-                    executor.submit(
-                        self._process_chunk,
-                        chunk_info, i, len(chunk_infos),
-                        manifest, manifest_path
-                    ): i
-                    for i, chunk_info in enumerate(chunk_infos)
-                }
-                
-                # Mark chunks as started when they begin processing
-                for idx in range(min(max_workers, len(chunk_infos))):
-                    chunk_progress.mark_started(idx)
-                
-                # Process results as they complete
-                # Set timeout based on number of chunks (5 min per chunk)
-                fatal_error = None
-                timeout_seconds = len(chunk_infos) * 300  # 5 minutes per chunk
-                print(f"[INFO] Total timeout: {timeout_seconds//60} minutes")
-                
-                try:
-                    for future in as_completed(future_to_index, timeout=timeout_seconds):
-                        idx = future_to_index[future]
+            # Submit only up to max_workers; enqueue the rest
+            future_to_index = {}
+            index_to_future = {}
+            queue = deque(range(len(chunk_infos)))
+            pending = set()
+
+            def submit_next():
+                if not queue:
+                    return
+                idx = queue.popleft()
+                # Skip if already cancelled before submission
+                if self.cancel_manager.is_cancelled(idx):
+                    cancelled_chunks.add(idx)
+                    chunk_progress.mark_cancelled(idx)
+                    self._emit_chunk_event("cancelled", idx, len(chunk_infos))
+                    return submit_next()
+                chunk_info = chunk_infos[idx]
+                fut = executor.submit(
+                    self._process_chunk,
+                    chunk_info, idx, len(chunk_infos),
+                    manifest, manifest_path
+                )
+                future_to_index[fut] = idx
+                index_to_future[idx] = fut
+                pending.add(fut)
+                chunk_progress.mark_started(idx)
+                self._emit_chunk_event("started", idx, len(chunk_infos), os.path.basename(chunk_info.path))
+
+            for _ in range(min(max_workers, len(chunk_infos))):
+                submit_next()
+            
+            while pending and fatal_error is None:
+                # Check for external cancellation requests
+                newly_cancelled = self.cancel_manager.poll()
+                for idx in newly_cancelled:
+                    fut = index_to_future.pop(idx, None)
+                    if fut and fut in pending:
+                        if not fut.cancel():
+                            fut.add_done_callback(self._silence_future)
+                        pending.discard(fut)
+                        cancelled_chunks.add(idx)
+                        chunk_progress.mark_cancelled(idx)
+                        completed_count += 1
+                        self._emit_chunk_event("cancelled", idx, len(chunk_infos))
+                        print(f"\n[INFO] Chunk {idx+1} cancellation requested - skipping result wait")
+                    elif idx in queue:
                         try:
-                            result = future.result(timeout=5)  # 5 seconds to get ready result
-                            results.append((idx, result))
-                            
-                            # Mark as completed
-                            chunk_progress.mark_completed(idx)
-                            completed_count += 1
-                            
-                            print(f"\n[INFO] OK Chunk {idx+1}/{len(chunk_infos)} completed ({completed_count}/{len(chunk_infos)} total)")
-                            
-                            # Save intermediate result
-                            self._save_intermediate_result(result, base_name, idx)
-                            
-                            # Start next chunk if available
-                            next_idx = completed_count + max_workers - 1
-                            if next_idx < len(chunk_infos):
-                                chunk_progress.mark_started(next_idx)
-                            
-                        except TimeoutError as e:
-                            print(f"\n[ERROR] Chunk {idx+1} timed out getting result: {e}")
-                            chunk_progress.mark_completed(idx)
-                            completed_count += 1
-                            # Timeout is not fatal - continue with other chunks
-                            
-                        except RetryableAPIError as e:
-                            # Server 500 error - save for retry later
-                            print(f"\n[WARN] Chunk {idx+1} failed with Server 500, will retry later")
-                            chunk_progress.mark_completed(idx)
-                            failed_chunks.append((idx, chunk_infos[idx]))
-                            completed_count += 1
-                            # Continue with other chunks
-                            
-                        except Exception as e:
-                            error_msg = str(e)
-                            print(f"\n[ERROR] Chunk {idx+1} failed: {e}")
-                            chunk_progress.mark_completed(idx)
-                            
-                            # Check if this is a fatal error that should stop all processing
-                            fatal_errors = [
-                                "authentication",
-                                "api_key",
-                                "invalid_api_key", 
-                                "insufficient_quota",
-                                "rate_limit_exceeded",
-                                "permission_denied",
-                                "invalid_request_error"
-                            ]
-                            
-                            if any(err in error_msg.lower() for err in fatal_errors):
-                                print(f"[FATAL] Critical API error detected - stopping all processing")
-                                fatal_error = e
-                                break  # Stop processing more chunks
-                            else:
-                                # Non-fatal error - continue with other chunks
-                                completed_count += 1
-                                print(f"[WARN] Continuing with remaining chunks...")
+                            queue.remove(idx)
+                        except ValueError:
+                            pass
+                        cancelled_chunks.add(idx)
+                        chunk_progress.mark_cancelled(idx)
+                        self._emit_chunk_event("cancelled", idx, len(chunk_infos))
                 
-                except TimeoutError:
-                    print(f"\n[ERROR] Timeout waiting for chunks to complete")
-                    print(f"[INFO] {completed_count}/{len(chunk_infos)} chunks completed before timeout")
-                    print(f"[WARN] Some chunks are taking too long - they will be skipped")
-                    # Note: We can't actually stop threads that are already running
-                    # They will continue but we won't wait for their results
+                if not pending:
+                    break
+                
+                done, pending = wait(pending, timeout=0.5, return_when=FIRST_COMPLETED)
+                if not done:
+                    continue
+                
+                for future in done:
+                    idx = future_to_index.get(future)
+                    if idx is None:
+                        continue
+                    try:
+                        result = future.result()
+                        results.append((idx, result))
+                        
+                        # Mark as completed
+                        chunk_progress.mark_completed(idx)
+                        completed_count += 1
+                        
+                        print(f"\n[INFO] OK Chunk {idx+1}/{len(chunk_infos)} completed ({completed_count}/{len(chunk_infos)} total)")
+                        self._emit_chunk_event("completed", idx, len(chunk_infos), os.path.basename(chunk_infos[idx].path))
+                        
+                        # Save intermediate result
+                        self._save_intermediate_result(result, base_name, idx)
+                        
+                    except ChunkCancelled:
+                        print(f"\n[INFO] Chunk {idx+1} cancelled by user request")
+                        cancelled_chunks.add(idx)
+                        chunk_progress.mark_cancelled(idx)
+                        completed_count += 1
+                        self._emit_chunk_event("cancelled", idx, len(chunk_infos))
+                        
+                    except RetryableAPIError:
+                        # Server 500 error - save for retry later
+                        print(f"\n[WARN] Chunk {idx+1} failed with Server 500, will retry later")
+                        chunk_progress.mark_completed(idx)
+                        failed_chunks.append((idx, chunk_infos[idx]))
+                        completed_count += 1
+                        self._emit_chunk_event("failed", idx, len(chunk_infos))
+                        
+                    except Exception as e:
+                        error_msg = str(e)
+                        print(f"\n[ERROR] Chunk {idx+1} failed: {e}")
+                        chunk_progress.mark_completed(idx)
+                        
+                        # Check if this is a fatal error that should stop all processing
+                        fatal_errors = [
+                            "authentication",
+                            "api_key",
+                            "invalid_api_key", 
+                            "insufficient_quota",
+                            "rate_limit_exceeded",
+                            "permission_denied",
+                            "invalid_request_error"
+                        ]
+                        
+                        if any(err in error_msg.lower() for err in fatal_errors):
+                            print(f"[FATAL] Critical API error detected - stopping all processing")
+                            fatal_error = e
+                            break  # Stop processing more chunks
+                        else:
+                            # Non-fatal error - continue with other chunks
+                            completed_count += 1
+                            self._emit_chunk_event("failed", idx, len(chunk_infos), message=str(e))
+                            print(f"[WARN] Continuing with remaining chunks...")
+
+                    # Submit next chunk if there is capacity
+                    while len(pending) < max_workers and queue and fatal_error is None:
+                        submit_next()
             
         finally:
             # Stop progress updater
@@ -518,6 +630,13 @@ class TranscriptionPipeline:
                 progress_thread.join(timeout=2.0)
                 if progress_thread.is_alive():
                     print("\n[WARN] Progress updater thread did not stop cleanly")
+            # Shutdown executor without waiting - hanging API calls should not block exit
+            print("[INFO] Initiating executor shutdown...")
+            import sys
+            sys.stdout.flush()
+            executor.shutdown(wait=False, cancel_futures=True)
+            print("[INFO] Executor shutdown complete")
+            sys.stdout.flush()
         
         # Check for fatal error
         if fatal_error:
@@ -525,11 +644,13 @@ class TranscriptionPipeline:
             print(f"[INFO] {completed_count}/{len(chunk_infos)} chunks completed before error")
             raise RuntimeError(f"Transcription failed with critical error: {fatal_error}")
         
-        # Check if all chunks completed
-        if len(results) < len(chunk_infos):
-            missing_chunks = set(range(len(chunk_infos))) - {idx for idx, _ in results}
+        processed_indexes = {idx for idx, _ in results} | {idx for idx, _ in failed_chunks} | set(cancelled_chunks)
+        missing_chunks = set(range(len(chunk_infos))) - processed_indexes
+        if missing_chunks:
             print(f"\n[WARN] Not all chunks completed! Missing: {sorted(missing_chunks)}")
-            print(f"[INFO] Processed {len(results)}/{len(chunk_infos)} chunks")
+            print(f"[INFO] Processed {len(results)}/{len(chunk_infos)} chunks (excluding failures/cancels)")
+        if cancelled_chunks:
+            print(f"[WARN] Cancelled chunks skipped: {sorted(cancelled_chunks)}")
         
         # Sort results by index to maintain order
         results.sort(key=lambda x: x[0])
@@ -544,6 +665,10 @@ class TranscriptionPipeline:
                 result.emit_guard
             )
         print(f"[INFO] OK All segments written to Markdown")
+        import sys
+        sys.stdout.flush()
+        print("[INFO] Returning from _process_chunks_parallel...")
+        sys.stdout.flush()
         
         return results, failed_chunks
     
@@ -559,6 +684,10 @@ class TranscriptionPipeline:
         results = []
         
         for idx, chunk_info in failed_chunks:
+            if self.cancel_manager.is_cancelled(idx):
+                print(f"\n[RETRY] Skipping chunk {idx+1} retry - cancelled by user")
+                self._emit_chunk_event("cancelled", idx, len(failed_chunks))
+                continue
             try:
                 print(f"\n[RETRY] Processing chunk {idx+1} (attempt 2/2)...")
                 # Add delay before retry to give server time to recover
@@ -598,6 +727,10 @@ class TranscriptionPipeline:
         """Process a single chunk with caching."""
         chunk_basename = os.path.basename(chunk_info.path)
         print(f"[INFO] Processing chunk {index+1}/{total}: {chunk_basename}")
+
+        # Early exit if cancellation was already requested
+        if self.cancel_manager.is_cancelled(index):
+            raise ChunkCancelled(f"Chunk {index+1} cancelled before start")
         
         # Calculate fingerprint
         fingerprint = self.cache_manager.get_file_fingerprint(chunk_info.path)
@@ -611,6 +744,8 @@ class TranscriptionPipeline:
             print("[CACHE] Using cached response for chunk.")
             raw_response = cached_response
         else:
+            if self.cancel_manager.is_cancelled(index):
+                raise ChunkCancelled(f"Chunk {index+1} cancelled before API call")
             # Transcribe with API
             print(f"[API] Sending chunk {index+1}/{total} to API...")
             try:
@@ -640,6 +775,9 @@ class TranscriptionPipeline:
             self.output_writer.save_per_chunk_json(
                 chunk_basename, raw_response, per_chunk_dir
             )
+
+        if self.cancel_manager.is_cancelled(index):
+            raise ChunkCancelled(f"Chunk {index+1} cancelled after API response")
         
         # Parse segments
         segments = self.api_client.parse_segments(raw_response)

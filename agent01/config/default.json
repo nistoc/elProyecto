@@ -14,14 +14,15 @@
   "raw_json_output_path": "openai_response.json",
 
   "pre_split": true,
-  "chunk_overlap_sec": 1.0,
+  "chunk_overlap_sec": 1.2,
   "target_chunk_mb": 2,
   "chunking_strategy": "auto",
   "split_workdir": "chunks",
+  "cancel_dir": "cancel_signals",
   "ffmpeg_path": "ffmpeg",
   "ffprobe_path": "ffprobe",
   "reencode_if_needed": true,
-  "reencode_bitrate_kbps": 64,
+  "reencode_bitrate_kbps": 128,
   "concat_markdown": true,
   "chunk_naming": "{base}_part_%03d.m4a",
   "fallback_models": ["gpt-4o-mini-transcribe", "whisper-1"],
@@ -36,7 +37,7 @@
   "intermediate_results_dir": "intermediate_results",
   
   "max_duration_minutes": 0,
-  "parallel_transcription_workers": 12,
+  "parallel_transcription_workers": 15,
   "progress_time_format": "HH:MM:SS.M",
   "clean_before_run": true
 }

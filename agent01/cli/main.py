@@ -61,11 +61,18 @@ def main():
             print(f"OK Markdown: {md_path}")
             print(f"OK JSON: {json_path}")
         
+        sys.stdout.flush()
+        sys.stderr.flush()
+        # Force exit to avoid waiting for non-daemon threads
+        os._exit(0)
+        
     except Exception as e:
         print(f"[FATAL] {e}", file=sys.stderr)
         import traceback
         traceback.print_exc()
-        sys.exit(1)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(1)
 
 
 if __name__ == "__main__":

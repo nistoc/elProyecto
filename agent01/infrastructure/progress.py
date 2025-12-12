@@ -120,6 +120,7 @@ class ChunkProgress:
         self.time_format = time_format
         self.start_time = time.time()
         self._completed_chunks = set()  # Track completed chunks
+        self._cancelled_chunks = set()  # Track cancelled chunks
         self._chunk_start_times = {}  # Track start time for each active chunk
         self._lock = threading.Lock()
     
@@ -132,6 +133,13 @@ class ChunkProgress:
         """Mark chunk as completed."""
         with self._lock:
             self._completed_chunks.add(chunk_idx)
+            self._chunk_start_times.pop(chunk_idx, None)
+            self.current += 1
+
+    def mark_cancelled(self, chunk_idx: int):
+        """Mark chunk as cancelled."""
+        with self._lock:
+            self._cancelled_chunks.add(chunk_idx)
             self._chunk_start_times.pop(chunk_idx, None)
             self.current += 1
     
@@ -176,6 +184,8 @@ class ChunkProgress:
             if i in completed:
                 # Completed chunk (ASCII-safe marker to avoid Windows cp1251 issues)
                 chunks_display.append(f"[{i+1}:OK]")
+            elif i in self._cancelled_chunks:
+                chunks_display.append(f"[{i+1}:CANCEL]")
             elif i in active_times:
                 # Active chunk - show elapsed time
                 elapsed = current_time - active_times[i]
@@ -191,7 +201,7 @@ class ChunkProgress:
     
     def complete(self):
         """Mark progress as complete."""
-        # Final update to show all completed
+        # Final update to show all completed/cancelled
         self.update()
         
         elapsed = time.time() - self.start_time
@@ -207,5 +217,10 @@ class ChunkProgress:
             mins = int((elapsed % 3600) // 60)
             time_str = f"{hours}h {mins}m"
         
-        print(f"\n\n✅ All {self.total} chunks processed successfully! Total time: {time_str}\n")
+        cancelled = len(self._cancelled_chunks)
+        completed = len(self._completed_chunks)
+        print(
+            f"\n\n✅ Completed {completed}/{self.total} chunks"
+            f" (cancelled {cancelled}). Total time: {time_str}\n"
+        )
 

@@ -42,6 +42,7 @@ class Config:
             "pre_split": True,
             "target_chunk_mb": 24.5,
             "split_workdir": "chunks",
+            "cancel_dir": "cancel_signals",
             "ffmpeg_path": "ffmpeg",
             "ffprobe_path": "ffprobe",
             "reencode_if_needed": True,

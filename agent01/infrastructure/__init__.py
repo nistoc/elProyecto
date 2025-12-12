@@ -13,6 +13,7 @@ from .audio import AudioUtils, AudioChunker
 from .cache import CacheManager
 from .io import OutputWriter
 from .progress import ProgressIndicator, ChunkProgress
+from .cancellation import CancellationManager
 
 __all__ = [
     "AudioUtils",
@@ -21,5 +22,6 @@ __all__ = [
     "OutputWriter",
     "ProgressIndicator",
     "ChunkProgress",
+    "CancellationManager",
 ]
 
