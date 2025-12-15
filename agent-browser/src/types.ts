@@ -47,8 +47,3 @@ export type StreamEvent =
   | { type: "chunk"; payload: ChunkEventPayload }
   | { type: "done"; payload?: unknown };
 
-// Runtime placeholders to satisfy value imports (bundler strips types).
-export const JobSnapshot = {} as JobSnapshot;
-export const LogEntry = {} as LogEntry;
-export const StreamEvent = {} as StreamEvent;
-

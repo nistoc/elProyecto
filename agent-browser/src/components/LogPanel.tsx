@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { LogEntry } from "../types";
+import type { LogEntry } from "../types";
 
 type Props = {
   logs: LogEntry[];

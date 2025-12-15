@@ -1,8 +1,6 @@
 import React from "react";
 
 export type StepStatus = "waiting" | "running" | "done" | "failed";
-// runtime placeholder to satisfy value imports when types are erased
-export const StepStatus = null as unknown as StepStatus;
 
 type Props = {
   title: string;
@@ -48,4 +46,3 @@ export function StepCard({
     </button>
   );
 }
-

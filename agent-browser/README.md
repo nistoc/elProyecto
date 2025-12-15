@@ -12,18 +12,45 @@
 - Прочее: `concurrently` для одновременного запуска UI и API.
 
 ## Структура
+
 ```
 agent-browser/
-├─ src/                 # React UI (одно окно со степами)
-│  ├─ App.tsx           # Логика шагов, загрузка файла, подписка на SSE
-│  ├─ api.ts            # fetch + SSE клиент
-│  ├─ i18n.ts           # контекст перевода (EN/RU/ES)
-│  ├─ components/       # StepCard, LogPanel
-│  └─ style.css         # оформление
-├─ server/index.js      # Express + SSE + запуск Python агентов
-├─ public/              # статические файлы
-├─ index.html           # точка входа Vite
-└─ package.json         # скрипты и зависимости
+├─ src/                      # React UI
+│  ├─ App.tsx                # Главный компонент (использует хуки)
+│  ├─ api.ts                 # API клиент + SSE с reconnect
+│  ├─ i18n.tsx               # Контекст перевода (EN/RU/ES)
+│  ├─ types.ts               # TypeScript типы
+│  ├─ style.css              # Стили
+│  ├─ main.tsx               # Точка входа React
+│  ├─ components/            # UI компоненты
+│  │  ├─ index.ts            # Barrel export
+│  │  ├─ StepCard.tsx        # Карточка шага
+│  │  ├─ LogPanel.tsx        # Панель логов
+│  │  ├─ UploadCard.tsx      # Загрузка файла
+│  │  ├─ ChunkControlPanel.tsx # Управление чанками
+│  │  ├─ LogsSection.tsx     # Секция логов с паузой
+│  │  └─ ResultSection.tsx   # Результаты и ссылки
+│  └─ hooks/                 # React хуки
+│     ├─ index.ts            # Barrel export
+│     ├─ useJob.ts           # Главный хук для работы с job
+│     ├─ useChunkState.ts    # Управление состоянием чанков
+│     └─ useLogBuffer.ts     # Буферизация логов при паузе
+├─ server/                   # Express API
+│  ├─ index.js               # Точка входа, middleware
+│  ├─ config.js              # Конфигурация путей и переменных
+│  ├─ routes/
+│  │  └─ jobs.js             # API роуты для jobs
+│  ├─ services/
+│  │  ├─ jobStore.js         # In-memory хранилище jobs
+│  │  ├─ broadcaster.js      # SSE broadcasting + логирование
+│  │  ├─ chunkState.js       # Управление состоянием чанков
+│  │  └─ pipeline.js         # Запуск Python агентов
+│  └─ utils/
+│     └─ spawn.js            # Helper для spawn процессов
+├─ public/                   # Статические файлы
+├─ runtime/                  # Артефакты (создаётся автоматически)
+├─ index.html                # Точка входа Vite
+└─ package.json              # Скрипты и зависимости
 ```
 
 ## Логика работы
@@ -37,8 +64,11 @@ agent-browser/
 ## API (локально)
 - `POST /api/jobs` — создать задачу, form-data `file`.
 - `GET /api/jobs/:id` — снепшот статуса/артефактов.
-- `GET /api/jobs/:id/stream` — SSE события: `snapshot | log | status | done`.
+- `GET /api/jobs/:id/stream` — SSE события: `snapshot | log | status | chunk | done`.
+- `POST /api/jobs/:id/chunks/:idx/cancel` — отменить чанк.
+- `GET /health` — health check.
 - Статика: `/runtime/**` (артефакты).
+
 Переменные: `PORT` (по умолчанию 3001), `PYTHON_BIN` (по умолчанию `python`), `OPENAI_API_KEY` должен быть в окружении (делегируется агентам).
 
 ## Запуск (dev)
@@ -59,14 +89,14 @@ npm run build   # создает dist/
 Для прод-сервинга потребуется отдельный сервер для статики `dist/` и поднятый `server/index.js` (или объединить в один Node runtime).
 
 ## Архитектурные заметки
-- **Разделение задач:** UI (React) и API (Express) в одном репо для простоты разработки; Python остаётся в независимых директориях.
-- **SSE для прогресса:** минимальная зависимость, работает в браузерах без доп. бэкендов.
+- **Модульная структура:** Frontend разбит на компоненты и хуки; Backend разбит на routes, services, utils.
+- **SSE с reconnect:** Клиент автоматически переподключается с exponential backoff (до 5 попыток).
+- **Разделение ответственности:** UI логика в хуках (`useJob`), API взаимодействие в `api.ts`, состояние в services.
 - **Конфиги per job:** генерируются в `runtime/{jobId}`; кэш/артефакты не пересекаются.
 - **Без БД:** in-memory стор для статуса и подписчиков; можно заменить на Redis/DB при необходимости.
-- **I18n:** лёгкий контекст; расширяется добавлением ключей в `i18n.ts`.
+- **I18n:** лёгкий контекст; расширяется добавлением ключей в `i18n.tsx`.
 
 ## Известные требования/ограничения
 - Нужен `OPENAI_API_KEY` доступный Python-агентам.
 - На Windows убедитесь, что `python`, `ffmpeg`, `ffprobe` доступны в PATH; иначе укажите `PYTHON_BIN`.
 - CORS открыт (`*`) для локальной разработки; для продакшена сузьте origin.
-

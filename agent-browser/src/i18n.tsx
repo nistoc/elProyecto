@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import React, { createContext, useContext, useMemo, useState } from "react";
 
 export type Locale = "en" | "ru" | "es";
 
@@ -80,7 +80,7 @@ const messages: Messages = {
   },
 };
 
-export type TranslationKey = keyof typeof messages["en"];
+export type TranslationKey = keyof (typeof messages)["en"];
 
 type I18nContextValue = {
   locale: Locale;
@@ -109,7 +109,3 @@ export function useI18n() {
   }
   return ctx;
 }
-
-// runtime placeholder to satisfy value imports when types are erased
-export const TranslationKey = null as unknown as TranslationKey;
-
