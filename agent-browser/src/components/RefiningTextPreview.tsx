@@ -113,7 +113,7 @@ export function RefiningTextPreview({ logs, onSkipBatch, isRefining }: Props) {
       <div
         className="refining-text-preview"
         style={{
-          height: "300px",
+          height: "700px",
           overflow: "auto",
           padding: "12px 16px",
           backgroundColor: "#0f172a",

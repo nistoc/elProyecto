@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { I18nProvider, useI18n } from "./i18n";
 import { useJob } from "./hooks";
 import type { StepId } from "./hooks";
@@ -57,6 +57,32 @@ function AppShell() {
   React.useEffect(() => {
     setSelectedChunkIndex(null);
   }, [jobId]);
+
+  // Filter out refining text from logs (text between [REFINE_TEXT_START] and [REFINE_TEXT_END])
+  // This text should only be shown in RefiningTextPreview, not in the logs panel
+  const filteredRefinerLogs = useMemo(() => {
+    const logs = logsByStep.refiner;
+    const filtered = [];
+    let inRefineBlock = false;
+    
+    for (const log of logs) {
+      const msg = log.message;
+      
+      if (msg.includes("[REFINE_TEXT_START]")) {
+        inRefineBlock = true;
+        continue;
+      }
+      if (msg.includes("[REFINE_TEXT_END]")) {
+        inRefineBlock = false;
+        continue;
+      }
+      if (!inRefineBlock) {
+        filtered.push(log);
+      }
+    }
+    
+    return filtered;
+  }, [logsByStep.refiner]);
 
   const steps: { id: StepId; title: string; desc: string; badge?: string }[] = [
     { id: "upload", title: t("uploadStep"), desc: t("uploadDesc") },
@@ -266,7 +292,7 @@ function AppShell() {
               )}
               <LogsSection
                 title={aliases.refiner}
-                logs={logsByStep.refiner}
+                logs={filteredRefinerLogs}
                 emptyLabel={t("noLogs")}
                 paused={logsPaused}
                 bufferedCount={bufferedCount}
