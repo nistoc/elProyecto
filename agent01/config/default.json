@@ -37,7 +37,7 @@
   "intermediate_results_dir": "intermediate_results",
   
   "max_duration_minutes": 0,
-  "parallel_transcription_workers": 15,
+  "parallel_transcription_workers": 20,
   "progress_time_format": "HH:MM:SS.M",
   "clean_before_run": true
 }

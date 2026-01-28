@@ -128,7 +128,24 @@ class TranscriptFixer:
         fixed_content = []
         previous_context = None
         
+        # Get job directory from output path to check for pause flag
+        job_dir = os.path.dirname(output_path)
+        pause_flag_path = os.path.join(job_dir, "pause_agent.flag")
+        
         for batch_info in batches:
+            # Check for pause flag before processing batch
+            while os.path.exists(pause_flag_path):
+                try:
+                    paused_agent = open(pause_flag_path, 'r').read().strip()
+                    if paused_agent == "refiner":
+                        print(f"[PAUSE] Agent paused, waiting... (batch {batch_info.index + 1}/{len(batches)} will start when resumed)")
+                        import time
+                        time.sleep(1.0)  # Wait 1 second and check again
+                        continue
+                except:
+                    pass
+                break  # If file doesn't exist or error, continue
+            
             # Add context from previous batch
             if previous_context and context_lines > 0:
                 batch_info.context = previous_context[-context_lines:]

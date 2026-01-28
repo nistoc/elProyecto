@@ -74,6 +74,10 @@ class TranscriptionPipeline:
         """Initialize cancellation manager."""
         cancel_dir = self.config.get("cancel_dir") or "cancel_signals"
         self.cancel_manager = CancellationManager(cancel_dir)
+        # Check for pause flag - it's in the job directory root, not in cancel_signals
+        # cancel_dir is like "runtime/JOB_ID/cancel_signals", so go up one level
+        job_dir = os.path.dirname(cancel_dir) if os.path.basename(cancel_dir) == "cancel_signals" else cancel_dir
+        self.pause_flag_path = os.path.join(job_dir, "pause_agent.flag")
     
     def _clean_folders(self):
         """Clean cache and intermediate result folders if enabled in config."""
@@ -488,7 +492,7 @@ class TranscriptionPipeline:
             """Background thread to update progress display."""
             while not stop_progress_update.is_set():
                 chunk_progress.update()
-                stop_progress_update.wait(0.5)  # Update every 0.5 seconds
+                stop_progress_update.wait(2.0)  # Update every 2 seconds (reduced frequency)
         
         # Start progress updater thread
         progress_thread = threading.Thread(target=progress_updater, daemon=True)
@@ -508,6 +512,15 @@ class TranscriptionPipeline:
             def submit_next():
                 if not queue:
                     return
+                # Check for pause flag - don't submit new requests if paused
+                if os.path.exists(self.pause_flag_path):
+                    try:
+                        paused_agent = open(self.pause_flag_path, 'r').read().strip()
+                        if paused_agent == "transcriber":
+                            # Don't submit new tasks when paused
+                            return
+                    except:
+                        pass
                 idx = queue.popleft()
                 # Skip if already cancelled before submission
                 if self.cancel_manager.is_cancelled(idx):
@@ -531,6 +544,16 @@ class TranscriptionPipeline:
                 submit_next()
             
             while pending and fatal_error is None:
+                # Check for pause flag - if paused, don't submit new tasks but process completed ones
+                is_paused = False
+                if os.path.exists(self.pause_flag_path):
+                    try:
+                        paused_agent = open(self.pause_flag_path, 'r').read().strip()
+                        if paused_agent == "transcriber":
+                            is_paused = True
+                    except:
+                        pass
+                
                 # Check for external cancellation requests
                 newly_cancelled = self.cancel_manager.poll()
                 for idx in newly_cancelled:
@@ -558,6 +581,10 @@ class TranscriptionPipeline:
                 
                 done, pending = wait(pending, timeout=0.5, return_when=FIRST_COMPLETED)
                 if not done:
+                    # If paused and no tasks completed, wait a bit longer before checking again
+                    if is_paused:
+                        import time
+                        time.sleep(0.5)
                     continue
                 
                 for future in done:
@@ -619,8 +646,8 @@ class TranscriptionPipeline:
                             self._emit_chunk_event("failed", idx, len(chunk_infos), message=str(e))
                             print(f"[WARN] Continuing with remaining chunks...")
 
-                    # Submit next chunk if there is capacity
-                    while len(pending) < max_workers and queue and fatal_error is None:
+                    # Submit next chunk if there is capacity (only if not paused)
+                    while len(pending) < max_workers and queue and fatal_error is None and not is_paused:
                         submit_next()
             
         finally:

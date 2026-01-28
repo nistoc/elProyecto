@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 .env
+runtime
+chunks
+сhunks_json

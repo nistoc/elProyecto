@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { getJob } from "./jobStore.js";
 import { broadcast } from "./broadcaster.js";
 
@@ -17,7 +19,14 @@ export function updateChunksState(jobId, payload) {
       completed: [],
       cancelled: [],
       failed: [],
+      skipped: [],
+      splitJobs: {},
     };
+  }
+
+  // Initialize chunk paths tracking if not present
+  if (!job.chunkPaths) {
+    job.chunkPaths = {};
   }
 
   const state = job.chunks;
@@ -33,6 +42,15 @@ export function updateChunksState(jobId, payload) {
 
   const idx = payload.idx;
 
+  // Store chunk basename/path if provided
+  if (payload.basename && job.dir) {
+    // Try to construct full path from job dir
+    const possiblePath = path.join(job.dir, "chunks", payload.basename);
+    if (fs.existsSync(possiblePath)) {
+      job.chunkPaths[idx] = possiblePath;
+    }
+  }
+
   // Remove from all arrays first
   const remove = (arr) => {
     const pos = arr.indexOf(idx);
@@ -43,6 +61,7 @@ export function updateChunksState(jobId, payload) {
   remove(state.completed);
   remove(state.cancelled);
   remove(state.failed);
+  if (state.skipped) remove(state.skipped);
 
   // Add to appropriate array
   switch (payload.status) {
@@ -57,6 +76,10 @@ export function updateChunksState(jobId, payload) {
       break;
     case "failed":
       state.failed.push(idx);
+      break;
+    case "skipped":
+      if (!state.skipped) state.skipped = [];
+      state.skipped.push(idx);
       break;
     default:
       break;

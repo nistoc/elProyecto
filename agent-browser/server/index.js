@@ -1,7 +1,28 @@
 import express from "express";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import dotenv from "dotenv";
 import { PORT, RUNTIME_DIR, UPLOADS_DIR } from "./config.js";
 import jobsRouter from "./routes/jobs.js";
+
+// Load environment variables from .env files
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Try to load .env from multiple locations
+const envPaths = [
+  path.resolve(__dirname, "..", ".env"),           // agent-browser/.env
+  path.resolve(__dirname, "..", "..", ".env"),     // elProyecto/.env
+  path.resolve(__dirname, "..", "..", "agent01", ".env"), // agent01/.env
+];
+
+for (const envPath of envPaths) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    break;
+  }
+}
 
 const app = express();
 
@@ -9,7 +30,7 @@ const app = express();
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
     return;

@@ -4,6 +4,15 @@ import { tryProcessChunkEvent } from "../services/chunkState.js";
 
 /**
  * Spawn a process and stream its output as logs.
+ * 
+ * @param {Object} options
+ * @param {string} options.jobId - Job ID for logging
+ * @param {string} options.label - Label for log prefix
+ * @param {string} options.command - Command to run
+ * @param {string[]} options.args - Command arguments
+ * @param {string} options.cwd - Working directory
+ * @param {Object} options.env - Additional environment variables
+ * @param {Function} [options.onStdout] - Optional callback for each stdout line
  */
 export function spawnAndStream({
   jobId,
@@ -12,6 +21,7 @@ export function spawnAndStream({
   args,
   cwd,
   env = {},
+  onStdout,
 }) {
   return new Promise((resolve, reject) => {
     const proc = spawn(command, args, {
@@ -33,6 +43,12 @@ export function spawnAndStream({
       const text = data.toString();
       text.split(/\r?\n/).forEach((line) => {
         if (!line.trim()) return;
+        
+        // Call custom stdout handler if provided
+        if (onStdout && level === "info") {
+          onStdout(line);
+        }
+        
         tryProcessChunkEvent(jobId, line);
         pushLog(jobId, `${prefix} ${line.trimEnd()}`, level);
       });
