@@ -12,6 +12,7 @@ import {
   ProjectFiles,
   ResultFiles,
   AudioPlayer,
+  RefiningTextPreview,
 } from "./components";
 import { AudioPlayerProvider } from "./contexts/AudioPlayerContext";
 
@@ -47,6 +48,7 @@ function AppShell() {
     handleResumeTranscriber,
     handlePauseRefiner,
     handleResumeRefiner,
+    handleSkipRefinerBatch,
     toggleLogsPause,
     handleSelectJob,
   } = useJob();
@@ -253,6 +255,14 @@ function AppShell() {
                     </div>
                   )}
                 </div>
+              )}
+              {/* Text preview showing what's being sent to refining */}
+              {jobId && job?.phase === "refiner" && (
+                <RefiningTextPreview
+                  logs={logsByStep.refiner}
+                  onSkipBatch={handleSkipRefinerBatch}
+                  isRefining={job?.phase === "refiner"}
+                />
               )}
               <LogsSection
                 title={aliases.refiner}

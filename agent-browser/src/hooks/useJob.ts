@@ -7,6 +7,7 @@ import {
   retranscribeSubChunk,
   skipChunk,
   skipRefiner,
+  skipRefinerBatch,
   splitChunk,
   startRefiner,
   subscribeToJob,
@@ -406,6 +407,19 @@ export function useJob() {
     }
   }, [jobId]);
 
+  /**
+   * Skip current refiner batch.
+   */
+  const handleSkipRefinerBatch = useCallback(async () => {
+    if (!jobId) return;
+    try {
+      await skipRefinerBatch(jobId);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Failed to skip batch, see server logs.");
+    }
+  }, [jobId]);
+
   return {
     // State
     file,
@@ -440,6 +454,7 @@ export function useJob() {
     handleResumeTranscriber,
     handlePauseRefiner,
     handleResumeRefiner,
+    handleSkipRefinerBatch,
     toggleLogsPause: togglePause,
     handleSelectJob,
   };

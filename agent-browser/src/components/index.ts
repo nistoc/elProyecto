@@ -9,4 +9,5 @@ export { JobsList } from "./JobsList";
 export { ProjectFiles } from "./ProjectFiles";
 export { ResultFiles } from "./ResultFiles";
 export { AudioPlayer } from "./AudioPlayer";
+export { RefiningTextPreview } from "./RefiningTextPreview";
 

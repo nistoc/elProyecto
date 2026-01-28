@@ -132,13 +132,41 @@ class TranscriptFixer:
         job_dir = os.path.dirname(output_path)
         pause_flag_path = os.path.join(job_dir, "pause_agent.flag")
         
+        # Path for skip batch flag
+        skip_batch_flag_path = os.path.join(job_dir, "skip_batch.flag")
+        
         for batch_info in batches:
+            # Track if batch was skipped during pause loop
+            batch_skipped = False
+            
+            # Check for skip flag at start of batch (allows skipping while paused)
+            if os.path.exists(skip_batch_flag_path):
+                try:
+                    os.remove(skip_batch_flag_path)
+                    print(f"[SKIP] Batch {batch_info.index + 1} skipped by user, using original text")
+                    fixed_content.extend(batch_info.lines)
+                    previous_context = batch_info.lines
+                    continue
+                except:
+                    pass
+            
             # Check for pause flag before processing batch
             while os.path.exists(pause_flag_path):
+                # Check for skip flag while paused
+                if os.path.exists(skip_batch_flag_path):
+                    try:
+                        os.remove(skip_batch_flag_path)
+                        print(f"[SKIP] Batch {batch_info.index + 1} skipped by user while paused, using original text")
+                        fixed_content.extend(batch_info.lines)
+                        previous_context = batch_info.lines
+                        batch_skipped = True
+                        break
+                    except:
+                        pass
                 try:
                     paused_agent = open(pause_flag_path, 'r').read().strip()
                     if paused_agent == "refiner":
-                        print(f"[PAUSE] Agent paused, waiting... (batch {batch_info.index + 1}/{len(batches)} will start when resumed)")
+                        # No print message - user requested no pause notifications
                         import time
                         time.sleep(1.0)  # Wait 1 second and check again
                         continue
@@ -146,14 +174,39 @@ class TranscriptFixer:
                     pass
                 break  # If file doesn't exist or error, continue
             
+            # Skip to next batch if this one was skipped while paused
+            if batch_skipped:
+                continue
+            
             # Add context from previous batch
             if previous_context and context_lines > 0:
                 batch_info.context = previous_context[-context_lines:]
             
             print(f"[BATCH {batch_info.index + 1}/{len(batches)}] Processing lines {batch_info.start_line + 1}-{batch_info.end_line}...")
             
+            # Output the text being sent to refining with special markers
+            batch_text_lines = [line.rstrip() for line in batch_info.lines]
+            print(f"[REFINE_TEXT_START]")
+            for line in batch_text_lines:
+                print(line)
+            print(f"[REFINE_TEXT_END]")
+            
             # Fix the batch
             result = self._fix_batch(batch_info)
+            
+            # Check for skip flag after API call
+            if os.path.exists(skip_batch_flag_path):
+                try:
+                    os.remove(skip_batch_flag_path)
+                    print(f"[SKIP] Batch {batch_info.index + 1} was skipped by user, using original text")
+                    # Use original lines instead of fixed
+                    result = BatchResult(
+                        batch_index=batch_info.index,
+                        fixed_lines=batch_info.lines,
+                        success=True
+                    )
+                except:
+                    pass
             
             if result.success:
                 print(f"[API] ✓ Fixed {len(result.fixed_lines)} lines")

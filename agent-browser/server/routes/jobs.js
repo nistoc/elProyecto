@@ -580,7 +580,10 @@ router.post("/:id/pause-agent", (req, res) => {
     fs.writeFileSync(pauseFlagPath, agent, 'utf8');
     
     updateJobAndBroadcast(job.id, { agentPaused: agent });
-    pushLog(job.id, `${agent === "transcriber" ? AGENT_ALIASES.transcriber : AGENT_ALIASES.refiner}: paused — current requests will complete, new requests will wait`);
+    // Only send pause notification for transcriber, not for refiner (user requested no refiner pause notifications)
+    if (agent === "transcriber") {
+      pushLog(job.id, `${AGENT_ALIASES.transcriber}: paused — current requests will complete, new requests will wait`);
+    }
     
     res.json({ ok: true, message: `${agent} paused` });
   } catch (err) {
@@ -617,7 +620,10 @@ router.post("/:id/resume-agent", (req, res) => {
       if (currentAgent === agent) {
         fs.unlinkSync(pauseFlagPath);
         updateJobAndBroadcast(job.id, { agentPaused: null });
-        pushLog(job.id, `${agent === "transcriber" ? AGENT_ALIASES.transcriber : AGENT_ALIASES.refiner}: resumed — new requests will be processed`);
+        // Only send resume notification for transcriber, not for refiner (user requested no refiner pause notifications)
+        if (agent === "transcriber") {
+          pushLog(job.id, `${AGENT_ALIASES.transcriber}: resumed — new requests will be processed`);
+        }
       }
     }
     
@@ -652,6 +658,41 @@ router.post("/:id/skip-refiner", (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ error: err?.message || "failed to skip refiner" });
+  }
+});
+
+/**
+ * POST /api/jobs/:id/skip-refiner-batch - Skip current refiner batch
+ * Creates a flag file that the Python refiner process will detect
+ */
+router.post("/:id/skip-refiner-batch", (req, res) => {
+  const { id } = req.params;
+  
+  // Validate UUID format
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(id)) {
+    return res.status(400).json({ error: "invalid job id format" });
+  }
+
+  const job = getJob(id);
+  if (!job) {
+    return res.status(404).json({ error: "job not found" });
+  }
+
+  if (job.phase !== "refiner") {
+    return res.status(400).json({ 
+      error: `Cannot skip batch when not in refiner phase. Current phase: '${job.phase}'.` 
+    });
+  }
+
+  try {
+    const skipFlagPath = path.join(job.dir, "skip_batch.flag");
+    fs.writeFileSync(skipFlagPath, "skip", 'utf8');
+    
+    // No log message - Python will log when it detects the flag
+    res.json({ ok: true, message: "Skip flag set, batch will be skipped" });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || "failed to set skip flag" });
   }
 });
 

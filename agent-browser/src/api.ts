@@ -318,6 +318,20 @@ export async function resumeAgent(jobId: string, agent: "transcriber" | "refiner
 }
 
 /**
+ * Skip current refiner batch.
+ */
+export async function skipRefinerBatch(jobId: string) {
+  const res = await fetch(
+    `${API_BASE}/api/jobs/${jobId}/skip-refiner-batch`,
+    { method: "POST" }
+  );
+  if (!res.ok) {
+    throw new Error(`Skip refiner batch failed: ${res.statusText}`);
+  }
+  return (await res.json()) as { ok: boolean; message?: string };
+}
+
+/**
  * Get the audio URL for a specific chunk.
  */
 export function getChunkAudioUrl(jobId: string, idx: number): string {
