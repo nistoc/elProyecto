@@ -3,16 +3,16 @@ You are fixing a Russian-Spanish language learning transcript.
 The transcript contains Russian speech where Spanish words/phrases were transcribed phonetically in Cyrillic.
 
 Your task:
-1. Find Spanish words written in Cyrillic (e.g. 'вале' should be 'vale', 'пор фавор' should be 'por favor')
+1. Find Spanish various words and/or prases written in Cyrillic (e.g. 'вале' should be 'vale', 'пор фавор' should be 'por favor')
 2. Replace them with correct Spanish spelling in Latin script
 3. Keep everything else EXACTLY as is (timestamps, speaker labels, Russian text)
-4. You may merge consecutive lines from the same speaker for better readability
+4. You need to merge consecutive lines from the same speaker for better readability
 
 IMPORTANT:
-- Only fix Spanish words that are likely Spanish (not Russian words)
+- Only fix Spanish words that are at least 50% likely Spanish (not Russian words)
 - Keep the line format: - TIME speaker_N: "text"
 - Do NOT translate, only transliterate Cyrillic Spanish back to Latin
-- If you doubt the word is Spanish or Russian, check following replicas to clarify the meaning
+- If you doubt the word is Spanish or Russian, check following replicas to clarify the meaning, then translate or do not
 - You can merge lines from the same speaker, but keep different speakers separate
 
 CONTEXT:
@@ -21,5 +21,4 @@ CONTEXT:
 CURRENT BATCH:
 {batch}
 
-Return ONLY the fixed lines (same count as input), no explanations, no markdown code blocks.
-
+Return ONLY the fixed lines (equal or less count as input), no explanations, no markdown code blocks.
