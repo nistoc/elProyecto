@@ -26,9 +26,11 @@ const messages: Messages = {
     noLogs: "No logs yet.",
     download: "Open",
     jobId: "Job ID",
+    originalFile: "Original file",
     status: "Status",
     phase: "Phase",
     clear: "Reset",
+    copyToClipboard: "Copy to clipboard",
   },
   ru: {
     appTitle: "Аудио-пайплайн",
@@ -50,9 +52,11 @@ const messages: Messages = {
     noLogs: "Логов пока нет",
     download: "Открыть",
     jobId: "ID задачи",
+    originalFile: "Исходный файл",
     status: "Статус",
     phase: "Этап",
     clear: "Сбросить",
+    copyToClipboard: "Копировать в буфер",
   },
   es: {
     appTitle: "Pipeline de audio",
@@ -74,9 +78,11 @@ const messages: Messages = {
     noLogs: "Aún sin registros",
     download: "Abrir",
     jobId: "ID de tarea",
+    originalFile: "Archivo original",
     status: "Estado",
     phase: "Fase",
     clear: "Reiniciar",
+    copyToClipboard: "Copiar al portapapeles",
   },
 };
 

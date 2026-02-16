@@ -172,6 +172,11 @@ h1 {
   width: 100%;
 }
 
+.log-card--collapsed .log-panel,
+.log-card--collapsed .log-latest {
+  display: none;
+}
+
 .card__header {
   display: flex;
   align-items: center;

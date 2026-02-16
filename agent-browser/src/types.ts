@@ -77,6 +77,8 @@ export type JobSnapshot = {
   chunks?: ChunkState;
   result?: JobResult;
   agentPaused?: "transcriber" | "refiner" | null;
+  /** Original audio file name (e.g. from upload) */
+  originalFilename?: string;
 };
 
 export type StreamEvent =

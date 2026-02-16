@@ -26,6 +26,33 @@ const AGENT_ALIASES = {
   refiner: "Refiner Agent",
 } as const;
 
+const STORAGE_KEY_JOB_STEPS = "agent-browser-job-steps";
+const VALID_STEPS: StepId[] = ["upload", "transcriber", "refiner", "result"];
+
+function getStoredStepForJob(jobId: string): StepId | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_JOB_STEPS);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, string>;
+    const step = map[jobId];
+    if (step && VALID_STEPS.includes(step as StepId)) return step as StepId;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function setStoredStepForJob(jobId: string, step: StepId): void {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_JOB_STEPS);
+    const map = (raw ? JSON.parse(raw) : {}) as Record<string, string>;
+    map[jobId] = step;
+    localStorage.setItem(STORAGE_KEY_JOB_STEPS, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Main hook for job lifecycle management.
  * Handles job creation, SSE subscription, state updates.
@@ -46,6 +73,13 @@ export function useJob() {
     togglePause,
     reset: resetLogBuffer,
   } = useLogBuffer(setJob);
+
+  // Persist active step per job when it changes (so we can restore when switching back)
+  useEffect(() => {
+    if (jobId && activeStep) {
+      setStoredStepForJob(jobId, activeStep);
+    }
+  }, [jobId, activeStep]);
 
   // Subscribe to job SSE stream
   useEffect(() => {
@@ -217,6 +251,7 @@ export function useJob() {
   /**
    * Switch to a different job by ID.
    * If newJobId is empty string, clears the selection.
+   * Restores the last open step for the selected job (default: transcriber).
    */
   const handleSelectJob = useCallback((newJobId: string) => {
     if (!newJobId) {
@@ -229,7 +264,8 @@ export function useJob() {
     } else {
       setJobId(newJobId);
       setFile(null); // Clear file since we're loading an existing job
-      setActiveStep("transcriber"); // Start at transcriber step
+      const savedStep = getStoredStepForJob(newJobId);
+      setActiveStep(savedStep ?? "transcriber");
       resetLogBuffer();
     }
   }, [resetLogBuffer]);

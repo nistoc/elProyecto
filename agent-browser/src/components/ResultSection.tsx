@@ -12,6 +12,16 @@ type Props = {
 
 export function ResultSection({ t, jobId, job, links }: Props) {
   const [startingRefiner, setStartingRefiner] = useState(false);
+  const originalFilename = job?.originalFilename ?? null;
+
+  const handleCopyFilename = async () => {
+    if (!originalFilename) return;
+    try {
+      await navigator.clipboard.writeText(originalFilename);
+    } catch {
+      // ignore
+    }
+  };
 
   const handleStartRefiner = async () => {
     if (!jobId) return;
@@ -43,6 +53,24 @@ export function ResultSection({ t, jobId, job, links }: Props) {
           <div className="meta-row">
             <span>{t("jobId")}</span>
             <code>{jobId || "—"}</code>
+          </div>
+          <div className="meta-row">
+            <span>{t("originalFile")}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <code>{originalFilename || "—"}</code>
+              {originalFilename && (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={handleCopyFilename}
+                  title={t("copyToClipboard")}
+                  style={{ padding: "4px 6px", minWidth: "unset" }}
+                  aria-label={t("copyToClipboard")}
+                >
+                  📋
+                </button>
+              )}
+            </span>
           </div>
           <div className="meta-row">
             <span>{t("status")}</span>

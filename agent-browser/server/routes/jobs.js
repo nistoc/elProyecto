@@ -339,6 +339,8 @@ router.get("/:id", (req, res) => {
   // Ensure splitJobs is synced to chunks
   ensureSplitJobsField(job);
 
+  const originalFilename = job.audio ? path.basename(job.audio) : null;
+
   res.json({
     id: job.id,
     status: job.status,
@@ -346,6 +348,7 @@ router.get("/:id", (req, res) => {
     logs: job.logs,
     chunks: job.chunks,
     result: job.result,
+    originalFilename: originalFilename || undefined,
   });
 });
 
@@ -905,6 +908,8 @@ router.get("/:id/stream", (req, res) => {
   // Ensure splitJobs is synced to chunks
   ensureSplitJobsField(job);
 
+  const originalFilename = job.audio ? path.basename(job.audio) : undefined;
+
   // Send initial snapshot
   send({
     type: "snapshot",
@@ -915,6 +920,7 @@ router.get("/:id/stream", (req, res) => {
       logs: job.logs,
       chunks: job.chunks,
       result: job.result,
+      originalFilename: originalFilename || undefined,
     },
   });
 

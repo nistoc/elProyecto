@@ -13,10 +13,16 @@ class AudioUtils:
     
     @staticmethod
     def which_or(path_key: Optional[str], default_name: str) -> Optional[str]:
-        """Get executable path from config or find in PATH."""
-        if path_key:
-            return path_key
-        return shutil.which(default_name)
+        """Get executable path from config or find in PATH.
+        When config gives a bare name (e.g. 'ffmpeg'), resolve via PATH so subprocess
+        finds the executable on Windows."""
+        name = path_key or default_name
+        if not name:
+            return None
+        if os.sep not in name and "/" not in name:
+            resolved = shutil.which(name)
+            return resolved if resolved else None
+        return name
     
     @staticmethod
     def get_duration_and_size(ffprobe_path: str, filepath: str) -> Tuple[float, int]:
