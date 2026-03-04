@@ -955,6 +955,8 @@ button:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   padding: 20px;
+  /* Отступ снизу, чтобы фиксированный плеер не перекрывал модальное окно */
+  margin-bottom: 100px;
 }
 
 .modal__header {
