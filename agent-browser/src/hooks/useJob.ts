@@ -456,6 +456,15 @@ export function useJob() {
     }
   }, [jobId]);
 
+  const clearLogsForStep = useCallback((step: "transcriber" | "refiner") => {
+    const needle = AGENT_ALIASES[step];
+    setJob((prev) =>
+      prev && prev.logs
+        ? { ...prev, logs: prev.logs.filter((log) => !log.message.includes(needle)) }
+        : prev
+    );
+  }, []);
+
   return {
     // State
     file,
@@ -493,6 +502,7 @@ export function useJob() {
     handleSkipRefinerBatch,
     toggleLogsPause: togglePause,
     handleSelectJob,
+    clearLogsForStep,
   };
 }
 

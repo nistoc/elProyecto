@@ -51,6 +51,7 @@ function AppShell() {
     handleSkipRefinerBatch,
     toggleLogsPause,
     handleSelectJob,
+    clearLogsForStep,
   } = useJob();
 
   // Clear selected chunk when job changes
@@ -179,6 +180,7 @@ function AppShell() {
                 paused={logsPaused}
                 bufferedCount={bufferedCount}
                 onTogglePause={toggleLogsPause}
+                onClearLogs={() => clearLogsForStep("transcriber")}
                 agentPaused={job?.agentPaused === "transcriber" ? "transcriber" : null}
                 onPauseAgent={handlePauseTranscriber}
                 onResumeAgent={handleResumeTranscriber}
@@ -297,6 +299,7 @@ function AppShell() {
                 paused={logsPaused}
                 bufferedCount={bufferedCount}
                 onTogglePause={toggleLogsPause}
+                onClearLogs={() => clearLogsForStep("refiner")}
               />
             </>
           )}

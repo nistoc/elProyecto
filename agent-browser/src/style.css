@@ -255,7 +255,7 @@ button:hover:not(:disabled) {
 }
 
 .log-panel {
-  max-height: 50vh;
+  max-height: 20vh;
   overflow: auto;
   background: #0d1528;
   border: 1px solid #1f2937;

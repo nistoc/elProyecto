@@ -9,6 +9,7 @@ type Props = {
   paused?: boolean;
   bufferedCount?: number;
   onTogglePause?: () => void;
+  onClearLogs?: () => void;
   // Agent pause/resume controls (for transcriber agent)
   agentPaused?: "transcriber" | "refiner" | null;
   onPauseAgent?: () => void;
@@ -23,6 +24,7 @@ export function LogsSection({
   paused,
   bufferedCount,
   onTogglePause,
+  onClearLogs,
   agentPaused,
   onPauseAgent,
   onResumeAgent,
@@ -36,6 +38,17 @@ export function LogsSection({
       <div className="card__header">
         <h3>{title}</h3>
         <div className="log-toolbar" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          {onClearLogs && (
+            <button
+              type="button"
+              className="ghost"
+              onClick={onClearLogs}
+              title="Очистить логи"
+              aria-label="Очистить логи"
+            >
+              🧹
+            </button>
+          )}
           <button
             type="button"
             className="ghost"
