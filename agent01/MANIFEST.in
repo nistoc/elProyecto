@@ -1,0 +1,21 @@
+# Include documentation
+recursive-include docs *.md
+
+# Include configuration examples
+recursive-include config *.json
+
+# Include examples
+recursive-include examples *.py
+
+# Include requirements
+include requirements.txt
+
+# Include license and readme
+include LICENSE
+include README.md
+
+# Exclude compiled files
+global-exclude *.py[cod]
+global-exclude __pycache__
+global-exclude *.so
+global-exclude .DS_Store

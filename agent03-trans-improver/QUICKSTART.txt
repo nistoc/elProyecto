@@ -1,0 +1,21 @@
+╔══════════════════════════════════════════════════════╗
+║         Agent03: Transcript Improver                  ║
+║         Быстрый старт (3 команды)                     ║
+╚══════════════════════════════════════════════════════╝
+
+pip install -r requirements.txt
+cp env.example .env && vim .env        # впишите API ключ
+cp ../agent01/transcript.md . && python -m cli.main
+
+→ transcript_fixed_2024-11-23_15-30-45.md ✓
+
+──────────────────────────────────────────────────────
+
+КОНФИГ: config/default.json
+batch_size: 10  context_lines: 5  model: gpt-4o-mini
+
+СТОИМОСТЬ: $0.05-0.10 (gpt-4o-mini, ~1100 строк)
+
+ДОКУМЕНТАЦИЯ: README.md → docs/USAGE.md → docs/EXAMPLES.md
+
+──────────────────────────────────────────────────────

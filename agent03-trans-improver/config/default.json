@@ -1,0 +1,22 @@
+{
+  "input_file": "transcript.md",
+  "output_file": "transcript_fixed.md",
+  
+  "model": "gpt-4o-mini",
+  "temperature": 0.4,
+  "openai_api_key": "env:OPENAI_API_KEY",
+  
+  "batch_size": 30,
+  "context_lines": 10,
+  
+  "prompt_file": "prompts/default_enhanced_from_mygpt.txt",
+  
+  "add_timestamp_to_output": true,
+  
+  "save_intermediate": true,
+  "intermediate_dir": "intermediate_fixes",
+  
+  "skip_if_exists": false,
+  "verbose": true
+}
+
