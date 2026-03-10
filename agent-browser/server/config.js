@@ -10,7 +10,12 @@ export const AGENT03_DIR = path.resolve(ROOT, "..", "agent03-trans-improver");
 export const RUNTIME_DIR = path.join(ROOT, "runtime");
 export const UPLOADS_DIR = path.join(RUNTIME_DIR, "uploads");
 
-export const PORT = process.env.PORT || 3001;
+function portFromArgv() {
+  const i = process.argv.indexOf("--port");
+  if (i !== -1 && process.argv[i + 1]) return parseInt(process.argv[i + 1], 10);
+  return null;
+}
+export const PORT = portFromArgv() ?? process.env.PORT ?? 3001;
 export const PYTHON_BIN = process.env.PYTHON_BIN || "python";
 
 export const AGENT_ALIASES = {

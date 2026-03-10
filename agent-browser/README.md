@@ -75,11 +75,44 @@ agent-browser/
 ```bash
 cd agent-browser
 npm install
+# Вариант 1: фронт и API в одном терминале
+npm run dev:full          # по умолчанию Vite (5173) + Express (3001)
+npm run dev:full -- --api-port 4000 --front-port 8080   # свои порты параметрами
+
+# Вариант 2: в двух окнах
 # окно 1: API
 npm run dev:server        # PORT=3001 по умолчанию
 # окно 2: фронт
 npm run dev               # Vite на 5173; можно VITE_API_BASE=http://localhost:3001
 ```
+
+### Запуск на других портах
+Порты можно передавать **параметрами команды** (после `--`). Один и тот же синтаксис работает в PowerShell, cmd и Bash.
+
+**Фронт и API вместе:**
+```bash
+npm run dev:full -- --api-port 4000 --front-port 8080
+```
+Короткие формы: `-a` (API), `-f` (фронт). Пример: `npm run dev:full -- -a 4000 -f 8080`.
+
+**По отдельности:**
+```bash
+# только API на порту 4000
+npm run dev:server -- --port 4000
+
+# только фронт на порту 8080 (встроенная опция Vite)
+npm run dev -- --port 8080
+```
+
+При смене порта API фронт нужно запускать с тем же портом (через `dev:full` это делается автоматически; при раздельном запуске задайте `VITE_API_BASE`, см. ниже).
+
+**Альтернатива — переменные окружения** (если удобнее):
+
+| Переменная | Назначение | По умолчанию |
+|------------|------------|--------------|
+| `PORT` | API (Express) | 3001 |
+| `VITE_DEV_PORT` | UI (Vite) | 5173 |
+| `VITE_API_BASE` | URL API для фронта (если API не на 3001) | http://localhost:3001 |
 Минимальные требования: Node 18+, установленный `python` и `ffmpeg/ffprobe` в PATH (для `agent01`). Папки `agent01/` и `agent03-trans-improver/` должны лежать рядом с `agent-browser/`.
 
 ## Production-сборка (UI)
