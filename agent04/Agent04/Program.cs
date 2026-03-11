@@ -27,6 +27,7 @@ builder.Host
     .ConfigureContainer<IKernel>(kernel => kernel.Load<Agent04Module>());
 
 builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient();
 builder.Services.AddControllers();
 builder.Services.AddGrpc();
 builder.Services.AddOpenApi(options =>

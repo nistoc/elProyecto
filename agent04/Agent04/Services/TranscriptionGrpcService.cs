@@ -13,13 +13,17 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
     private readonly IJobStatusStore _store;
     private readonly WorkspaceRoot _workspaceRoot;
     private readonly INodeModel? _nodeModel;
+    private readonly IHttpClientFactory? _httpClientFactory;
+    private readonly IOutboundJobNotifier? _outboundNotifier;
 
-    public TranscriptionGrpcService(ITranscriptionPipeline pipeline, IJobStatusStore store, WorkspaceRoot workspaceRoot, INodeModel? nodeModel = null)
+    public TranscriptionGrpcService(ITranscriptionPipeline pipeline, IJobStatusStore store, WorkspaceRoot workspaceRoot, INodeModel? nodeModel = null, IHttpClientFactory? httpClientFactory = null, IOutboundJobNotifier? outboundNotifier = null)
     {
         _pipeline = pipeline;
         _store = store;
         _workspaceRoot = workspaceRoot;
         _nodeModel = nodeModel;
+        _httpClientFactory = httpClientFactory;
+        _outboundNotifier = outboundNotifier;
     }
 
     public override async Task<SubmitJobResponse> SubmitJob(Agent04.Proto.SubmitJobRequest request, ServerCallContext context)
@@ -45,9 +49,37 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Input file not found"));
 
         var tags = request.Tags?.Count > 0 ? request.Tags.ToList() : null;
-        var jobId = _store.Create(tags);
+        var callbackUrl = !string.IsNullOrWhiteSpace(request.CallbackUrl) ? request.CallbackUrl.Trim() : null;
+        var jobId = _store.Create(tags, callbackUrl);
         _ = RunJobAsync(jobId, config, inputPathFull, root, context.CancellationToken);
         return new SubmitJobResponse { JobId = jobId };
+    }
+
+    public override Task<QueryJobsResponse> QueryJobs(QueryJobsRequest request, ServerCallContext context)
+    {
+        JobState? status = null;
+        if (!string.IsNullOrEmpty(request.Status) && Enum.TryParse<JobState>(request.Status, ignoreCase: true, out var s))
+            status = s;
+        DateTimeOffset? from = null;
+        if (!string.IsNullOrEmpty(request.From) && DateTimeOffset.TryParse(request.From, out var f))
+            from = f;
+        DateTimeOffset? to = null;
+        if (!string.IsNullOrEmpty(request.To) && DateTimeOffset.TryParse(request.To, out var t))
+            to = t;
+        var filter = new JobListFilter
+        {
+            Tag = !string.IsNullOrEmpty(request.Tag) ? request.Tag : null,
+            Status = status,
+            From = from,
+            To = to,
+            Limit = request.Limit > 0 ? request.Limit : 50,
+            Offset = request.Offset >= 0 ? request.Offset : 0
+        };
+        var list = _store.List(filter);
+        var response = new QueryJobsResponse();
+        foreach (var job in list)
+            response.Jobs.Add(ToResponse(job));
+        return Task.FromResult(response);
     }
 
     public override Task<JobStatusResponse> GetJobStatus(GetJobStatusRequest request, ServerCallContext context)
@@ -83,6 +115,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                     State = state,
                     ProgressPercent = job.ProgressPercent,
                     CurrentPhase = job.CurrentPhase ?? "",
+                    TotalChunks = job.TotalChunks,
+                    ProcessedChunks = job.ProcessedChunks,
                     UpdatedAt = updated,
                     MdOutputPath = job.MdOutputPath ?? "",
                     JsonOutputPath = job.JsonOutputPath ?? "",
@@ -103,6 +137,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             State = job.State.ToString(),
             ProgressPercent = job.ProgressPercent,
             CurrentPhase = job.CurrentPhase ?? "",
+            TotalChunks = job.TotalChunks,
+            ProcessedChunks = job.ProcessedChunks,
             CreatedAt = job.CreatedAt.ToString("O"),
             StartedAt = job.StartedAt?.ToString("O") ?? "",
             CompletedAt = job.CompletedAt?.ToString("O") ?? "",
@@ -122,6 +158,29 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         catch (Exception ex)
         {
             _store.Update(jobId, new Agent04.Features.Transcription.Application.JobStatusUpdate { State = JobState.Failed, ErrorMessage = ex.Message });
+        }
+        var job = _store.Get(jobId);
+        if (job != null && (job.State == JobState.Completed || job.State == JobState.Failed || job.State == JobState.Cancelled))
+        {
+            if (!string.IsNullOrEmpty(job.CallbackUrl))
+                _ = FireCallbackAsync(job);
+            _outboundNotifier?.NotifyJobCompletedAsync(job.JobId, job.State);
+        }
+    }
+
+    private async Task FireCallbackAsync(JobStatus job)
+    {
+        if (_httpClientFactory == null) return;
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            var json = System.Text.Json.JsonSerializer.Serialize(job);
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            await client.PostAsync(job.CallbackUrl!, content);
+        }
+        catch
+        {
+            // Fire-and-forget
         }
     }
 }

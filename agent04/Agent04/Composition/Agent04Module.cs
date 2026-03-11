@@ -40,6 +40,7 @@ public sealed class Agent04Module : NinjectModule
 
         Bind<ITranscriptionMerger>().To<TranscriptionMerger>().InSingletonScope();
         Bind<ITranscriptionPipeline>().To<TranscriptionPipeline>().InSingletonScope();
+        Bind<IOutboundJobNotifier>().To<NoOpOutboundJobNotifier>().InSingletonScope();
 
         Bind<InMemoryJobStatusStore>().ToSelf().InSingletonScope();
         Bind<IJobStatusStore>().ToMethod(ctx =>

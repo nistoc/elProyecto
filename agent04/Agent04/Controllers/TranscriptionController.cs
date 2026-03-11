@@ -15,22 +15,30 @@ public class TranscriptionController : ControllerBase
     private readonly WorkspaceRoot _workspaceRoot;
     private readonly INodeModel? _nodeModel;
     private readonly INodeQuery? _nodeQuery;
+    private readonly IHttpClientFactory? _httpClientFactory;
+    private readonly IOutboundJobNotifier? _outboundNotifier;
 
-    public TranscriptionController(ITranscriptionPipeline pipeline, IJobStatusStore store, WorkspaceRoot workspaceRoot, INodeModel? nodeModel = null, INodeQuery? nodeQuery = null)
+    public TranscriptionController(ITranscriptionPipeline pipeline, IJobStatusStore store, WorkspaceRoot workspaceRoot, INodeModel? nodeModel = null, INodeQuery? nodeQuery = null, IHttpClientFactory? httpClientFactory = null, IOutboundJobNotifier? outboundNotifier = null)
     {
         _pipeline = pipeline;
         _store = store;
         _workspaceRoot = workspaceRoot;
         _nodeModel = nodeModel;
         _nodeQuery = nodeQuery;
+        _httpClientFactory = httpClientFactory;
+        _outboundNotifier = outboundNotifier;
     }
 
-    /// <summary>Submit a transcription job. Returns 202 with jobId and Location header. configPath and inputFilePath are relative to workspace_root.</summary>
+    /// <summary>Submit a transcription job. Returns 202 with jobId and Location header. configPath and inputFilePath are relative to workspace_root. Optional: X-Caller-Id header (propagated for logging/correlation); callbackUrl in body (HTTP POST when job completes or fails).</summary>
+    /// <param name="xCallerId">Optional. Caller identifier from header X-Caller-Id (for logging and correlation).</param>
     [HttpPost]
     [Tags("Jobs")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> SubmitJob([FromBody] SubmitJobRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> SubmitJob(
+        [FromBody] SubmitJobRequest request,
+        [FromHeader(Name = "X-Caller-Id")] string? xCallerId,
+        CancellationToken cancellationToken)
     {
         var root = _workspaceRoot.RootPath;
         var configPathRel = (request?.ConfigPath ?? "config/default.json").Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -53,7 +61,8 @@ public class TranscriptionController : ControllerBase
         if (!System.IO.File.Exists(inputPathFull))
             return BadRequest(ProblemDetailsFor(400, "Bad Request", "Input file not found", extensions: new Dictionary<string, object?> { ["inputFilePath"] = inputPathRel }));
 
-        var jobId = _store.Create(request?.Tags);
+        var callbackUrl = !string.IsNullOrWhiteSpace(request?.CallbackUrl) ? request.CallbackUrl!.Trim() : null;
+        var jobId = _store.Create(request?.Tags, callbackUrl);
         _ = RunJobAsync(jobId, config, inputPathFull, cancellationToken);
         return AcceptedAtAction(nameof(GetJob), new { id = jobId }, new { jobId });
     }
@@ -139,6 +148,29 @@ public class TranscriptionController : ControllerBase
         catch (Exception ex)
         {
             _store.Update(jobId, new JobStatusUpdate { State = JobState.Failed, ErrorMessage = ex.Message });
+        }
+        var job = _store.Get(jobId);
+        if (job != null && (job.State == JobState.Completed || job.State == JobState.Failed || job.State == JobState.Cancelled))
+        {
+            if (!string.IsNullOrEmpty(job.CallbackUrl))
+                _ = FireCallbackAsync(job);
+            _outboundNotifier?.NotifyJobCompletedAsync(job.JobId, job.State);
+        }
+    }
+
+    private async Task FireCallbackAsync(JobStatus job)
+    {
+        if (_httpClientFactory == null) return;
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            var json = System.Text.Json.JsonSerializer.Serialize(job);
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            await client.PostAsync(job.CallbackUrl!, content);
+        }
+        catch
+        {
+            // Fire-and-forget; log if needed
         }
     }
 }

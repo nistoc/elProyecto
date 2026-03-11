@@ -46,7 +46,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             throw new FileNotFoundException("Audio file not found", inputFilePath);
         var root = Path.GetFullPath(workspaceRoot);
 
-        void UpdateProgress(JobState state, int percent, string? phase, string? mdPath = null, string? jsonPath = null, string? error = null)
+        void UpdateProgress(JobState state, int percent, string? phase, int? totalChunks = null, int? processedChunks = null, string? mdPath = null, string? jsonPath = null, string? error = null)
         {
             if (jobId == null || statusStore == null) return;
             statusStore.Update(jobId, new JobStatusUpdate
@@ -54,6 +54,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 State = state,
                 ProgressPercent = percent,
                 CurrentPhase = phase,
+                TotalChunks = totalChunks,
+                ProcessedChunks = processedChunks,
                 MdOutputPath = mdPath,
                 JsonOutputPath = jsonPath,
                 ErrorMessage = error
@@ -76,7 +78,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         }
 
         _logger?.LogInformation("[FILE] {Path}", inputFilePath);
-        UpdateProgress(JobState.Running, 0, "Starting");
+        UpdateProgress(JobState.Running, 0, "Starting", null, null);
         if (jobId != null && nodeModel != null)
         {
             nodeModel.EnsureNode(jobId, null, jobId, "job");
@@ -107,7 +109,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         var chunkInfos = await PrepareChunksAsync(config, workingPath, splitWorkdirFull, cancellationToken);
         StepComplete(jobId ?? "", "chunking", JobState.Completed);
         _logger?.LogInformation("Processing {Count} chunk(s)", chunkInfos.Count);
-        UpdateProgress(JobState.Running, 5, "Chunking", null, null, null);
+        UpdateProgress(JobState.Running, 5, "Chunking", chunkInfos.Count, 0, null, null, null);
 
         var transcribeParent = jobId != null ? jobId + ":transcribe" : "";
         if (jobId != null && nodeModel != null)
@@ -131,7 +133,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             progress.MarkStarted(i);
             progress.Update();
             var pct = totalChunks > 0 ? 10 + (70 * (i + 1) / totalChunks) : 80;
-            UpdateProgress(JobState.Running, pct, $"Transcribing chunk {i + 1}/{totalChunks}");
+            UpdateProgress(JobState.Running, pct, $"Transcribing chunk {i + 1}/{totalChunks}", totalChunks, i + 1, null, null, null);
 
             try
             {
@@ -163,13 +165,13 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         progress.Complete();
 
         StepStart(jobId ?? "", "merge", "phase");
-        UpdateProgress(JobState.Running, 90, "Merging");
+        UpdateProgress(JobState.Running, 90, "Merging", totalChunks, totalChunks, null, null, null);
         _output.FinalizeMarkdown(mdPath);
         var sortedResults = results.OrderBy(x => x.Index).Select(x => x.Result).ToList();
         _output.SaveCombinedJson(jsonPath, sortedResults);
         StepComplete(jobId ?? "", "merge", JobState.Completed);
 
-        UpdateProgress(JobState.Completed, 100, "Completed", mdPath, jsonPath);
+        UpdateProgress(JobState.Completed, 100, "Completed", totalChunks, totalChunks, mdPath, jsonPath, null);
         if (jobId != null && nodeModel != null)
             nodeModel.CompleteNode(jobId, JobState.Completed, DateTimeOffset.UtcNow);
         _logger?.LogInformation("Done. Markdown: {Md}, JSON: {Json}", mdPath, jsonPath);
@@ -179,7 +181,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         {
             if (jobId != null && nodeModel != null)
                 nodeModel.CompleteNode(jobId, JobState.Failed, DateTimeOffset.UtcNow, ex.Message);
-            UpdateProgress(JobState.Failed, 0, null, null, null, ex.Message);
+            UpdateProgress(JobState.Failed, 0, null, null, null, null, null, ex.Message);
             throw;
         }
     }

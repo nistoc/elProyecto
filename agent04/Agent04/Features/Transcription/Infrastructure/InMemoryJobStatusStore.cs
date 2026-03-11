@@ -7,7 +7,7 @@ public sealed class InMemoryJobStatusStore : IJobStatusStore
 {
     private readonly ConcurrentDictionary<string, JobStatus> _jobs = new();
 
-    public string Create(IReadOnlyList<string>? tags = null)
+    public string Create(IReadOnlyList<string>? tags = null, string? callbackUrl = null)
     {
         var id = Guid.NewGuid().ToString("N");
         var now = DateTimeOffset.UtcNow;
@@ -17,7 +17,8 @@ public sealed class InMemoryJobStatusStore : IJobStatusStore
             State = JobState.Pending,
             CreatedAt = now,
             UpdatedAt = now,
-            Tags = tags ?? Array.Empty<string>()
+            Tags = tags ?? Array.Empty<string>(),
+            CallbackUrl = callbackUrl
         };
         return id;
     }
@@ -29,6 +30,8 @@ public sealed class InMemoryJobStatusStore : IJobStatusStore
         if (update.State.HasValue) job.State = update.State.Value;
         if (update.ProgressPercent.HasValue) job.ProgressPercent = update.ProgressPercent.Value;
         if (update.CurrentPhase != null) job.CurrentPhase = update.CurrentPhase;
+        if (update.TotalChunks.HasValue) job.TotalChunks = update.TotalChunks.Value;
+        if (update.ProcessedChunks.HasValue) job.ProcessedChunks = update.ProcessedChunks.Value;
         if (update.MdOutputPath != null) job.MdOutputPath = update.MdOutputPath;
         if (update.JsonOutputPath != null) job.JsonOutputPath = update.JsonOutputPath;
         if (update.ErrorMessage != null) job.ErrorMessage = update.ErrorMessage;

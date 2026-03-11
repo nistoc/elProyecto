@@ -8,6 +8,7 @@ service TranscriptionService {
   rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse);
   rpc GetJobStatus(GetJobStatusRequest) returns (JobStatusResponse);
   rpc StreamJobStatus(StreamJobStatusRequest) returns (stream JobStatusUpdate);
+  rpc QueryJobs(QueryJobsRequest) returns (QueryJobsResponse);
 }
 
 // Paths in config_path and input_file_path are relative to the instance's workspace_root (from config).
@@ -16,6 +17,7 @@ message SubmitJobRequest {
   string config_path = 1;
   string input_file_path = 2;
   repeated string tags = 3;
+  string callback_url = 4;  // Optional. If set, HTTP POST is sent to this URL when job completes or fails.
 }
 
 message SubmitJobResponse {
@@ -31,6 +33,8 @@ message JobStatusResponse {
   string state = 2;  // Pending, Running, Completed, Failed, Cancelled
   int32 progress_percent = 3;
   string current_phase = 4;
+  int32 total_chunks = 12;
+  int32 processed_chunks = 13;
   string created_at = 5;
   string started_at = 6;
   string completed_at = 7;
@@ -38,6 +42,19 @@ message JobStatusResponse {
   string md_output_path = 9;
   string json_output_path = 10;
   string error_message = 11;
+}
+
+message QueryJobsRequest {
+  string tag = 1;
+  string status = 2;  // Pending, Running, Completed, Failed, Cancelled
+  string from = 3;    // ISO8601
+  string to = 4;      // ISO8601
+  int32 limit = 5;
+  int32 offset = 6;
+}
+
+message QueryJobsResponse {
+  repeated JobStatusResponse jobs = 1;
 }
 
 message StreamJobStatusRequest {
@@ -49,6 +66,8 @@ message JobStatusUpdate {
   string state = 2;
   int32 progress_percent = 3;
   string current_phase = 4;
+  int32 total_chunks = 9;
+  int32 processed_chunks = 10;
   string updated_at = 5;
   string md_output_path = 6;
   string json_output_path = 7;

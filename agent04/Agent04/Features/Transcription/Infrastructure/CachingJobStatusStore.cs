@@ -29,7 +29,7 @@ public sealed class CachingJobStatusStore : IJobStatusStore
         _cache = cache;
     }
 
-    public string Create(IReadOnlyList<string>? tags = null) => _inner.Create(tags);
+    public string Create(IReadOnlyList<string>? tags = null, string? callbackUrl = null) => _inner.Create(tags, callbackUrl);
 
     public void Update(string jobId, JobStatusUpdate update)
     {

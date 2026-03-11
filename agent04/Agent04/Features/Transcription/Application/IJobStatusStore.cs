@@ -5,7 +5,7 @@ namespace Agent04.Features.Transcription.Application;
 /// </summary>
 public interface IJobStatusStore
 {
-    string Create(IReadOnlyList<string>? tags = null);
+    string Create(IReadOnlyList<string>? tags = null, string? callbackUrl = null);
     void Update(string jobId, JobStatusUpdate update);
     JobStatus? Get(string jobId);
     IReadOnlyList<JobStatus> List(JobListFilter? filter = null);
@@ -16,6 +16,8 @@ public sealed class JobStatusUpdate
     public JobState? State { get; set; }
     public int? ProgressPercent { get; set; }
     public string? CurrentPhase { get; set; }
+    public int? TotalChunks { get; set; }
+    public int? ProcessedChunks { get; set; }
     public string? MdOutputPath { get; set; }
     public string? JsonOutputPath { get; set; }
     public string? ErrorMessage { get; set; }
@@ -29,6 +31,8 @@ public sealed class JobStatus
     public JobState State { get; set; }
     public int ProgressPercent { get; set; }
     public string? CurrentPhase { get; set; }
+    public int TotalChunks { get; set; }
+    public int ProcessedChunks { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
@@ -36,6 +40,7 @@ public sealed class JobStatus
     public string? MdOutputPath { get; set; }
     public string? JsonOutputPath { get; set; }
     public string? ErrorMessage { get; set; }
+    public string? CallbackUrl { get; set; }
     public IReadOnlyList<string> Tags { get; set; } = Array.Empty<string>();
 }
 
