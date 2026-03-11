@@ -1,13 +1,16 @@
 using Agent04.Application;
+using Agent04.Features.JobQuery.Application;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Agent04.Controllers;
 
 [ApiController]
 [Route("api/transcription/jobs")]
+[EnableRateLimiting("api")]
 public class TranscriptionController : ControllerBase
 {
     private readonly ITranscriptionPipeline _pipeline;
@@ -17,8 +20,9 @@ public class TranscriptionController : ControllerBase
     private readonly INodeQuery? _nodeQuery;
     private readonly IHttpClientFactory? _httpClientFactory;
     private readonly IOutboundJobNotifier? _outboundNotifier;
+    private readonly IJobQueryService? _jobQueryService;
 
-    public TranscriptionController(ITranscriptionPipeline pipeline, IJobStatusStore store, WorkspaceRoot workspaceRoot, INodeModel? nodeModel = null, INodeQuery? nodeQuery = null, IHttpClientFactory? httpClientFactory = null, IOutboundJobNotifier? outboundNotifier = null)
+    public TranscriptionController(ITranscriptionPipeline pipeline, IJobStatusStore store, WorkspaceRoot workspaceRoot, INodeModel? nodeModel = null, INodeQuery? nodeQuery = null, IHttpClientFactory? httpClientFactory = null, IOutboundJobNotifier? outboundNotifier = null, IJobQueryService? jobQueryService = null)
     {
         _pipeline = pipeline;
         _store = store;
@@ -27,6 +31,7 @@ public class TranscriptionController : ControllerBase
         _nodeQuery = nodeQuery;
         _httpClientFactory = httpClientFactory;
         _outboundNotifier = outboundNotifier;
+        _jobQueryService = jobQueryService;
     }
 
     /// <summary>Submit a transcription job. Returns 202 with jobId and Location header. configPath and inputFilePath are relative to workspace_root. Optional: X-Caller-Id header (propagated for logging/correlation); callbackUrl in body (HTTP POST when job completes or fails).</summary>
@@ -61,8 +66,10 @@ public class TranscriptionController : ControllerBase
         if (!System.IO.File.Exists(inputPathFull))
             return BadRequest(ProblemDetailsFor(400, "Bad Request", "Input file not found", extensions: new Dictionary<string, object?> { ["inputFilePath"] = inputPathRel }));
 
+        System.Diagnostics.Activity.Current?.SetTag("transcription.caller_id", xCallerId ?? "");
         var callbackUrl = !string.IsNullOrWhiteSpace(request?.CallbackUrl) ? request.CallbackUrl!.Trim() : null;
         var jobId = _store.Create(request?.Tags, callbackUrl);
+        System.Diagnostics.Activity.Current?.SetTag("job.id", jobId);
         _ = RunJobAsync(jobId, config, inputPathFull, cancellationToken);
         return AcceptedAtAction(nameof(GetJob), new { id = jobId }, new { jobId });
     }
@@ -119,8 +126,9 @@ public class TranscriptionController : ControllerBase
         [FromQuery] int limit = 50,
         [FromQuery] int offset = 0)
     {
-        var filter = new JobListFilter { Tag = tag, Status = status, From = from, To = to, Limit = limit, Offset = offset };
-        var list = _store.List(filter);
+        var list = _jobQueryService != null && !string.IsNullOrEmpty(tag)
+            ? _jobQueryService.QueryBySemanticKey(tag, status, from, to, limit, offset)
+            : _store.List(new JobListFilter { Tag = tag, Status = status, From = from, To = to, Limit = limit, Offset = offset });
         return Ok(list);
     }
 

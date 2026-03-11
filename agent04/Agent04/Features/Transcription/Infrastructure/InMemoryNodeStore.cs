@@ -64,6 +64,17 @@ public sealed class InMemoryNodeStore : INodeModel, INodeQuery
         }
     }
 
+    public void UpdateNodeProgress(string nodeId, int progressPercent, string? phase = null)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (_nodes.TryGetValue(nodeId, out var node))
+        {
+            node.ProgressPercent = progressPercent;
+            if (phase != null) node.Phase = phase;
+            node.UpdatedAt = now;
+        }
+    }
+
     public IReadOnlyList<NodeInfo> GetByScope(string scopeId)
     {
         if (!_scopeIndex.TryGetValue(scopeId, out var ids))

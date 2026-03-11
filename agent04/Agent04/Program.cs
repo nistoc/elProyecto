@@ -1,5 +1,6 @@
 using Agent04.Application;
 using Agent04.Composition;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 using Ninject;
 using Ninject.Extensions.DependencyInjection;
@@ -28,6 +29,14 @@ builder.Host
 
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient();
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("api", opt =>
+    {
+        opt.PermitLimit = builder.Configuration.GetValue("RateLimit:PermitLimit", 100);
+        opt.Window = TimeSpan.FromSeconds(builder.Configuration.GetValue("RateLimit:WindowSeconds", 60));
+    });
+});
 builder.Services.AddControllers();
 builder.Services.AddGrpc();
 builder.Services.AddOpenApi(options =>
@@ -55,6 +64,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseRateLimiter();
 
 app.MapGet("/", () => Results.Ok(new { service = "Agent04", status = "running" }));
 app.MapControllers();

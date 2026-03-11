@@ -37,7 +37,7 @@ All notable changes to the Agent04 project are documented here.
 - **Ninject composition root:** All Transcription bindings in `Composition/Agent04Module`; host uses `NinjectServiceProviderFactory` and `ConfigureContainer<IKernel>`.
 - **Virtual node model:** `INodeModel` (EnsureNode, StartNode, CompleteNode), `INodeQuery` (GetByScope, GetTreeByScope), `InMemoryNodeStore`; pipeline records job → chunking → transcribe → chunk-N → merge; **GET /api/transcription/jobs/{id}/nodes** (`?tree=true` for hierarchy).
 
-## [Unreleased]
+## [0.3.0] — 2025-03-11
 
 ### Added
 
@@ -45,7 +45,24 @@ All notable changes to the Agent04 project are documented here.
 - **Relative paths only:** `configPath` and `inputFilePath` in REST and gRPC are resolved relative to workspace root. Absolute `inputFilePath` is rejected with 400.
 - **Unique transcript names:** Output transcript filenames include job id (e.g. `{base}_{jobId}_transcript.md`) to preserve history; pattern supports `{jobId}`.
 - **Proto comment:** `SubmitJobRequest` documented: paths are relative to instance workspace_root from config.
+- **X-Caller-Id:** Request header read and stored in job status; exposed in REST/gRPC status and in tracing (Activity tag `transcription.caller_id`).
+- **TotalChunks / ProcessedChunks:** Job status includes chunk counts; pipeline updates them during transcription.
+- **Callback URL:** Optional `callback_url` in SubmitJob (REST/proto); HTTP POST invoked on job Completed or Failed.
+- **gRPC QueryJobs:** New RPC `QueryJobs(QueryJobsRequest)` in proto; service implements query by semantic key (tag) and filters.
+- **Outbound gRPC stub:** Placeholder for future notification service; no real calls yet.
+- **JobQuery slice:** Logic moved to `Features/JobQuery` (IJobQueryService, JobQueryService); `QueryBySemanticKey(semanticKey, status, from, to, limit, offset)`; REST GET /jobs/query and gRPC QueryJobs use it.
+- **Rate limiting:** Configurable fixed-window policy (`RateLimit:PermitLimit`, `RateLimit:WindowSeconds` in appsettings); 429 when limit exceeded; `[EnableRateLimiting("api")]` on transcription controller.
+- **Node progress and metadata:** Pipeline calls `UpdateNodeProgress(jobId, percent, phase)`; on success, root node metadata gets `md_output_path` and `json_output_path`.
+- **Tracing (XRay/Activity):** Activity tags in pipeline (`job.id`, `file.input`) and controller (`transcription.caller_id`, `job.id`) for distributed tracing.
+- **Unit tests:** Project `Agent04.Tests` (xUnit); tests for `AudioUtils` (CalculateSegmentTime, FormatMb, WhichOr). Solution includes the test project.
+
+### Changed
+
+- **Plan compliance:** `docs/PLAN_COMPLIANCE_AND_TODO.md` updated: sections 2.1–2.6 and "Итог" reflect implemented items (X-Caller-Id, callback, gRPC QueryJobs, JobQuery slice, rate limit, TotalChunks/ProcessedChunks, node progress/metadata, XRay, unit tests).
+- **appsettings.json:** Added `RateLimit` section (PermitLimit, WindowSeconds). `Program.cs`: `using Microsoft.AspNetCore.RateLimiting` for fixed-window limiter.
 
 ### Removed
 
 - **CLI mode:** Support for `--config` and one-shot console run removed. Agent04 runs only as a web service (HTTP + gRPC). Use `dotnet run` to start the host.
+
+## [Unreleased]

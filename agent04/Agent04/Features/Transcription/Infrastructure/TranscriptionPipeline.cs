@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
@@ -60,6 +61,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 JsonOutputPath = jsonPath,
                 ErrorMessage = error
             });
+            if (jobId != null && nodeModel != null)
+                nodeModel.UpdateNodeProgress(jobId, percent, phase);
         }
 
         void StepStart(string parentNodeId, string localKey, string kind)
@@ -77,6 +80,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             nodeModel.CompleteNode(nodeId, status, DateTimeOffset.UtcNow, error);
         }
 
+        Activity.Current?.SetTag("job.id", jobId ?? "");
+        Activity.Current?.SetTag("file.input", inputFilePath);
         _logger?.LogInformation("[FILE] {Path}", inputFilePath);
         UpdateProgress(JobState.Running, 0, "Starting", null, null);
         if (jobId != null && nodeModel != null)
@@ -173,7 +178,14 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         UpdateProgress(JobState.Completed, 100, "Completed", totalChunks, totalChunks, mdPath, jsonPath, null);
         if (jobId != null && nodeModel != null)
+        {
+            nodeModel.EnsureNode(jobId, null, jobId, "job", new Dictionary<string, object?>
+            {
+                ["md_output_path"] = mdPath,
+                ["json_output_path"] = jsonPath
+            });
             nodeModel.CompleteNode(jobId, JobState.Completed, DateTimeOffset.UtcNow);
+        }
         _logger?.LogInformation("Done. Markdown: {Md}, JSON: {Json}", mdPath, jsonPath);
         return (mdPath, jsonPath);
         }

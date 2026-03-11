@@ -1,3 +1,5 @@
+using Agent04.Features.JobQuery.Application;
+using Agent04.Features.JobQuery.Infrastructure;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Infrastructure;
 using Microsoft.Extensions.Caching.Memory;
@@ -50,7 +52,7 @@ public sealed class Agent04Module : NinjectModule
         })
             .InSingletonScope();
 
-        Bind<IJobQueryService>().To<JobQueryService>().InSingletonScope();
+        Bind<IJobQueryService>().To<JobQueryService>().InSingletonScope(); // Features/JobQuery slice
 
         Bind<InMemoryNodeStore>().ToSelf().InSingletonScope();
         Bind<INodeModel>().ToMethod(ctx => ctx.Kernel.Get<InMemoryNodeStore>()).InSingletonScope();
