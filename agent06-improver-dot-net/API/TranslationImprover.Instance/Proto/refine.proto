@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+option csharp_namespace = "TranslationImprover.Proto";
+
+package translation_improver.refine;
+
+// Paths (input_file_path, output_file_path, prompt_file, intermediate_dir) are relative to the instance's workspace_root (from config).
+service RefinerService {
+  rpc SubmitRefineJob(SubmitRefineJobRequest) returns (SubmitRefineJobResponse);
+  rpc GetRefineStatus(GetRefineStatusRequest) returns (RefineStatusResponse);
+  rpc StreamRefineStatus(StreamRefineStatusRequest) returns (stream RefineStatusUpdate);
+  rpc CancelRefineJob(CancelRefineJobRequest) returns (CancelRefineJobResponse);
+  rpc QueryRefineJobs(QueryRefineJobsRequest) returns (QueryRefineJobsResponse);
+}
+
+message SubmitRefineJobRequest {
+  string input_file_path = 1;   // Optional if input_content is set
+  string input_content = 2;    // Optional: inline transcript text
+  string output_file_path = 3;
+  int32 batch_size = 4;
+  int32 context_lines = 5;
+  string model = 6;
+  float temperature = 7;
+  string prompt_file = 8;
+  string openai_base_url = 9;
+  string openai_organization = 10;
+  bool save_intermediate = 11;
+  string intermediate_dir = 12;
+  string callback_url = 13;
+  repeated string tags = 14;   // For semantic key query (one of these = semanticKey filter)
+}
+
+message SubmitRefineJobResponse {
+  string job_id = 1;
+}
+
+message GetRefineStatusRequest {
+  string job_id = 1;
+}
+
+message RefineStatusResponse {
+  string job_id = 1;
+  string state = 2;             // Pending, Running, Completed, Failed, Cancelled
+  int32 progress_percent = 3;
+  string current_phase = 4;
+  int32 current_batch = 5;
+  int32 total_batches = 6;
+  string output_file_path = 7;
+  string error_message = 8;
+  string created_at = 9;
+  string started_at = 10;
+  string completed_at = 11;
+  string updated_at = 12;
+  repeated string tags = 13;
+}
+
+message StreamRefineStatusRequest {
+  string job_id = 1;
+}
+
+message RefineStatusUpdate {
+  string job_id = 1;
+  string state = 2;
+  int32 progress_percent = 3;
+  string current_phase = 4;
+  int32 current_batch = 5;
+  int32 total_batches = 6;
+  string output_file_path = 7;
+  string error_message = 8;
+  string updated_at = 9;
+}
+
+message CancelRefineJobRequest {
+  string job_id = 1;
+}
+
+message CancelRefineJobResponse {
+  bool cancelled = 1;           // True if job was running and is now Cancelled
+}
+
+message QueryRefineJobsRequest {
+  string semantic_key = 1;      // Filter jobs by this semantic key (one of the job's tags)
+  string status = 2;           // Pending, Running, Completed, Failed, Cancelled
+  string from = 3;              // ISO8601
+  string to = 4;                // ISO8601
+  int32 limit = 5;
+  int32 offset = 6;
+}
+
+message QueryRefineJobsResponse {
+  repeated RefineStatusResponse jobs = 1;
+}
