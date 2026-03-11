@@ -1,5 +1,6 @@
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Agent04.Controllers;
@@ -21,8 +22,9 @@ public class TranscriptionController : ControllerBase
         _nodeQuery = nodeQuery;
     }
 
-    /// <summary>Submit a transcription job. Returns 202 with jobId.</summary>
+    /// <summary>Submit a transcription job. Returns 202 with jobId and Location header.</summary>
     [HttpPost]
+    [Tags("Jobs")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> SubmitJob([FromBody] SubmitJobRequest request, CancellationToken cancellationToken)
@@ -49,7 +51,9 @@ public class TranscriptionController : ControllerBase
         return AcceptedAtAction(nameof(GetJob), new { id = jobId }, new { jobId });
     }
 
+    /// <summary>Get job status (state, progress, phase, artifact paths when completed).</summary>
     [HttpGet("{id}")]
+    [Tags("Jobs")]
     [ProducesResponseType(typeof(JobStatus), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public IActionResult GetJob(string id)
@@ -60,7 +64,9 @@ public class TranscriptionController : ControllerBase
         return Ok(job);
     }
 
+    /// <summary>List jobs with optional status filter and pagination.</summary>
     [HttpGet]
+    [Tags("Jobs")]
     [ProducesResponseType(typeof(IReadOnlyList<JobStatus>), StatusCodes.Status200OK)]
     public IActionResult ListJobs([FromQuery] JobState? status, [FromQuery] int limit = 50, [FromQuery] int offset = 0)
     {
@@ -68,8 +74,10 @@ public class TranscriptionController : ControllerBase
         return Ok(list);
     }
 
-    /// <summary>Get virtual model nodes for a job (flat list or tree).</summary>
+    /// <summary>Get virtual model (RENTGEN) nodes for a job: hierarchy of steps (job → chunking → transcribe → chunk-0..N → merge).</summary>
+    /// <remarks>Part of the RENTGEN virtual abstract model. Use tree=true to get nested structure with children; otherwise returns flat list with parentId. scopeId equals job id. Each node has id, parentId, scopeId, kind (job|phase|chunk), status, startedAt, completedAt, updatedAt. See docs/RENTGEN_IMPLEMENTATION.md.</remarks>
     [HttpGet("{id}/nodes")]
+    [Tags("Virtual model (RENTGEN)")]
     [ProducesResponseType(typeof(IReadOnlyList<NodeInfo>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public IActionResult GetJobNodes(string id, [FromQuery] bool tree = false)
@@ -82,7 +90,10 @@ public class TranscriptionController : ControllerBase
         return Ok(nodes);
     }
 
+    /// <summary>Query jobs by semantic key (tag) and filters — part of RENTGEN virtual model. Returns full status per job. Suitable for 0.01–10 Hz polling.</summary>
+    /// <remarks>Filter by tag (from SubmitJob), status, time range (from/to), with limit/offset. Each item in the list has full job status (state, progress, phase, paths).</remarks>
     [HttpGet("query")]
+    [Tags("Virtual model (RENTGEN)")]
     [ProducesResponseType(typeof(IReadOnlyList<JobStatus>), StatusCodes.Status200OK)]
     public IActionResult QueryJobs(
         [FromQuery] string? tag,

@@ -36,6 +36,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
     public async Task<(string MdPath, string JsonPath)> ProcessFileAsync(
         TranscriptionConfig config,
         string inputFilePath,
+        string workspaceRoot,
         string? jobId = null,
         IJobStatusStore? statusStore = null,
         INodeModel? nodeModel = null,
@@ -43,6 +44,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
     {
         if (!File.Exists(inputFilePath))
             throw new FileNotFoundException("Audio file not found", inputFilePath);
+        var root = Path.GetFullPath(workspaceRoot);
 
         void UpdateProgress(JobState state, int percent, string? phase, string? mdPath = null, string? jsonPath = null, string? error = null)
         {

@@ -210,3 +210,25 @@ __marimo__/
 .runtime/
 .chunks/
 .chunks_json/
+
+# .NET build artifacts
+*.bak
+*.csproj.user
+*.sln.DotSettings.user
+*.suo
+*.userprefs
+.fake/
+.vs/
+.idea/
+Sources/**/AssemblyInfo.cs
+StyleCop.Cache
+TestResults.xml
+bin
+build/*
+log
+obj
+packages/*
+paket-files/
+temp/
+tools/
+publish/

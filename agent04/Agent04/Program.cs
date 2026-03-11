@@ -1,3 +1,4 @@
+using Agent04.Application;
 using Agent04.Composition;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
@@ -8,9 +9,32 @@ using Ninject.Extensions.DependencyInjection;
 var builder = WebApplication.CreateBuilder(args);
 
 // Config path: --config=<path> / --config <path> for CLI, else config/default.json
-var (configPath, isCliMode) = GetConfigPathAndMode(args, builder.Environment.ContentRootPath);
-if (File.Exists(configPath))
-    builder.Configuration.AddJsonFile(configPath, optional: !isCliMode, reloadOnChange: false);
+var (configPathFromArgs, isCliMode) = GetConfigPathAndMode(args, builder.Environment.ContentRootPath);
+
+// Workspace root is required: read from appsettings / env, validate at startup
+var workspaceRootRaw = builder.Configuration["WorkspaceRoot"] ?? builder.Configuration["workspace_root"] ?? "";
+if (string.IsNullOrWhiteSpace(workspaceRootRaw))
+{
+    Console.Error.WriteLine("WorkspaceRoot (or workspace_root) is required in appsettings.json or environment. Application will exit.");
+    Environment.Exit(1);
+}
+var workspaceRootFull = Path.GetFullPath(workspaceRootRaw.Trim());
+if (!Directory.Exists(workspaceRootFull))
+{
+    Console.Error.WriteLine($"Workspace root directory does not exist: {workspaceRootFull}. Application will exit.");
+    Environment.Exit(1);
+}
+builder.Services.AddSingleton(new WorkspaceRoot(workspaceRootFull));
+
+// CLI: resolve config path relative to workspace root; web: use default path (not loaded here)
+string resolvedConfigPath = configPathFromArgs;
+if (isCliMode && !string.IsNullOrEmpty(configPathFromArgs))
+{
+    var relative = configPathFromArgs.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    resolvedConfigPath = Path.Combine(workspaceRootFull, relative);
+}
+if (File.Exists(resolvedConfigPath))
+    builder.Configuration.AddJsonFile(resolvedConfigPath, optional: !isCliMode, reloadOnChange: false);
 
 // Composition root: Ninject module with all Transcription feature bindings
 builder.Host
@@ -20,13 +44,28 @@ builder.Host
 builder.Services.AddMemoryCache();
 builder.Services.AddControllers();
 builder.Services.AddGrpc();
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, context, cancel) =>
+    {
+        document.Tags ??= new List<Microsoft.OpenApi.Models.OpenApiTag>();
+        if (document.Tags.All(t => t.Name != "Virtual model (RENTGEN)"))
+            document.Tags.Add(new Microsoft.OpenApi.Models.OpenApiTag
+            {
+                Name = "Virtual model (RENTGEN)",
+                Description = "RENTGEN virtual abstract model: query jobs by semantic key (tags), get hierarchical node tree per job (scopeId = jobId). Use GET /jobs/query for list with filters; GET /jobs/{id}/nodes for step/chunk hierarchy. Designed for 0.01–10 Hz polling. See docs/RENTGEN_IMPLEMENTATION.md."
+            });
+        if (document.Tags.All(t => t.Name != "Jobs"))
+            document.Tags.Add(new Microsoft.OpenApi.Models.OpenApiTag { Name = "Jobs", Description = "Submit and monitor transcription jobs." });
+        return System.Threading.Tasks.Task.CompletedTask;
+    });
+});
 
 var app = builder.Build();
 
 if (isCliMode)
 {
-    await RunCliAsync(app.Services, configPath);
+    await RunCliAsync(app.Services, resolvedConfigPath, workspaceRootFull);
     return;
 }
 
@@ -58,7 +97,7 @@ static (string path, bool isCli) GetConfigPathAndMode(string[] args, string cont
     return (Path.Combine(contentRoot, "config", "default.json"), false);
 }
 
-static async Task RunCliAsync(IServiceProvider services, string configPath)
+static async Task RunCliAsync(IServiceProvider services, string configPath, string workspaceRoot)
 {
     if (!File.Exists(configPath))
     {
@@ -75,15 +114,14 @@ static async Task RunCliAsync(IServiceProvider services, string configPath)
     var pipeline = services.GetRequiredService<ITranscriptionPipeline>();
     foreach (var file in files)
     {
-        var inputPath = file;
-        if (!Path.IsPathRooted(inputPath))
-            inputPath = Path.Combine(Path.GetDirectoryName(configPath) ?? ".", inputPath);
+        var relative = file.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var inputPath = Path.Combine(workspaceRoot, relative);
         if (!File.Exists(inputPath))
         {
             Console.Error.WriteLine($"Input file not found: {inputPath}");
             Environment.Exit(1);
         }
-        var (mdPath, jsonPath) = await pipeline.ProcessFileAsync(config, inputPath);
+        var (mdPath, jsonPath) = await pipeline.ProcessFileAsync(config, inputPath, workspaceRoot, null, null, null);
         Console.WriteLine($"Markdown: {mdPath}");
         Console.WriteLine($"JSON: {jsonPath}");
     }
