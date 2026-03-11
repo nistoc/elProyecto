@@ -80,7 +80,7 @@ public sealed class CachingJobStatusStore : IJobStatusStore
         var json = JsonSerializer.Serialize(new
         {
             filter.Status,
-            filter.Tag,
+            filter.SemanticKey,
             From = fromStr,
             To = toStr,
             filter.Limit,

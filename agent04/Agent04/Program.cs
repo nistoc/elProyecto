@@ -48,7 +48,7 @@ builder.Services.AddOpenApi(options =>
             document.Tags.Add(new Microsoft.OpenApi.Models.OpenApiTag
             {
                 Name = "Virtual model (RENTGEN)",
-                Description = "RENTGEN virtual abstract model: query jobs by semantic key (tags), get hierarchical node tree per job (scopeId = jobId). Use GET /jobs/query for list with filters; GET /jobs/{id}/nodes for step/chunk hierarchy. Designed for 0.01–10 Hz polling. See docs/RENTGEN_IMPLEMENTATION.md."
+                Description = "RENTGEN virtual abstract model: query jobs by semantic key (GET /jobs/query?semanticKey=...); get node tree per job (GET /jobs/{id}/nodes; optional ?tag=nodeId for single node status). scopeId = jobId. Designed for 0.01–10 Hz polling. See docs/RENTGEN_IMPLEMENTATION.md."
             });
         if (document.Tags.All(t => t.Name != "Jobs"))
             document.Tags.Add(new Microsoft.OpenApi.Models.OpenApiTag { Name = "Jobs", Description = "Submit and monitor transcription jobs." });

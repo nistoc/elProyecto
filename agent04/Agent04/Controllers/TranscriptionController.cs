@@ -66,10 +66,8 @@ public class TranscriptionController : ControllerBase
         if (!System.IO.File.Exists(inputPathFull))
             return BadRequest(ProblemDetailsFor(400, "Bad Request", "Input file not found", extensions: new Dictionary<string, object?> { ["inputFilePath"] = inputPathRel }));
 
-        System.Diagnostics.Activity.Current?.SetTag("transcription.caller_id", xCallerId ?? "");
         var callbackUrl = !string.IsNullOrWhiteSpace(request?.CallbackUrl) ? request.CallbackUrl!.Trim() : null;
         var jobId = _store.Create(request?.Tags, callbackUrl);
-        System.Diagnostics.Activity.Current?.SetTag("job.id", jobId);
         _ = RunJobAsync(jobId, config, inputPathFull, cancellationToken);
         return AcceptedAtAction(nameof(GetJob), new { id = jobId }, new { jobId });
     }
@@ -98,37 +96,44 @@ public class TranscriptionController : ControllerBase
     }
 
     /// <summary>Get virtual model (RENTGEN) nodes for a job: hierarchy of steps (job → chunking → transcribe → chunk-0..N → merge).</summary>
-    /// <remarks>Part of the RENTGEN virtual abstract model. Use tree=true to get nested structure with children; otherwise returns flat list with parentId. scopeId equals job id. Each node has id, parentId, scopeId, kind (job|phase|chunk), status, startedAt, completedAt, updatedAt. See docs/RENTGEN_IMPLEMENTATION.md.</remarks>
+    /// <remarks>Part of the RENTGEN virtual abstract model. Use tree=true to get nested structure with children; otherwise returns flat list with parentId. Optional tag = node id/name to return only that node's status. scopeId equals job id. Each node has id, parentId, scopeId, kind (job|phase|chunk), status, startedAt, completedAt, updatedAt. See docs/RENTGEN_IMPLEMENTATION.md.</remarks>
     [HttpGet("{id}/nodes")]
     [Tags("Virtual model (RENTGEN)")]
     [ProducesResponseType(typeof(IReadOnlyList<NodeInfo>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public IActionResult GetJobNodes(string id, [FromQuery] bool tree = false)
+    public IActionResult GetJobNodes(string id, [FromQuery] bool tree = false, [FromQuery] string? tag = null)
     {
         if (_store.Get(id) == null)
             return NotFound(ProblemDetailsFor(404, "Not Found", "Job not found", extensions: new Dictionary<string, object?> { ["jobId"] = id }));
         if (_nodeQuery == null)
             return Ok(Array.Empty<NodeInfo>());
+        if (!string.IsNullOrEmpty(tag))
+        {
+            var node = _nodeQuery.GetNodeByScopeAndId(id, tag);
+            if (node == null)
+                return NotFound(ProblemDetailsFor(404, "Not Found", "Node not found", extensions: new Dictionary<string, object?> { ["jobId"] = id, ["tag"] = tag }));
+            return Ok(new[] { node });
+        }
         var nodes = tree ? _nodeQuery.GetTreeByScope(id) : _nodeQuery.GetByScope(id);
         return Ok(nodes);
     }
 
-    /// <summary>Query jobs by semantic key (tag) and filters — part of RENTGEN virtual model. Returns full status per job. Suitable for 0.01–10 Hz polling.</summary>
-    /// <remarks>Filter by tag (from SubmitJob), status, time range (from/to), with limit/offset. Each item in the list has full job status (state, progress, phase, paths).</remarks>
+    /// <summary>Query jobs by semantic key and filters — part of RENTGEN virtual model. Returns full status per job. Suitable for 0.01–10 Hz polling.</summary>
+    /// <remarks>Filter by semanticKey (one of the job's Tags from SubmitJob), status, time range (from/to), with limit/offset. Each item in the list has full job status (state, progress, phase, paths).</remarks>
     [HttpGet("query")]
     [Tags("Virtual model (RENTGEN)")]
     [ProducesResponseType(typeof(IReadOnlyList<JobStatus>), StatusCodes.Status200OK)]
     public IActionResult QueryJobs(
-        [FromQuery] string? tag,
+        [FromQuery] string? semanticKey,
         [FromQuery] JobState? status,
         [FromQuery] DateTimeOffset? from,
         [FromQuery] DateTimeOffset? to,
         [FromQuery] int limit = 50,
         [FromQuery] int offset = 0)
     {
-        var list = _jobQueryService != null && !string.IsNullOrEmpty(tag)
-            ? _jobQueryService.QueryBySemanticKey(tag, status, from, to, limit, offset)
-            : _store.List(new JobListFilter { Tag = tag, Status = status, From = from, To = to, Limit = limit, Offset = offset });
+        var list = _jobQueryService != null && !string.IsNullOrEmpty(semanticKey)
+            ? _jobQueryService.QueryBySemanticKey(semanticKey, status, from, to, limit, offset)
+            : _store.List(new JobListFilter { SemanticKey = semanticKey, Status = status, From = from, To = to, Limit = limit, Offset = offset });
         return Ok(list);
     }
 

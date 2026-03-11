@@ -68,7 +68,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             to = t;
         var filter = new JobListFilter
         {
-            Tag = !string.IsNullOrEmpty(request.Tag) ? request.Tag : null,
+            SemanticKey = !string.IsNullOrEmpty(request.SemanticKey) ? request.SemanticKey : null,
             Status = status,
             From = from,
             To = to,

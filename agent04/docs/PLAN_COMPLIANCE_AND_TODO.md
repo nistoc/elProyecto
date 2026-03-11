@@ -9,7 +9,7 @@
 - **Этапы 0–10:** остов, Domain, Audio, Cache, OpenAI client, Output, Merger, Pipeline, REST API (POST/GET jobs, список, Location, 202), gRPC (SubmitJob, GetJobStatus, StreamJobStatus), IJobStatusStore, мониторинг, теги в REST и gRPC, кеширование (CachingJobStatusStore), Ninject (Agent04Module), модель узлов (INodeModel, INodeQuery, GET /jobs/{id}/nodes), RENTGEN_IMPLEMENTATION.md и скрипт регистрации факта, README, CHANGELOG.
 - **Песочница (workspace_root):** обязательный WorkspaceRoot в appsettings/окружении, проверка при старте; configPath и inputFilePath в API — только относительные пути; уникальные имена транскриптов по jobId. Поддержка CLI удалена; запуск только как веб-сервис (HTTP + gRPC).
 - **REST:** ProblemDetails для 400/404, OpenAPI с тегами и описаниями для виртуальной модели (RENTGEN).
-- **Виртуальная модель:** запрос по jobId, список по тегу (GET /jobs/query), дерево узлов по scopeId, кеш с TTL и инвалидацией.
+- **Виртуальная модель:** запрос по jobId, список по семантическому ключу (GET /jobs/query?semanticKey=...), дерево узлов по scopeId и узел по tag (GET /jobs/{id}/nodes?tag=nodeId), кеш с TTL и инвалидацией.
 
 ---
 
@@ -23,7 +23,7 @@
 | Тело POST: «встроенный JSON конфига» | Не требуется. | Принимается только `configPath` и `inputFilePath`. Нет трубуется вариант передать конфиг inline в теле запроса, чтобы не услоднять реализацию. Конфиг должен быть заранее положен в папку проекта в корне рабочей директоории. |
 | Multipart: файл + конфиг             | Не требуется  | Нет приёма аудиофайла через multipart/form-data вместе с конфигом. Все файлы кладутся заранее в папку проекта с аудиофайлов                                                                                                    |
 | Workspace root / относительные пути  | Реализовано   | WorkspaceRoot в appsettings/окружении, пути в API относительные, абсолютный inputFilePath — 400.                                                                                                                               |
-| Заголовок `X-Caller-Id`              | Реализовано   | Читается из заголовка, прокидывается в JobStatus и в теги Activity (XRay).                                                                                                                                                     |
+| Заголовок `X-Caller-Id`              | Реализовано   | Читается из заголовка, прокидывается в JobStatus.                                                                                                                                                                               |
 
 
 **Потенциальные правки:** при необходимости — вариант SubmitJob с телом с inline-конфигом; multipart для загрузки файла — не требуется расширение; реализовать проверка/прокидывание `X-Caller-Id` и описание в OpenAPI.
@@ -57,7 +57,7 @@
 | Пункт плана                              | Статус                                               | Комментарий                                                                                                                                                                                                                               |
 | ---------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Отдельный слайс Features/JobQuery        | Реализовано   | Логика вынесена в Features/JobQuery (IJobQueryService, JobQueryService); контроллер и gRPC используют этот слайс.                                                           |
-| IJobQueryService.QueryBySemanticKey(...) | Реализовано   | Метод QueryBySemanticKey(semanticKey, status, from, to, limit, offset) в IJobQueryService; GET /jobs/query с tag вызывает его.                                               |
+| IJobQueryService.QueryBySemanticKey(...) | Реализовано   | Метод QueryBySemanticKey(semanticKey, ...) в IJobQueryService; GET /jobs/query с параметром semanticKey.                                                               |
 | Rate limit 429                           | Реализовано   | AddRateLimiter с политикой "api" (PermitLimit, WindowSeconds из конфига); при превышении — 429.                                                                               |
 
 
@@ -70,7 +70,7 @@
 | ------------------------------------ | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | progressPercent, phase на узле       | Реализовано   | Pipeline вызывает UpdateNodeProgress(jobId, percent, phase); узлы обновляют ProgressPercent и Phase.                                                                          |
 | Метаданные корня (пути к артефактам) | Реализовано   | При успешном завершении в метаданные корневого узла записываются md_output_path и json_output_path.                                                                           |
-| Атрибуты XRay                        | Реализовано   | В pipeline и контроллере установка тегов Activity (job.id, file.input, transcription.caller_id) для трассировки.                                                             |
+| Атрибуты XRay                        | Реализовано   | Атрибуты [XRayNode(Ensure/Start/Complete)] на методах пайплайна, обновляющих виртуальную модель (EnsureNode/StartNode/CompleteNode). Теги Activity к XRay не относятся.                    |
 
 
 **Правки:** при необходимости — запись progressPercent/phase в узлы из pipeline или копирование из job status; при желании — пути в metadata корневого узла; XRay применить.
@@ -93,8 +93,8 @@
   - **Virtual model (RENTGEN)** — виртуальная модель: запрос по тегу и дерево узлов.
 - Для тега **Virtual model (RENTGEN)** в документе задано **описание**: назначение (запросы по семантическому ключу, иерархия узлов по job), типичное использование (GET /jobs/query, GET /jobs/{id}/nodes), частота опроса, ссылка на docs/RENTGEN_IMPLEMENTATION.md.
 - У операций добавлены **summary** и **remarks**:
-  - GET /jobs/{id}/nodes — иерархия шагов (job → chunking → transcribe → chunk-0..N → merge), параметр tree, поля узла (id, parentId, scopeId, kind, status, startedAt, completedAt, updatedAt), ссылка на RENTGEN_IMPLEMENTATION.md.
-  - GET /jobs/query — запрос по семантическому ключу (тег), фильтры, полный статус по каждой записи, пригодность для опроса 0.01–10 Hz.
+  - GET /jobs/{id}/nodes — иерархия шагов (job → chunking → transcribe → chunk-0..N → merge), параметры tree и tag (tag = node id для запроса статуса одного узла), поля узла (id, parentId, scopeId, kind, status, startedAt, completedAt, updatedAt), ссылка на RENTGEN_IMPLEMENTATION.md.
+  - GET /jobs/query — запрос по семантическому ключу (параметр semanticKey), фильтры, полный статус по каждой записи, пригодность для опроса 0.01–10 Hz.
 
 Внешний сервис по OpenAPI может: увидеть группу «Virtual model (RENTGEN)», прочитать описание тега и операций, понять, как получать список заданий по тегу и как получать дерево узлов по job id (flat или tree).
 
@@ -110,6 +110,6 @@
 ## 5. Итог
 
 - Основная функциональность плана реализована: остов, фичи транскрипции, REST, gRPC, мониторинг, теги, кеш, Ninject, модель узлов, RENTGEN-документ и скрипт, документация; **песочница (workspace_root)** и **удаление CLI** реализованы.
-- Реализованы: X-Caller-Id, webhook/callback_url, gRPC QueryJobs, исходящий gRPC (заглушка), слайс JobQuery и QueryBySemanticKey, rate limit 429, TotalChunks/ProcessedChunks, progress/phase и метаданные узлов, теги XRay (Activity). Не в плане на первый этап: встроенный конфиг и multipart в POST; позже — JWT (AUTH.md).
+- Реализованы: X-Caller-Id, webhook/callback_url, gRPC QueryJobs, исходящий gRPC (заглушка), слайс JobQuery и QueryBySemanticKey, rate limit 429, TotalChunks/ProcessedChunks, progress/phase и метаданные узлов, атрибуты XRay на методах пайплайна; в API виртуальной модели tag = идентификатор узла (GET /jobs/{id}/nodes?tag=...), фильтр списка заданий — semanticKey. Не в плане на первый этап: встроенный конфиг и multipart в POST; позже — JWT (AUTH.md).
 - Работа с API виртуальной модели (RENTGEN) описана в OpenAPI (теги, описания операций и тега), чтобы внешние сервисы могли интуитивно понять, как получать данные по этой логике.
 

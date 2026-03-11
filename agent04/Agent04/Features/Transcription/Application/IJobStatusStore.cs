@@ -47,7 +47,8 @@ public sealed class JobStatus
 public sealed class JobListFilter
 {
     public JobState? Status { get; set; }
-    public string? Tag { get; set; }
+    /// <summary>Filter jobs by semantic key (one of the job's Tags).</summary>
+    public string? SemanticKey { get; set; }
     public DateTimeOffset? From { get; set; }
     public DateTimeOffset? To { get; set; }
     public int Limit { get; set; } = 50;

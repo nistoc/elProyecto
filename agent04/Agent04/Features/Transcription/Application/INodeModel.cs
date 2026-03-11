@@ -14,12 +14,14 @@ public interface INodeModel
 }
 
 /// <summary>
-/// Read-side: get nodes by scope (flat list or tree).
+/// Read-side: get nodes by scope (flat list or tree), or a single node by id (tag).
 /// </summary>
 public interface INodeQuery
 {
     IReadOnlyList<NodeInfo> GetByScope(string scopeId);
     IReadOnlyList<NodeInfo> GetTreeByScope(string scopeId);
+    /// <summary>Get a single node by scope and node id (virtual model "tag" = node id/name for status).</summary>
+    NodeInfo? GetNodeByScopeAndId(string scopeId, string nodeId);
 }
 
 /// <summary>

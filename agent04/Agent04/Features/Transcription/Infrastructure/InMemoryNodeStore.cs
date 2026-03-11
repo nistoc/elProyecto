@@ -85,6 +85,14 @@ public sealed class InMemoryNodeStore : INodeModel, INodeQuery
         }
     }
 
+    public NodeInfo? GetNodeByScopeAndId(string scopeId, string nodeId)
+    {
+        if (string.IsNullOrEmpty(nodeId)) return null;
+        if (!_nodes.TryGetValue(nodeId, out var r)) return null;
+        if (!string.Equals(r.ScopeId, scopeId, StringComparison.Ordinal)) return null;
+        return ToNodeInfo(r, null);
+    }
+
     public IReadOnlyList<NodeInfo> GetTreeByScope(string scopeId)
     {
         var flat = GetByScope(scopeId);

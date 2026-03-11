@@ -45,10 +45,10 @@ message JobStatusResponse {
 }
 
 message QueryJobsRequest {
-  string tag = 1;
-  string status = 2;  // Pending, Running, Completed, Failed, Cancelled
-  string from = 3;    // ISO8601
-  string to = 4;      // ISO8601
+  string semantic_key = 1;  // Filter jobs by this semantic key (one of the job's tags)
+  string status = 2;       // Pending, Running, Completed, Failed, Cancelled
+  string from = 3;          // ISO8601
+  string to = 4;            // ISO8601
   int32 limit = 5;
   int32 offset = 6;
 }

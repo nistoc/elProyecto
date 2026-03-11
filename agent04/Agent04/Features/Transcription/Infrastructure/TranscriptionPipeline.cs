@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
@@ -8,6 +7,63 @@ namespace Agent04.Features.Transcription.Infrastructure;
 
 public sealed class TranscriptionPipeline : ITranscriptionPipeline
 {
+    [XRayNode(XRayNodeOperation.Ensure)]
+    [XRayNode(XRayNodeOperation.Start)]
+    private static void EnterStep(INodeModel nodeModel, string jobId, string parentNodeId, string localKey, string kind)
+    {
+        var nodeId = string.IsNullOrEmpty(parentNodeId) ? jobId : parentNodeId + ":" + localKey;
+        nodeModel.EnsureNode(nodeId, string.IsNullOrEmpty(parentNodeId) ? null : parentNodeId, jobId, kind);
+        nodeModel.StartNode(nodeId);
+    }
+
+    [XRayNode(XRayNodeOperation.Complete)]
+    private static void CompleteStep(INodeModel nodeModel, string jobId, string parentNodeId, string localKey, JobState status, string? error = null)
+    {
+        var nodeId = string.IsNullOrEmpty(parentNodeId) ? jobId : parentNodeId + ":" + localKey;
+        nodeModel.CompleteNode(nodeId, status, DateTimeOffset.UtcNow, error);
+    }
+
+    [XRayNode(XRayNodeOperation.Ensure)]
+    [XRayNode(XRayNodeOperation.Start)]
+    private static void EnsureAndStartJobRoot(INodeModel nodeModel, string jobId)
+    {
+        nodeModel.EnsureNode(jobId, null, jobId, "job");
+        nodeModel.StartNode(jobId);
+    }
+
+    [XRayNode(XRayNodeOperation.Ensure)]
+    [XRayNode(XRayNodeOperation.Start)]
+    private static void EnsureAndStartTranscribePhase(INodeModel nodeModel, string jobId)
+    {
+        var transcribeParent = jobId + ":transcribe";
+        nodeModel.EnsureNode(transcribeParent, jobId, jobId, "phase");
+        nodeModel.StartNode(transcribeParent);
+    }
+
+    [XRayNode(XRayNodeOperation.Complete)]
+    private static void CompleteTranscribePhase(INodeModel nodeModel, string jobId)
+    {
+        nodeModel.CompleteNode(jobId + ":transcribe", JobState.Completed, DateTimeOffset.UtcNow);
+    }
+
+    [XRayNode(XRayNodeOperation.Ensure)]
+    [XRayNode(XRayNodeOperation.Complete)]
+    private static void EnsureJobRootWithMetadataAndComplete(INodeModel nodeModel, string jobId, string mdPath, string jsonPath)
+    {
+        nodeModel.EnsureNode(jobId, null, jobId, "job", new Dictionary<string, object?>
+        {
+            ["md_output_path"] = mdPath,
+            ["json_output_path"] = jsonPath
+        });
+        nodeModel.CompleteNode(jobId, JobState.Completed, DateTimeOffset.UtcNow);
+    }
+
+    [XRayNode(XRayNodeOperation.Complete)]
+    private static void CompleteJobFailed(INodeModel nodeModel, string jobId, string? errorMessage)
+    {
+        nodeModel.CompleteNode(jobId, JobState.Failed, DateTimeOffset.UtcNow, errorMessage);
+    }
+
     private readonly IAudioUtils _audioUtils;
     private readonly ITranscriptionCache _cache;
     private readonly ITranscriptionClient _client;
@@ -67,28 +123,20 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         void StepStart(string parentNodeId, string localKey, string kind)
         {
-            if (jobId == null || nodeModel == null) return;
-            var nodeId = string.IsNullOrEmpty(parentNodeId) ? jobId : parentNodeId + ":" + localKey;
-            nodeModel.EnsureNode(nodeId, string.IsNullOrEmpty(parentNodeId) ? null : parentNodeId, jobId, kind);
-            nodeModel.StartNode(nodeId);
+            if (jobId != null && nodeModel != null)
+                EnterStep(nodeModel, jobId, parentNodeId, localKey, kind);
         }
 
         void StepComplete(string parentNodeId, string localKey, JobState status, string? error = null)
         {
-            if (jobId == null || nodeModel == null) return;
-            var nodeId = string.IsNullOrEmpty(parentNodeId) ? jobId : parentNodeId + ":" + localKey;
-            nodeModel.CompleteNode(nodeId, status, DateTimeOffset.UtcNow, error);
+            if (jobId != null && nodeModel != null)
+                CompleteStep(nodeModel, jobId, parentNodeId, localKey, status, error);
         }
 
-        Activity.Current?.SetTag("job.id", jobId ?? "");
-        Activity.Current?.SetTag("file.input", inputFilePath);
         _logger?.LogInformation("[FILE] {Path}", inputFilePath);
         UpdateProgress(JobState.Running, 0, "Starting", null, null);
         if (jobId != null && nodeModel != null)
-        {
-            nodeModel.EnsureNode(jobId, null, jobId, "job");
-            nodeModel.StartNode(jobId);
-        }
+            EnsureAndStartJobRoot(nodeModel, jobId);
 
         try
         {
@@ -118,10 +166,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         var transcribeParent = jobId != null ? jobId + ":transcribe" : "";
         if (jobId != null && nodeModel != null)
-        {
-            nodeModel.EnsureNode(transcribeParent, jobId, jobId, "phase");
-            nodeModel.StartNode(transcribeParent);
-        }
+            EnsureAndStartTranscribePhase(nodeModel, jobId);
 
         var results = new List<(int Index, TranscriptionResult Result)>();
         var progress = new ChunkProgress(chunkInfos.Count, config.Get<string>("progress_time_format") ?? "HH:MM:SS.M");
@@ -166,7 +211,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         }
 
         if (jobId != null && nodeModel != null)
-            nodeModel.CompleteNode(transcribeParent, JobState.Completed, DateTimeOffset.UtcNow);
+            CompleteTranscribePhase(nodeModel, jobId);
         progress.Complete();
 
         StepStart(jobId ?? "", "merge", "phase");
@@ -178,21 +223,14 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         UpdateProgress(JobState.Completed, 100, "Completed", totalChunks, totalChunks, mdPath, jsonPath, null);
         if (jobId != null && nodeModel != null)
-        {
-            nodeModel.EnsureNode(jobId, null, jobId, "job", new Dictionary<string, object?>
-            {
-                ["md_output_path"] = mdPath,
-                ["json_output_path"] = jsonPath
-            });
-            nodeModel.CompleteNode(jobId, JobState.Completed, DateTimeOffset.UtcNow);
-        }
+            EnsureJobRootWithMetadataAndComplete(nodeModel, jobId, mdPath, jsonPath);
         _logger?.LogInformation("Done. Markdown: {Md}, JSON: {Json}", mdPath, jsonPath);
         return (mdPath, jsonPath);
         }
         catch (Exception ex)
         {
             if (jobId != null && nodeModel != null)
-                nodeModel.CompleteNode(jobId, JobState.Failed, DateTimeOffset.UtcNow, ex.Message);
+                CompleteJobFailed(nodeModel, jobId, ex.Message);
             UpdateProgress(JobState.Failed, 0, null, null, null, null, null, ex.Message);
             throw;
         }

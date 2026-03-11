@@ -26,7 +26,7 @@ public sealed class JobQueryService : IJobQueryService
     {
         var filter = new JobListFilter
         {
-            Tag = semanticKey,
+            SemanticKey = semanticKey,
             Status = status,
             From = from,
             To = to,

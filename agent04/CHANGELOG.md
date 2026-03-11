@@ -66,3 +66,14 @@ All notable changes to the Agent04 project are documented here.
 - **CLI mode:** Support for `--config` and one-shot console run removed. Agent04 runs only as a web service (HTTP + gRPC). Use `dotnet run` to start the host.
 
 ## [Unreleased]
+
+### Added
+
+- **XRay attributes:** `[XRayNode(Ensure|Start|Complete)]` mark pipeline methods that update the virtual model (RENTGEN). Methods `EnterStep`, `CompleteStep`, `EnsureAndStartJobRoot`, etc. are decorated; explicit `INodeModel` calls remain, attributes document and reserve for future interceptor.
+- **Tag = node id in virtual model:** GET /jobs/{id}/nodes accepts optional query `tag` (node id/name); returns that single node or 404. `INodeQuery.GetNodeByScopeAndId(scopeId, nodeId)` added.
+
+### Changed
+
+- **Semantic key vs tag:** Job list filter parameter renamed from `tag` to `semanticKey` in REST (GET /jobs/query?semanticKey=...) and in gRPC (`QueryJobsRequest.semantic_key`). `JobListFilter.Tag` renamed to `SemanticKey`. The word "tag" in the API now means only the node identifier when querying node status (GET /jobs/{id}/nodes?tag=...).
+- **XRay clarification:** Removed `Activity.Current?.SetTag(...)` from pipeline and controller (those were tracing tags, not XRay). XRay in Agent04 = attributes on business methods for the virtual model; see docs/RENTGEN_IMPLEMENTATION.md.
+- **Documentation:** RENTGEN_IMPLEMENTATION.md and PLAN_COMPLIANCE_AND_TODO.md updated for XRay attributes and tag/semanticKey semantics.

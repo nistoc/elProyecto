@@ -47,10 +47,10 @@ public sealed class InMemoryJobStatusStore : IJobStatusStore
         var list = _jobs.Values.AsEnumerable();
         if (filter?.Status is { } s)
             list = list.Where(x => x.State == s);
-        if (!string.IsNullOrEmpty(filter?.Tag))
+        if (!string.IsNullOrEmpty(filter?.SemanticKey))
         {
-            var tag = filter.Tag;
-            list = list.Where(x => x.Tags?.Contains(tag, StringComparer.OrdinalIgnoreCase) == true);
+            var key = filter.SemanticKey;
+            list = list.Where(x => x.Tags?.Contains(key, StringComparer.OrdinalIgnoreCase) == true);
         }
         if (filter?.From is { } from)
             list = list.Where(x => x.CreatedAt >= from);
