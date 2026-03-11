@@ -1,3 +1,4 @@
+using Agent04.Application;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
 using Microsoft.AspNetCore.Http;
@@ -11,43 +12,49 @@ public class TranscriptionController : ControllerBase
 {
     private readonly ITranscriptionPipeline _pipeline;
     private readonly IJobStatusStore _store;
+    private readonly WorkspaceRoot _workspaceRoot;
     private readonly INodeModel? _nodeModel;
     private readonly INodeQuery? _nodeQuery;
 
-    public TranscriptionController(ITranscriptionPipeline pipeline, IJobStatusStore store, INodeModel? nodeModel = null, INodeQuery? nodeQuery = null)
+    public TranscriptionController(ITranscriptionPipeline pipeline, IJobStatusStore store, WorkspaceRoot workspaceRoot, INodeModel? nodeModel = null, INodeQuery? nodeQuery = null)
     {
         _pipeline = pipeline;
         _store = store;
+        _workspaceRoot = workspaceRoot;
         _nodeModel = nodeModel;
         _nodeQuery = nodeQuery;
     }
 
-    /// <summary>Submit a transcription job. Returns 202 with jobId and Location header.</summary>
+    /// <summary>Submit a transcription job. Returns 202 with jobId and Location header. configPath and inputFilePath are relative to workspace_root.</summary>
     [HttpPost]
     [Tags("Jobs")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> SubmitJob([FromBody] SubmitJobRequest request, CancellationToken cancellationToken)
     {
-        var configPath = request?.ConfigPath ?? "config/default.json";
-        if (!System.IO.File.Exists(configPath))
-            return BadRequest(ProblemDetailsFor(400, "Bad Request", "Config file not found", extensions: new Dictionary<string, object?> { ["configPath"] = configPath }));
+        var root = _workspaceRoot.RootPath;
+        var configPathRel = (request?.ConfigPath ?? "config/default.json").Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var configPathFull = Path.Combine(root, configPathRel);
+        if (!System.IO.File.Exists(configPathFull))
+            return BadRequest(ProblemDetailsFor(400, "Bad Request", "Config file not found", extensions: new Dictionary<string, object?> { ["configPath"] = configPathRel }));
 
-        var config = await TranscriptionConfig.FromFileAsync(configPath, cancellationToken);
+        var config = await TranscriptionConfig.FromFileAsync(configPathFull, cancellationToken);
         var files = config.GetFiles();
         var rawPath = !string.IsNullOrEmpty(request?.InputFilePath)
-            ? request.InputFilePath
+            ? request.InputFilePath!.Trim()
             : (files.Count > 0 ? files[0] : null);
         if (string.IsNullOrEmpty(rawPath))
             return BadRequest(ProblemDetailsFor(400, "Bad Request", "Input file not specified (inputFilePath or config.file/files)"));
-        var inputPath = Path.IsPathRooted(rawPath)
-            ? rawPath
-            : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(configPath)) ?? ".", rawPath);
-        if (!System.IO.File.Exists(inputPath))
-            return BadRequest(ProblemDetailsFor(400, "Bad Request", "Input file not found", extensions: new Dictionary<string, object?> { ["inputFilePath"] = inputPath }));
+        if (Path.IsPathRooted(rawPath))
+            return BadRequest(ProblemDetailsFor(400, "Bad Request", "inputFilePath must be relative to workspace_root; absolute paths are not allowed", extensions: new Dictionary<string, object?> { ["inputFilePath"] = rawPath }));
+
+        var inputPathRel = rawPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var inputPathFull = Path.Combine(root, inputPathRel);
+        if (!System.IO.File.Exists(inputPathFull))
+            return BadRequest(ProblemDetailsFor(400, "Bad Request", "Input file not found", extensions: new Dictionary<string, object?> { ["inputFilePath"] = inputPathRel }));
 
         var jobId = _store.Create(request?.Tags);
-        _ = RunJobAsync(jobId, config, inputPath, cancellationToken);
+        _ = RunJobAsync(jobId, config, inputPathFull, cancellationToken);
         return AcceptedAtAction(nameof(GetJob), new { id = jobId }, new { jobId });
     }
 
@@ -127,7 +134,7 @@ public class TranscriptionController : ControllerBase
     {
         try
         {
-            await _pipeline.ProcessFileAsync(config, inputPath, jobId, _store, _nodeModel, cancellationToken);
+            await _pipeline.ProcessFileAsync(config, inputPath, _workspaceRoot.RootPath, jobId, _store, _nodeModel, cancellationToken);
         }
         catch (Exception ex)
         {

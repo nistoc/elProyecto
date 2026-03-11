@@ -10,6 +10,8 @@ service TranscriptionService {
   rpc StreamJobStatus(StreamJobStatusRequest) returns (stream JobStatusUpdate);
 }
 
+// Paths in config_path and input_file_path are relative to the instance's workspace_root (from config).
+// workspace_root is not sent in the request; it is read from the server's appsettings/environment.
 message SubmitJobRequest {
   string config_path = 1;
   string input_file_path = 2;

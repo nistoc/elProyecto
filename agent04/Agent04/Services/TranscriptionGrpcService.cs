@@ -1,3 +1,4 @@
+using Agent04.Application;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
 using Agent04.Proto;
@@ -10,35 +11,42 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
 {
     private readonly ITranscriptionPipeline _pipeline;
     private readonly IJobStatusStore _store;
+    private readonly WorkspaceRoot _workspaceRoot;
     private readonly INodeModel? _nodeModel;
 
-    public TranscriptionGrpcService(ITranscriptionPipeline pipeline, IJobStatusStore store, INodeModel? nodeModel = null)
+    public TranscriptionGrpcService(ITranscriptionPipeline pipeline, IJobStatusStore store, WorkspaceRoot workspaceRoot, INodeModel? nodeModel = null)
     {
         _pipeline = pipeline;
         _store = store;
+        _workspaceRoot = workspaceRoot;
         _nodeModel = nodeModel;
     }
 
     public override async Task<SubmitJobResponse> SubmitJob(Agent04.Proto.SubmitJobRequest request, ServerCallContext context)
     {
-        var configPath = request.ConfigPath ?? "config/default.json";
-        if (!File.Exists(configPath))
+        var root = _workspaceRoot.RootPath;
+        var configPathRel = (request.ConfigPath ?? "config/default.json").Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var configPathFull = Path.Combine(root, configPathRel);
+        if (!File.Exists(configPathFull))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Config file not found"));
 
-        var config = await TranscriptionConfig.FromFileAsync(configPath, context.CancellationToken);
+        var config = await TranscriptionConfig.FromFileAsync(configPathFull, context.CancellationToken);
         var files = config.GetFiles();
         var rawPath = request.InputFilePath ?? (files.Count > 0 ? files[0] : null);
         if (string.IsNullOrEmpty(rawPath))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Input file not specified"));
-        var inputPath = Path.IsPathRooted(rawPath)
-            ? rawPath
-            : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(configPath)) ?? ".", rawPath);
-        if (!File.Exists(inputPath))
+        rawPath = rawPath.Trim();
+        if (Path.IsPathRooted(rawPath))
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "input_file_path must be relative to workspace_root; absolute paths are not allowed"));
+
+        var inputPathRel = rawPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var inputPathFull = Path.Combine(root, inputPathRel);
+        if (!File.Exists(inputPathFull))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Input file not found"));
 
         var tags = request.Tags?.Count > 0 ? request.Tags.ToList() : null;
         var jobId = _store.Create(tags);
-        _ = RunJobAsync(jobId, config, inputPath, context.CancellationToken);
+        _ = RunJobAsync(jobId, config, inputPathFull, root, context.CancellationToken);
         return new SubmitJobResponse { JobId = jobId };
     }
 
@@ -105,11 +113,11 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         };
     }
 
-    private async Task RunJobAsync(string jobId, TranscriptionConfig config, string inputPath, CancellationToken cancellationToken)
+    private async Task RunJobAsync(string jobId, TranscriptionConfig config, string inputPath, string workspaceRoot, CancellationToken cancellationToken)
     {
         try
         {
-            await _pipeline.ProcessFileAsync(config, inputPath, jobId, _store, _nodeModel, cancellationToken);
+            await _pipeline.ProcessFileAsync(config, inputPath, workspaceRoot, jobId, _store, _nodeModel, cancellationToken);
         }
         catch (Exception ex)
         {

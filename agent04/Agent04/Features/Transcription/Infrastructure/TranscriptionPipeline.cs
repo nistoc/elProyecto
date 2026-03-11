@@ -85,19 +85,26 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         try
         {
-        var workingPath = await ConvertToWavIfNeededAsync(config, inputFilePath, cancellationToken);
+        var workingPath = await ConvertToWavIfNeededAsync(config, inputFilePath, root, cancellationToken);
         var baseName = Path.GetFileNameWithoutExtension(Path.GetFileName(inputFilePath));
-        var mdPath = ResolvePath(config.MdOutputPath, baseName);
-        var jsonPath = ResolvePath(config.RawJsonOutputPath, baseName);
+        var mdRel = ResolveOutputPattern(config.MdOutputPath, baseName, jobId);
+        var jsonRel = ResolveOutputPattern(config.RawJsonOutputPath, baseName, jobId);
+        var mdPath = Path.Combine(root, mdRel);
+        var jsonPath = Path.Combine(root, jsonRel);
+        EnsureDirectoryFor(mdPath);
+        EnsureDirectoryFor(jsonPath);
 
         _output.InitializeMarkdown(mdPath);
         _output.ResetSpeakerMap();
 
-        var manifestPath = Path.Combine(config.CacheDir, baseName + ".manifest.json");
+        var cacheDirFull = Path.Combine(root, config.CacheDir);
+        EnsureDirectoryFor(cacheDirFull);
+        var manifestPath = Path.Combine(cacheDirFull, baseName + ".manifest.json");
         var manifest = await _cache.LoadManifestAsync(manifestPath, cancellationToken);
 
         StepStart(jobId ?? "", "chunking", "phase");
-        var chunkInfos = await PrepareChunksAsync(config, workingPath, cancellationToken);
+        var splitWorkdirFull = Path.Combine(root, config.SplitWorkdir);
+        var chunkInfos = await PrepareChunksAsync(config, workingPath, splitWorkdirFull, cancellationToken);
         StepComplete(jobId ?? "", "chunking", JobState.Completed);
         _logger?.LogInformation("Processing {Count} chunk(s)", chunkInfos.Count);
         UpdateProgress(JobState.Running, 5, "Chunking", null, null, null);
@@ -135,8 +142,9 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
                 if (config.Get<bool?>("save_per_chunk_json") == true)
                 {
-                    var perChunkDir = config.Get<string>("per_chunk_json_dir") ?? "chunks_json";
-                    _output.SavePerChunkJson(Path.GetFileName(chunkInfos[i].Path), result.RawResponse, perChunkDir);
+                    var perChunkRel = config.Get<string>("per_chunk_json_dir") ?? "chunks_json";
+                    var perChunkDirFull = Path.Combine(root, perChunkRel);
+                    _output.SavePerChunkJson(Path.GetFileName(chunkInfos[i].Path), result.RawResponse, perChunkDirFull);
                 }
 
                 _output.AppendSegmentsToMarkdown(mdPath, result.Segments, result.Offset, result.EmitGuard);
@@ -176,23 +184,35 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         }
     }
 
-    private static string ResolvePath(string pattern, string baseName)
+    private static string ResolveOutputPattern(string pattern, string baseName, string? jobId)
     {
-        return pattern.Replace("{base}", baseName, StringComparison.OrdinalIgnoreCase);
+        var s = pattern.Replace("{base}", baseName, StringComparison.OrdinalIgnoreCase)
+            .Replace("{jobId}", jobId ?? "", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(jobId) && !pattern.Contains("{jobId}", StringComparison.OrdinalIgnoreCase))
+            s = Path.Combine(Path.GetDirectoryName(s) ?? ".", Path.GetFileNameWithoutExtension(s) + "_" + jobId + Path.GetExtension(s));
+        return s;
     }
 
-    private async Task<string> ConvertToWavIfNeededAsync(TranscriptionConfig config, string filePath, CancellationToken ct)
+    private static void EnsureDirectoryFor(string filePath)
+    {
+        var dir = Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+    }
+
+    private async Task<string> ConvertToWavIfNeededAsync(TranscriptionConfig config, string filePath, string workspaceRoot, CancellationToken ct)
     {
         if (config.Get<bool?>("convert_to_wav") != true)
             return filePath;
         if (!filePath.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase))
             return filePath;
         var ffmpeg = _audioUtils.WhichOr(config.FfmpegPath, "ffmpeg") ?? "ffmpeg";
-        var wavDir = config.Get<string>("wav_output_dir") ?? "converted_wav";
+        var wavRel = config.Get<string>("wav_output_dir") ?? "converted_wav";
+        var wavDir = Path.Combine(workspaceRoot, wavRel);
         return await Task.Run(() => _audioUtils.ConvertToWav(ffmpeg, filePath, wavDir), ct);
     }
 
-    private async Task<IReadOnlyList<ChunkInfo>> PrepareChunksAsync(TranscriptionConfig config, string filePath, CancellationToken ct)
+    private async Task<IReadOnlyList<ChunkInfo>> PrepareChunksAsync(TranscriptionConfig config, string filePath, string splitWorkdirFull, CancellationToken ct)
     {
         if (config.Get<bool?>("pre_split") != true)
             return new[] { new ChunkInfo(filePath, 0.0, 0.0) };
@@ -204,7 +224,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         return await chunker.ProcessChunksForFileAsync(
             filePath,
             (float)(config.Get<double?>("target_chunk_mb") ?? 5),
-            config.Get<string>("split_workdir") ?? "chunks",
+            splitWorkdirFull,
             config.Get<string>("chunk_naming") ?? "{base}_part_%03d.m4a",
             (float)(config.Get<double?>("chunk_overlap_sec") ?? 1),
             config.Get<bool?>("reencode_if_needed") ?? true,

@@ -1,6 +1,6 @@
 # Agent04 — Transcription service (.NET)
 
-.NET reimplementation of the agent01 transcription pipeline: OpenAI transcription (diarization), ffmpeg chunking, cache by fingerprint, merge, Markdown/JSON output. Clean Architecture, vertical slice `Features/Transcription`, REST + gRPC.
+.NET reimplementation of the agent01 transcription pipeline: OpenAI transcription (diarization), ffmpeg chunking, cache by fingerprint, merge, Markdown/JSON output. Clean Architecture, vertical slice `Features/Transcription`, REST + gRPC. **Web service only** (no CLI); all calls go through HTTP or gRPC.
 
 ## Requirements
 
@@ -10,42 +10,22 @@
 
 ## Configuration
 
-Same contract as agent01. Default config: `Agent04/config/default.json`. Keys include:
-
-- `file` / `files` — input audio path(s)
-- `openai_api_key` — use `env:OPENAI_API_KEY` to read from environment
-- `model`, `fallback_models`, `language`, `md_output_path`, `raw_json_output_path`
-- `pre_split`, `chunk_overlap_sec`, `target_chunk_mb`, `cache_dir`, `split_workdir`, etc.
+- **Workspace root (required):** set `WorkspaceRoot` or `workspace_root` in `appsettings.json` or environment to an **absolute path** of the workspace directory. The app checks that this directory exists at startup and exits if it does not. All paths in API requests are relative to this root.
+- **Job config:** same contract as agent01. Example: `Agent04/config/default.json`. Keys include `file`/`files`, `openai_api_key` (e.g. `env:OPENAI_API_KEY`), `model`, `md_output_path`, `raw_json_output_path`, `cache_dir`, `split_workdir`, etc. Paths in job config are relative to the workspace root.
 
 ## Running
 
-### CLI
-
-Process files from a config file (same semantics as agent01):
+Start the web host:
 
 ```bash
 cd Agent04
-dotnet run -- --config=config/default.json
-```
-
-Or with explicit path:
-
-```bash
-dotnet run -- --config=path/to/my.json
-```
-
-Output paths are printed (Markdown and JSON).
-
-### REST API
-
-Run the web host (no `--config`):
-
-```bash
 dotnet run
 ```
 
-- **Base URL:** http://localhost:5000 (or https, see launchSettings).
-- **POST /api/transcription/jobs** — submit job. Body: `{ "configPath": "config/default.json", "inputFilePath": "optional override", "tags": ["optional","tags"] }`. Returns `202 Accepted` and `jobId`; `Location` header points to the job.
+Ensure `appsettings.json` (or environment) contains a valid `WorkspaceRoot` path before starting.
+
+- **Base URL:** http://localhost:5032 (or https, see launchSettings).
+- **POST /api/transcription/jobs** — submit job. Body: `{ "configPath": "config/default.json", "inputFilePath": "project1/audio.m4a", "tags": ["optional"] }`. `configPath` and `inputFilePath` are **relative to workspace_root**; absolute paths in `inputFilePath` are rejected with 400. Returns `202 Accepted` and `jobId`; `Location` header points to the job.
 - **GET /api/transcription/jobs/{id}** — job status (state, progress, phase, paths when completed).
 - **GET /api/transcription/jobs** — list jobs (query: `status`, `limit`, `offset`).
 - **GET /api/transcription/jobs/query** — query by `tag`, `status`, `from`, `to`, `limit`, `offset`.
@@ -55,9 +35,9 @@ Error responses use RFC 7807 ProblemDetails. OpenAPI spec: `/openapi/v1.json` (w
 
 ### gRPC
 
-Same host exposes gRPC:
+Same host exposes gRPC. Paths in the request are interpreted relative to the instance's workspace_root (from config):
 
-- **TranscriptionService.SubmitJob** — submit job (config_path, input_file_path, optional tags).
+- **TranscriptionService.SubmitJob** — submit job (config_path, input_file_path, optional tags). Paths relative to workspace_root.
 - **TranscriptionService.GetJobStatus** — get status by job_id.
 - **TranscriptionService.StreamJobStatus** — server stream of status updates for a job.
 
@@ -96,6 +76,7 @@ Optional: `$env:KNOWLEDGE_STORE_URL = "http://localhost:5173"`.
 
 ## Differences from agent01
 
-- Single process: CLI and API in one binary; mode chosen by presence of `--config`.
-- Job status store and progress updates when running via REST/gRPC; optional tags and query by tag.
+- **Web service only:** no CLI; start with `dotnet run`, all transcription via REST or gRPC.
+- **Workspace root:** one required root directory per instance (appsettings/environment); all request paths are relative to it.
+- Job status store and progress updates; optional tags and query by tag.
 - Output format (Markdown and JSON) is compatible so consumers can use results from either agent.
