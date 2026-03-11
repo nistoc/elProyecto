@@ -1,0 +1,2 @@
+obj\Debug\net9.0\Proto/Transcription.cs \
+obj\Debug\net9.0\Proto/TranscriptionGrpc.cs: Proto/transcription.proto
