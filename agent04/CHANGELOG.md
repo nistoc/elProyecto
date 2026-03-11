@@ -25,4 +25,14 @@ All notable changes to the Agent04 project are documented here.
 ### Notes
 
 - Only nuget.org packages. No outgoing gRPC clients implemented (stub for future).
-- Node tree / XRay attributes for virtual model are not implemented; design documented in RENTGEN_IMPLEMENTATION.md.
+- XRay attributes (optional) for virtual model are not implemented; design documented in RENTGEN_IMPLEMENTATION.md.
+
+## [0.2.0] — 2025-03-11
+
+### Added
+
+- **gRPC tags:** `SubmitJobRequest.tags` in proto; gRPC service passes tags to job store.
+- **ProblemDetails:** REST error responses (400, 404) use RFC 7807 ProblemDetails.
+- **Job query caching:** `CachingJobStatusStore` decorator with TTL (short for Running/Pending, longer for Completed/Failed) and invalidation on job update.
+- **Ninject composition root:** All Transcription bindings in `Composition/Agent04Module`; host uses `NinjectServiceProviderFactory` and `ConfigureContainer<IKernel>`.
+- **Virtual node model:** `INodeModel` (EnsureNode, StartNode, CompleteNode), `INodeQuery` (GetByScope, GetTreeByScope), `InMemoryNodeStore`; pipeline records job → chunking → transcribe → chunk-N → merge; **GET /api/transcription/jobs/{id}/nodes** (`?tree=true` for hierarchy).

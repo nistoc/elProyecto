@@ -10,11 +10,13 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
 {
     private readonly ITranscriptionPipeline _pipeline;
     private readonly IJobStatusStore _store;
+    private readonly INodeModel? _nodeModel;
 
-    public TranscriptionGrpcService(ITranscriptionPipeline pipeline, IJobStatusStore store)
+    public TranscriptionGrpcService(ITranscriptionPipeline pipeline, IJobStatusStore store, INodeModel? nodeModel = null)
     {
         _pipeline = pipeline;
         _store = store;
+        _nodeModel = nodeModel;
     }
 
     public override async Task<SubmitJobResponse> SubmitJob(Agent04.Proto.SubmitJobRequest request, ServerCallContext context)
@@ -34,7 +36,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         if (!File.Exists(inputPath))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Input file not found"));
 
-        var jobId = _store.Create();
+        var tags = request.Tags?.Count > 0 ? request.Tags.ToList() : null;
+        var jobId = _store.Create(tags);
         _ = RunJobAsync(jobId, config, inputPath, context.CancellationToken);
         return new SubmitJobResponse { JobId = jobId };
     }
@@ -106,7 +109,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
     {
         try
         {
-            await _pipeline.ProcessFileAsync(config, inputPath, jobId, _store, cancellationToken);
+            await _pipeline.ProcessFileAsync(config, inputPath, jobId, _store, _nodeModel, cancellationToken);
         }
         catch (Exception ex)
         {

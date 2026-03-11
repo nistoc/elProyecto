@@ -38,6 +38,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         string inputFilePath,
         string? jobId = null,
         IJobStatusStore? statusStore = null,
+        INodeModel? nodeModel = null,
         CancellationToken cancellationToken = default)
     {
         if (!File.Exists(inputFilePath))
@@ -57,8 +58,28 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             });
         }
 
+        void StepStart(string parentNodeId, string localKey, string kind)
+        {
+            if (jobId == null || nodeModel == null) return;
+            var nodeId = string.IsNullOrEmpty(parentNodeId) ? jobId : parentNodeId + ":" + localKey;
+            nodeModel.EnsureNode(nodeId, string.IsNullOrEmpty(parentNodeId) ? null : parentNodeId, jobId, kind);
+            nodeModel.StartNode(nodeId);
+        }
+
+        void StepComplete(string parentNodeId, string localKey, JobState status, string? error = null)
+        {
+            if (jobId == null || nodeModel == null) return;
+            var nodeId = string.IsNullOrEmpty(parentNodeId) ? jobId : parentNodeId + ":" + localKey;
+            nodeModel.CompleteNode(nodeId, status, DateTimeOffset.UtcNow, error);
+        }
+
         _logger?.LogInformation("[FILE] {Path}", inputFilePath);
         UpdateProgress(JobState.Running, 0, "Starting");
+        if (jobId != null && nodeModel != null)
+        {
+            nodeModel.EnsureNode(jobId, null, jobId, "job");
+            nodeModel.StartNode(jobId);
+        }
 
         try
         {
@@ -73,9 +94,18 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         var manifestPath = Path.Combine(config.CacheDir, baseName + ".manifest.json");
         var manifest = await _cache.LoadManifestAsync(manifestPath, cancellationToken);
 
+        StepStart(jobId ?? "", "chunking", "phase");
         var chunkInfos = await PrepareChunksAsync(config, workingPath, cancellationToken);
+        StepComplete(jobId ?? "", "chunking", JobState.Completed);
         _logger?.LogInformation("Processing {Count} chunk(s)", chunkInfos.Count);
         UpdateProgress(JobState.Running, 5, "Chunking", null, null, null);
+
+        var transcribeParent = jobId != null ? jobId + ":transcribe" : "";
+        if (jobId != null && nodeModel != null)
+        {
+            nodeModel.EnsureNode(transcribeParent, jobId, jobId, "phase");
+            nodeModel.StartNode(transcribeParent);
+        }
 
         var results = new List<(int Index, TranscriptionResult Result)>();
         var progress = new ChunkProgress(chunkInfos.Count, config.Get<string>("progress_time_format") ?? "HH:MM:SS.M");
@@ -88,6 +118,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 progress.MarkCancelled(i);
                 continue;
             }
+            StepStart(transcribeParent, "chunk-" + i, "chunk");
             progress.MarkStarted(i);
             progress.Update();
             var pct = totalChunks > 0 ? 10 + (70 * (i + 1) / totalChunks) : 80;
@@ -98,6 +129,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 var result = await ProcessChunkAsync(config, chunkInfos[i], i, chunkInfos.Count, manifest, manifestPath, baseName, cancellationToken);
                 results.Add((i, result));
                 progress.MarkCompleted(i);
+                StepComplete(transcribeParent, "chunk-" + i, JobState.Completed);
 
                 if (config.Get<bool?>("save_per_chunk_json") == true)
                 {
@@ -109,25 +141,34 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             }
             catch (Exception ex)
             {
+                StepComplete(transcribeParent, "chunk-" + i, JobState.Failed, ex.Message);
                 _logger?.LogWarning(ex, "Chunk {Index} failed", i + 1);
                 progress.MarkCompleted(i);
                 throw;
             }
         }
 
+        if (jobId != null && nodeModel != null)
+            nodeModel.CompleteNode(transcribeParent, JobState.Completed, DateTimeOffset.UtcNow);
         progress.Complete();
 
+        StepStart(jobId ?? "", "merge", "phase");
         UpdateProgress(JobState.Running, 90, "Merging");
         _output.FinalizeMarkdown(mdPath);
         var sortedResults = results.OrderBy(x => x.Index).Select(x => x.Result).ToList();
         _output.SaveCombinedJson(jsonPath, sortedResults);
+        StepComplete(jobId ?? "", "merge", JobState.Completed);
 
         UpdateProgress(JobState.Completed, 100, "Completed", mdPath, jsonPath);
+        if (jobId != null && nodeModel != null)
+            nodeModel.CompleteNode(jobId, JobState.Completed, DateTimeOffset.UtcNow);
         _logger?.LogInformation("Done. Markdown: {Md}, JSON: {Json}", mdPath, jsonPath);
         return (mdPath, jsonPath);
         }
         catch (Exception ex)
         {
+            if (jobId != null && nodeModel != null)
+                nodeModel.CompleteNode(jobId, JobState.Failed, DateTimeOffset.UtcNow, ex.Message);
             UpdateProgress(JobState.Failed, 0, null, null, null, ex.Message);
             throw;
         }

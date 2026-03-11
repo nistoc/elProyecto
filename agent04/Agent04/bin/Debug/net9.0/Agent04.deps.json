@@ -11,6 +11,7 @@
           "Grpc.AspNetCore": "2.66.0",
           "Grpc.Net.Client": "2.66.0",
           "Microsoft.AspNetCore.OpenApi": "9.0.13",
+          "Ninject.Extensions.DependencyInjection": "1.0.2",
           "Ninject.Web.AspNetCore": "10.1.0"
         },
         "runtime": {
@@ -119,6 +120,17 @@
           "lib/netstandard2.0/Ninject.dll": {
             "assemblyVersion": "3.3.6.0",
             "fileVersion": "3.3.6.0"
+          }
+        }
+      },
+      "Ninject.Extensions.DependencyInjection/1.0.2": {
+        "dependencies": {
+          "Ninject": "3.3.6"
+        },
+        "runtime": {
+          "lib/net7.0/Ninject.Extensions.DependencyInjection.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
           }
         }
       },
@@ -241,6 +253,13 @@
       "sha512": "sha512-93avazUpbRL3IdwvTQF0DKSQB26TeqwMGhZsQNxi/RLSYewhxBkdGDhwWe9DAIRF1+zKDVMv3XkBk8HobKU6wA==",
       "path": "ninject/3.3.6",
       "hashPath": "ninject.3.3.6.nupkg.sha512"
+    },
+    "Ninject.Extensions.DependencyInjection/1.0.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-717tX5wJkIks8f4AIhJ+jE4hw+Qt0AIMV9Zm/8B16GgBNfYYj2H1Jn7J2/hyIcJ9c4CeXFjempn69NvxMEA92Q==",
+      "path": "ninject.extensions.dependencyinjection/1.0.2",
+      "hashPath": "ninject.extensions.dependencyinjection.1.0.2.nupkg.sha512"
     },
     "Ninject.Web.AspNetCore/10.1.0": {
       "type": "package",

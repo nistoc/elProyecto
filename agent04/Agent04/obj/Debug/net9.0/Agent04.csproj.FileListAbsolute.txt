@@ -44,3 +44,4 @@ C:\trash\spanish\elProyecto\agent04\Agent04\obj\Debug\net9.0\refint\Agent04.dll
 C:\trash\spanish\elProyecto\agent04\Agent04\obj\Debug\net9.0\Agent04.pdb
 C:\trash\spanish\elProyecto\agent04\Agent04\obj\Debug\net9.0\Agent04.genruntimeconfig.cache
 C:\trash\spanish\elProyecto\agent04\Agent04\obj\Debug\net9.0\ref\Agent04.dll
+C:\trash\spanish\elProyecto\agent04\Agent04\bin\Debug\net9.0\Ninject.Extensions.DependencyInjection.dll

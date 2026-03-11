@@ -13,6 +13,7 @@ service TranscriptionService {
 message SubmitJobRequest {
   string config_path = 1;
   string input_file_path = 2;
+  repeated string tags = 3;
 }
 
 message SubmitJobResponse {

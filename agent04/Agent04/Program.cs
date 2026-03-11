@@ -1,7 +1,9 @@
+using Agent04.Composition;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
-using Agent04.Features.Transcription.Infrastructure;
 using Microsoft.Extensions.Configuration;
+using Ninject;
+using Ninject.Extensions.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,55 +12,14 @@ var (configPath, isCliMode) = GetConfigPathAndMode(args, builder.Environment.Con
 if (File.Exists(configPath))
     builder.Configuration.AddJsonFile(configPath, optional: !isCliMode, reloadOnChange: false);
 
-builder.Services.AddSingleton<IAudioUtils, AudioUtils>();
-builder.Services.AddTransient<IAudioChunker>(sp =>
-{
-    var utils = sp.GetRequiredService<IAudioUtils>();
-    var config = sp.GetRequiredService<IConfiguration>();
-    var ffmpeg = utils.WhichOr(config["ffmpeg_path"], "ffmpeg") ?? "ffmpeg";
-    var ffprobe = utils.WhichOr(config["ffprobe_path"], "ffprobe") ?? "ffprobe";
-    return new AudioChunker(utils, ffmpeg, ffprobe);
-});
-builder.Services.AddSingleton<ITranscriptionCache>(sp =>
-{
-    var config = sp.GetRequiredService<IConfiguration>();
-    var cacheDir = config["cache_dir"] ?? "cache";
-    var logger = sp.GetService<Microsoft.Extensions.Logging.ILogger<TranscriptionCache>>();
-    return new TranscriptionCache(cacheDir, logger);
-});
-builder.Services.AddSingleton<ITranscriptionMerger, TranscriptionMerger>();
-builder.Services.AddSingleton<ITranscriptionPipeline, TranscriptionPipeline>();
-builder.Services.AddSingleton<IJobStatusStore, InMemoryJobStatusStore>();
-builder.Services.AddSingleton<IJobQueryService, JobQueryService>();
+// Composition root: Ninject module with all Transcription feature bindings
+builder.Host
+    .UseServiceProviderFactory(new NinjectServiceProviderFactory())
+    .ConfigureContainer<IKernel>(kernel => kernel.Load<Agent04Module>());
+
+builder.Services.AddMemoryCache();
 builder.Services.AddControllers();
 builder.Services.AddGrpc();
-builder.Services.AddSingleton<ICancellationManager>(sp =>
-{
-    var config = sp.GetRequiredService<IConfiguration>();
-    var cancelDir = config["cancel_dir"] ?? "cancel_signals";
-    return new CancellationManager(cancelDir);
-});
-builder.Services.AddSingleton<ITranscriptionOutputWriter>(sp =>
-{
-    var logger = sp.GetService<Microsoft.Extensions.Logging.ILogger<TranscriptionOutputWriter>>();
-    return new TranscriptionOutputWriter(logger);
-});
-builder.Services.AddSingleton<ITranscriptionClient>(sp =>
-{
-    var config = sp.GetRequiredService<IConfiguration>();
-    var apiKey = config["openai_api_key"]?.ToString() ?? "";
-    if (string.IsNullOrEmpty(apiKey))
-        throw new InvalidOperationException("openai_api_key not configured");
-    var baseUrl = config["openai_base_url"]?.ToString();
-    var timeoutSec = config.GetValue<int>("api_timeout_seconds", 240);
-    var http = new HttpClient();
-    http.BaseAddress = new Uri(string.IsNullOrEmpty(baseUrl) ? "https://api.openai.com/" : baseUrl.TrimEnd('/') + "/");
-    http.Timeout = TimeSpan.FromSeconds(timeoutSec);
-    var model = config["model"]?.ToString() ?? "gpt-4o-transcribe-diarize";
-    var fallback = config.GetSection("fallback_models").Get<string[]>() ?? new[] { "gpt-4o-mini-transcribe", "whisper-1" };
-    var logger = sp.GetService<Microsoft.Extensions.Logging.ILogger<OpenAITranscriptionClient>>();
-    return new OpenAITranscriptionClient(http, apiKey, model, fallback, logger);
-});
 builder.Services.AddOpenApi();
 
 var app = builder.Build();

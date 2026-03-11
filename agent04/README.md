@@ -49,14 +49,15 @@ dotnet run
 - **GET /api/transcription/jobs/{id}** — job status (state, progress, phase, paths when completed).
 - **GET /api/transcription/jobs** — list jobs (query: `status`, `limit`, `offset`).
 - **GET /api/transcription/jobs/query** — query by `tag`, `status`, `from`, `to`, `limit`, `offset`.
+- **GET /api/transcription/jobs/{id}/nodes** — virtual model nodes for the job (flat list; `?tree=true` for hierarchy).
 
-OpenAPI spec: `/openapi/v1.json` (when development).
+Error responses use RFC 7807 ProblemDetails. OpenAPI spec: `/openapi/v1.json` (when development).
 
 ### gRPC
 
 Same host exposes gRPC:
 
-- **TranscriptionService.SubmitJob** — submit job (config_path, input_file_path).
+- **TranscriptionService.SubmitJob** — submit job (config_path, input_file_path, optional tags).
 - **TranscriptionService.GetJobStatus** — get status by job_id.
 - **TranscriptionService.StreamJobStatus** — server stream of status updates for a job.
 
@@ -68,6 +69,7 @@ Proto: `Agent04/Proto/transcription.proto`.
 - **List:** `GET /api/transcription/jobs` for all jobs with optional `status` filter.
 - **Query by tag:** `GET /api/transcription/jobs/query?tag=...` for jobs with a given tag (if submitted with `tags`).
 - **Real-time:** gRPC `StreamJobStatus(job_id)` for a stream of status updates until the job completes or fails.
+- **Virtual node tree:** `GET /api/transcription/jobs/{id}/nodes?tree=true` for hierarchical step/chunk nodes (job → chunking → transcribe → chunk-0..N → merge).
 
 ## RENTGEN fact (Knowledge Store)
 
@@ -83,6 +85,7 @@ Optional: `$env:KNOWLEDGE_STORE_URL = "http://localhost:5173"`.
 ## Project layout
 
 - `Agent04/` — main project (ASP.NET Core + gRPC)
+- `Agent04/Composition/` — Ninject module (Agent04Module) — composition root
 - `Agent04/Features/Transcription/` — vertical slice: Domain, Application, Infrastructure
 - `Agent04/Proto/` — gRPC `.proto`
 - `Agent04/Controllers/` — REST transcription controller

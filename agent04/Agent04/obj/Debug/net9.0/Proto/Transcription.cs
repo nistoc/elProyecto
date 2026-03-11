@@ -25,33 +25,33 @@ namespace Agent04.Proto {
       byte[] descriptorData = global::System.Convert.FromBase64String(
           string.Concat(
             "ChlQcm90by90cmFuc2NyaXB0aW9uLnByb3RvEhVhZ2VudDA0LnRyYW5zY3Jp",
-            "cHRpb24iQAoQU3VibWl0Sm9iUmVxdWVzdBITCgtjb25maWdfcGF0aBgBIAEo",
-            "CRIXCg9pbnB1dF9maWxlX3BhdGgYAiABKAkiIwoRU3VibWl0Sm9iUmVzcG9u",
-            "c2USDgoGam9iX2lkGAEgASgJIiUKE0dldEpvYlN0YXR1c1JlcXVlc3QSDgoG",
-            "am9iX2lkGAEgASgJIv4BChFKb2JTdGF0dXNSZXNwb25zZRIOCgZqb2JfaWQY",
-            "ASABKAkSDQoFc3RhdGUYAiABKAkSGAoQcHJvZ3Jlc3NfcGVyY2VudBgDIAEo",
-            "BRIVCg1jdXJyZW50X3BoYXNlGAQgASgJEhIKCmNyZWF0ZWRfYXQYBSABKAkS",
-            "EgoKc3RhcnRlZF9hdBgGIAEoCRIUCgxjb21wbGV0ZWRfYXQYByABKAkSEgoK",
-            "dXBkYXRlZF9hdBgIIAEoCRIWCg5tZF9vdXRwdXRfcGF0aBgJIAEoCRIYChBq",
-            "c29uX291dHB1dF9wYXRoGAogASgJEhUKDWVycm9yX21lc3NhZ2UYCyABKAki",
-            "KAoWU3RyZWFtSm9iU3RhdHVzUmVxdWVzdBIOCgZqb2JfaWQYASABKAkivgEK",
-            "D0pvYlN0YXR1c1VwZGF0ZRIOCgZqb2JfaWQYASABKAkSDQoFc3RhdGUYAiAB",
-            "KAkSGAoQcHJvZ3Jlc3NfcGVyY2VudBgDIAEoBRIVCg1jdXJyZW50X3BoYXNl",
-            "GAQgASgJEhIKCnVwZGF0ZWRfYXQYBSABKAkSFgoObWRfb3V0cHV0X3BhdGgY",
-            "BiABKAkSGAoQanNvbl9vdXRwdXRfcGF0aBgHIAEoCRIVCg1lcnJvcl9tZXNz",
-            "YWdlGAggASgJMsgCChRUcmFuc2NyaXB0aW9uU2VydmljZRJeCglTdWJtaXRK",
-            "b2ISJy5hZ2VudDA0LnRyYW5zY3JpcHRpb24uU3VibWl0Sm9iUmVxdWVzdBoo",
-            "LmFnZW50MDQudHJhbnNjcmlwdGlvbi5TdWJtaXRKb2JSZXNwb25zZRJkCgxH",
-            "ZXRKb2JTdGF0dXMSKi5hZ2VudDA0LnRyYW5zY3JpcHRpb24uR2V0Sm9iU3Rh",
-            "dHVzUmVxdWVzdBooLmFnZW50MDQudHJhbnNjcmlwdGlvbi5Kb2JTdGF0dXNS",
-            "ZXNwb25zZRJqCg9TdHJlYW1Kb2JTdGF0dXMSLS5hZ2VudDA0LnRyYW5zY3Jp",
-            "cHRpb24uU3RyZWFtSm9iU3RhdHVzUmVxdWVzdBomLmFnZW50MDQudHJhbnNj",
-            "cmlwdGlvbi5Kb2JTdGF0dXNVcGRhdGUwAUIQqgINQWdlbnQwNC5Qcm90b2IG",
-            "cHJvdG8z"));
+            "cHRpb24iTgoQU3VibWl0Sm9iUmVxdWVzdBITCgtjb25maWdfcGF0aBgBIAEo",
+            "CRIXCg9pbnB1dF9maWxlX3BhdGgYAiABKAkSDAoEdGFncxgDIAMoCSIjChFT",
+            "dWJtaXRKb2JSZXNwb25zZRIOCgZqb2JfaWQYASABKAkiJQoTR2V0Sm9iU3Rh",
+            "dHVzUmVxdWVzdBIOCgZqb2JfaWQYASABKAki/gEKEUpvYlN0YXR1c1Jlc3Bv",
+            "bnNlEg4KBmpvYl9pZBgBIAEoCRINCgVzdGF0ZRgCIAEoCRIYChBwcm9ncmVz",
+            "c19wZXJjZW50GAMgASgFEhUKDWN1cnJlbnRfcGhhc2UYBCABKAkSEgoKY3Jl",
+            "YXRlZF9hdBgFIAEoCRISCgpzdGFydGVkX2F0GAYgASgJEhQKDGNvbXBsZXRl",
+            "ZF9hdBgHIAEoCRISCgp1cGRhdGVkX2F0GAggASgJEhYKDm1kX291dHB1dF9w",
+            "YXRoGAkgASgJEhgKEGpzb25fb3V0cHV0X3BhdGgYCiABKAkSFQoNZXJyb3Jf",
+            "bWVzc2FnZRgLIAEoCSIoChZTdHJlYW1Kb2JTdGF0dXNSZXF1ZXN0Eg4KBmpv",
+            "Yl9pZBgBIAEoCSK+AQoPSm9iU3RhdHVzVXBkYXRlEg4KBmpvYl9pZBgBIAEo",
+            "CRINCgVzdGF0ZRgCIAEoCRIYChBwcm9ncmVzc19wZXJjZW50GAMgASgFEhUK",
+            "DWN1cnJlbnRfcGhhc2UYBCABKAkSEgoKdXBkYXRlZF9hdBgFIAEoCRIWCg5t",
+            "ZF9vdXRwdXRfcGF0aBgGIAEoCRIYChBqc29uX291dHB1dF9wYXRoGAcgASgJ",
+            "EhUKDWVycm9yX21lc3NhZ2UYCCABKAkyyAIKFFRyYW5zY3JpcHRpb25TZXJ2",
+            "aWNlEl4KCVN1Ym1pdEpvYhInLmFnZW50MDQudHJhbnNjcmlwdGlvbi5TdWJt",
+            "aXRKb2JSZXF1ZXN0GiguYWdlbnQwNC50cmFuc2NyaXB0aW9uLlN1Ym1pdEpv",
+            "YlJlc3BvbnNlEmQKDEdldEpvYlN0YXR1cxIqLmFnZW50MDQudHJhbnNjcmlw",
+            "dGlvbi5HZXRKb2JTdGF0dXNSZXF1ZXN0GiguYWdlbnQwNC50cmFuc2NyaXB0",
+            "aW9uLkpvYlN0YXR1c1Jlc3BvbnNlEmoKD1N0cmVhbUpvYlN0YXR1cxItLmFn",
+            "ZW50MDQudHJhbnNjcmlwdGlvbi5TdHJlYW1Kb2JTdGF0dXNSZXF1ZXN0GiYu",
+            "YWdlbnQwNC50cmFuc2NyaXB0aW9uLkpvYlN0YXR1c1VwZGF0ZTABQhCqAg1B",
+            "Z2VudDA0LlByb3RvYgZwcm90bzM="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
-            new pbr::GeneratedClrTypeInfo(typeof(global::Agent04.Proto.SubmitJobRequest), global::Agent04.Proto.SubmitJobRequest.Parser, new[]{ "ConfigPath", "InputFilePath" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::Agent04.Proto.SubmitJobRequest), global::Agent04.Proto.SubmitJobRequest.Parser, new[]{ "ConfigPath", "InputFilePath", "Tags" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Agent04.Proto.SubmitJobResponse), global::Agent04.Proto.SubmitJobResponse.Parser, new[]{ "JobId" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Agent04.Proto.GetJobStatusRequest), global::Agent04.Proto.GetJobStatusRequest.Parser, new[]{ "JobId" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Agent04.Proto.JobStatusResponse), global::Agent04.Proto.JobStatusResponse.Parser, new[]{ "JobId", "State", "ProgressPercent", "CurrentPhase", "CreatedAt", "StartedAt", "CompletedAt", "UpdatedAt", "MdOutputPath", "JsonOutputPath", "ErrorMessage" }, null, null, null, null),
@@ -100,6 +100,7 @@ namespace Agent04.Proto {
     public SubmitJobRequest(SubmitJobRequest other) : this() {
       configPath_ = other.configPath_;
       inputFilePath_ = other.inputFilePath_;
+      tags_ = other.tags_.Clone();
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -133,6 +134,17 @@ namespace Agent04.Proto {
       }
     }
 
+    /// <summary>Field number for the "tags" field.</summary>
+    public const int TagsFieldNumber = 3;
+    private static readonly pb::FieldCodec<string> _repeated_tags_codec
+        = pb::FieldCodec.ForString(26);
+    private readonly pbc::RepeatedField<string> tags_ = new pbc::RepeatedField<string>();
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::RepeatedField<string> Tags {
+      get { return tags_; }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -150,6 +162,7 @@ namespace Agent04.Proto {
       }
       if (ConfigPath != other.ConfigPath) return false;
       if (InputFilePath != other.InputFilePath) return false;
+      if(!tags_.Equals(other.tags_)) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -159,6 +172,7 @@ namespace Agent04.Proto {
       int hash = 1;
       if (ConfigPath.Length != 0) hash ^= ConfigPath.GetHashCode();
       if (InputFilePath.Length != 0) hash ^= InputFilePath.GetHashCode();
+      hash ^= tags_.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -185,6 +199,7 @@ namespace Agent04.Proto {
         output.WriteRawTag(18);
         output.WriteString(InputFilePath);
       }
+      tags_.WriteTo(output, _repeated_tags_codec);
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -203,6 +218,7 @@ namespace Agent04.Proto {
         output.WriteRawTag(18);
         output.WriteString(InputFilePath);
       }
+      tags_.WriteTo(ref output, _repeated_tags_codec);
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -219,6 +235,7 @@ namespace Agent04.Proto {
       if (InputFilePath.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(InputFilePath);
       }
+      size += tags_.CalculateSize(_repeated_tags_codec);
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -237,6 +254,7 @@ namespace Agent04.Proto {
       if (other.InputFilePath.Length != 0) {
         InputFilePath = other.InputFilePath;
       }
+      tags_.Add(other.tags_);
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -264,6 +282,10 @@ namespace Agent04.Proto {
             InputFilePath = input.ReadString();
             break;
           }
+          case 26: {
+            tags_.AddEntriesFrom(input, _repeated_tags_codec);
+            break;
+          }
         }
       }
     #endif
@@ -289,6 +311,10 @@ namespace Agent04.Proto {
           }
           case 18: {
             InputFilePath = input.ReadString();
+            break;
+          }
+          case 26: {
+            tags_.AddEntriesFrom(ref input, _repeated_tags_codec);
             break;
           }
         }
