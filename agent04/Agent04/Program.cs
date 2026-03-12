@@ -2,10 +2,31 @@ using Agent04.Application;
 using Agent04.Composition;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
-using Ninject;
-using Ninject.Extensions.DependencyInjection;
+
+// Load .env from project directory so OPENAI_API_KEY is available
+var envPaths = new[]
+{
+    Path.Combine(Directory.GetCurrentDirectory(), ".env"),
+    Path.Combine(AppContext.BaseDirectory, ".env")
+};
+foreach (var p in envPaths)
+{
+    if (File.Exists(p))
+    {
+        DotNetEnv.Env.Load(p);
+        break;
+    }
+}
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Graceful shutdown: при остановке (Ctrl+C) хост завершится за ShutdownTimeout и процесс освободит порт
+builder.Host.ConfigureHostOptions(o => o.ShutdownTimeout = TimeSpan.FromSeconds(5));
+
+// Expose OpenAI API key from .env for config
+var openaiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+if (!string.IsNullOrEmpty(openaiKey))
+    builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["openai_api_key"] = openaiKey });
 
 // Workspace root is required (appsettings / env); validate at startup
 var workspaceRootRaw = builder.Configuration["WorkspaceRoot"] ?? builder.Configuration["workspace_root"] ?? "";
@@ -22,12 +43,8 @@ if (!Directory.Exists(workspaceRootFull))
 }
 builder.Services.AddSingleton(new WorkspaceRoot(workspaceRootFull));
 
-// Composition root: Ninject module with all Transcription feature bindings
-builder.Host
-    .UseServiceProviderFactory(new NinjectServiceProviderFactory())
-    .ConfigureContainer<IKernel>(kernel => kernel.Load<Agent04Module>());
-
 builder.Services.AddMemoryCache();
+builder.Services.AddAgent04Services(builder.Configuration);
 builder.Services.AddHttpClient();
 builder.Services.AddRateLimiter(options =>
 {
