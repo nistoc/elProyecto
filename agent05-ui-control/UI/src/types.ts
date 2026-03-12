@@ -1,0 +1,85 @@
+/** Job status: queued | running | done | failed */
+export type JobStatus = string;
+
+/** Job phase: idle | transcriber | awaiting_refiner | refiner | completed */
+export type JobPhase = string;
+
+export interface LogEntry {
+  ts: number;
+  level: string;
+  message: string;
+}
+
+export interface SubChunk {
+  idx: number;
+  status: string;
+  audioPath?: string;
+}
+
+export interface SplitJob {
+  parentIdx: number;
+  parts: number;
+  status: string;
+  subChunks: SubChunk[];
+  mergedText?: string;
+  error?: string;
+}
+
+export interface ChunkState {
+  total: number;
+  active: number[];
+  completed: number[];
+  cancelled: number[];
+  failed: number[];
+  skipped?: number[];
+  splitJobs?: Record<number, SplitJob>;
+}
+
+export interface JobResult {
+  transcript?: string;
+  transcriptFixed?: string;
+  transcriptFixedAll?: string[];
+  rawJson?: string;
+}
+
+export interface JobSnapshot {
+  id: string;
+  status: JobStatus;
+  phase: JobPhase;
+  logs: LogEntry[];
+  chunks?: ChunkState | null;
+  result?: JobResult | null;
+  originalFilename?: string | null;
+  tags?: string[] | null;
+  createdAt?: string | null;
+  completedAt?: string | null;
+  agentPaused?: string | null;
+  mdOutputPath?: string | null;
+}
+
+export interface JobListItem {
+  id: string;
+  originalFilename: string;
+  status: string;
+  phase: string;
+  createdAt?: string | null;
+  completedAt?: string | null;
+  tags?: string[] | null;
+}
+
+export interface JobsListResponse {
+  jobs: JobListItem[];
+}
+
+export interface CreateJobResponse {
+  jobId: string;
+}
+
+/** SSE stream event: snapshot | status | log | chunk | split | done */
+export interface StreamEvent {
+  type: 'snapshot' | 'status' | 'log' | 'chunk' | 'split' | 'done';
+  payload?: unknown;
+}
+
+/** Step status for StepCard */
+export type StepStatus = 'waiting' | 'running' | 'done' | 'failed';

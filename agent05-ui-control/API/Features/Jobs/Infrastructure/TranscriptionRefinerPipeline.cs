@@ -1,0 +1,197 @@
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using XtractManager.Features.Jobs.Application;
+
+namespace XtractManager.Features.Jobs.Infrastructure;
+
+public sealed class TranscriptionRefinerPipeline : Application.IPipeline
+{
+    private readonly Application.IJobStore _store;
+    private readonly Application.IJobWorkspace _workspace;
+    private readonly Application.IBroadcaster _broadcaster;
+    private readonly Application.ITranscriptionServiceClient _transcription;
+    private readonly Application.IRefinerServiceClient _refiner;
+    private readonly IConfiguration _configuration;
+    private readonly ILogger<TranscriptionRefinerPipeline> _logger;
+
+    public TranscriptionRefinerPipeline(
+        IJobStore store,
+        IJobWorkspace workspace,
+        IBroadcaster broadcaster,
+        ITranscriptionServiceClient transcription,
+        IRefinerServiceClient refiner,
+        IConfiguration configuration,
+        ILogger<TranscriptionRefinerPipeline> logger)
+    {
+        _store = store;
+        _workspace = workspace;
+        _broadcaster = broadcaster;
+        _transcription = transcription;
+        _refiner = refiner;
+        _configuration = configuration;
+        _logger = logger;
+    }
+
+    public async Task RunAsync(string jobId, CancellationToken ct = default)
+    {
+        var snap = await _store.GetAsync(jobId, ct);
+        if (snap == null) return;
+
+        var configPath = _configuration["Agent04:ConfigPath"] ?? "config/default.json";
+        var workspaceRoot = _configuration["Agent04:WorkspaceRoot"]?.Trim();
+        var jobsPath = Path.GetFullPath(_configuration["Jobs:WorkspacePath"] ?? "./runtime");
+        if (string.IsNullOrEmpty(workspaceRoot))
+            workspaceRoot = jobsPath;
+        var ext = Path.GetExtension(snap.OriginalFilename ?? "");
+        if (string.IsNullOrEmpty(ext)) ext = ".bin";
+        var audioFileName = "audio" + ext;
+        var jobDir = _workspace.GetJobDirectoryPath(jobId);
+        var audioFullPath = Path.Combine(jobDir, audioFileName);
+        if (!File.Exists(audioFullPath))
+        {
+            _logger.LogWarning("Job {JobId}: audio file not found at {Path}", jobId, audioFullPath);
+            await UpdateAndBroadcastAsync(jobId, s => { s.Status = "failed"; s.Phase = "idle"; });
+            return;
+        }
+        var inputFilePath = Path.GetRelativePath(workspaceRoot, audioFullPath).Replace('\\', '/');
+
+        await UpdateAndBroadcastAsync(jobId, s => { s.Status = "running"; s.Phase = "transcriber"; });
+        Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
+
+        string? transcriptionJobId = null;
+        try
+        {
+            var submitResult = await _transcription.SubmitJobAsync(configPath, inputFilePath, snap.Tags?.ToList(), ct);
+            transcriptionJobId = submitResult.JobId;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Job {JobId}: Agent04 SubmitJob failed", jobId);
+            await UpdateAndBroadcastAsync(jobId, s => { s.Status = "failed"; s.Phase = "idle"; });
+            Broadcast(jobId, "done", null);
+            return;
+        }
+
+        await foreach (var update in _transcription.StreamJobStatusAsync(transcriptionJobId, ct))
+        {
+            await UpdateAndBroadcastAsync(jobId, s =>
+            {
+                s.Status = MapState(update.State);
+                if (update.State == "Completed")
+                { s.Phase = "awaiting_refiner"; s.MdOutputPath = update.MdOutputPath; }
+                else if (update.State == "Failed" || update.State == "Cancelled")
+                    s.Phase = "idle";
+            });
+            Broadcast(jobId, "status", JsonSerializer.Serialize(new { status = MapState(update.State), phase = update.State == "Completed" ? "awaiting_refiner" : snap.Phase, progress_percent = update.ProgressPercent }));
+            if (update.State is "Completed" or "Failed" or "Cancelled")
+                break;
+        }
+
+        snap = await _store.GetAsync(jobId, ct);
+        if (snap?.Phase != "awaiting_refiner")
+        {
+            Broadcast(jobId, "done", null);
+            return;
+        }
+
+        string? transcriptContent = null;
+        snap = await _store.GetAsync(jobId, ct);
+        var mdRel = snap?.MdOutputPath?.Trim().TrimStart('/', '\\');
+        if (!string.IsNullOrEmpty(mdRel))
+        {
+            var mdFull = Path.Combine(workspaceRoot, mdRel.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(mdFull))
+            {
+                try
+                {
+                    transcriptContent = await File.ReadAllTextAsync(mdFull, Encoding.UTF8, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Job {JobId}: could not read transcript at {Path}", jobId, mdFull);
+                }
+            }
+        }
+        if (string.IsNullOrEmpty(transcriptContent))
+        {
+            var fallbackMd = Path.Combine(jobDir, "transcript.md");
+            if (File.Exists(fallbackMd))
+            {
+                try { transcriptContent = await File.ReadAllTextAsync(fallbackMd, Encoding.UTF8, ct); } catch { /* ignore */ }
+            }
+        }
+
+        await UpdateAndBroadcastAsync(jobId, s => s.Phase = "refiner");
+        Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = "refiner" }));
+
+        Application.SubmitRefineJobResult? refinerResult = null;
+        var tagsList = snap?.Tags?.ToList();
+        try
+        {
+            refinerResult = await _refiner.SubmitRefineJobAsync(new RefineJobInput(
+                InputFilePath: null,
+                InputContent: transcriptContent ?? "",
+                OutputFilePath: null,
+                BatchSize: 5,
+                ContextLines: 2,
+                Tags: tagsList), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Job {JobId}: Agent06 SubmitRefineJob failed", jobId);
+            await UpdateAndBroadcastAsync(jobId, s => { s.Phase = "awaiting_refiner"; s.Status = "done"; });
+            Broadcast(jobId, "done", null);
+            return;
+        }
+
+        var refineJobId = refinerResult.JobId;
+        await foreach (var update in _refiner.StreamRefineStatusAsync(refineJobId, ct))
+        {
+            await UpdateAndBroadcastAsync(jobId, s =>
+            {
+                if (update.State == "Completed")
+                { s.Phase = "completed"; s.Status = "done"; }
+                else if (update.State == "Failed" || update.State == "Cancelled")
+                { s.Phase = "awaiting_refiner"; s.Status = update.State == "Failed" ? "failed" : "done"; }
+            });
+            Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = update.State == "Completed" ? "completed" : snap?.Phase, status = update.State == "Completed" ? "done" : snap?.Status, progress_percent = update.ProgressPercent }));
+            if (update.State is "Completed" or "Failed" or "Cancelled")
+                break;
+        }
+
+        var completedAt = DateTime.UtcNow.ToString("O");
+        await UpdateAndBroadcastAsync(jobId, s => { if (s.Phase != "completed") s.Phase = "completed"; s.Status = "done"; s.CompletedAt = completedAt; });
+        Broadcast(jobId, "done", null);
+    }
+
+    private static string MapState(string state) =>
+        state switch
+        {
+            "Completed" => "done",
+            "Failed" => "failed",
+            "Cancelled" => "done",
+            "Running" => "running",
+            "Pending" => "queued",
+            _ => "running"
+        };
+
+    private async Task UpdateAndBroadcastAsync(string jobId, Action<JobSnapshot> update)
+    {
+        await _store.UpdateAsync(jobId, update);
+    }
+
+    private void Broadcast(string jobId, string eventType, string? payloadJson)
+    {
+        var data = string.IsNullOrEmpty(payloadJson)
+            ? $"{{\"type\":\"{eventType}\"}}"
+            : $"{{\"type\":\"{eventType}\",\"payload\":{payloadJson}}}";
+        _broadcaster.Publish(jobId, data);
+    }
+
+    private async Task<string> GetSnapshotJsonAsync(string jobId)
+    {
+        var snap = await _store.GetAsync(jobId);
+        return snap == null ? "{}" : JsonSerializer.Serialize(snap);
+    }
+}

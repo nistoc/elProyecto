@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+option csharp_namespace = "Agent04.Proto";
+
+package agent04.transcription;
+
+service TranscriptionService {
+  rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse);
+  rpc GetJobStatus(GetJobStatusRequest) returns (JobStatusResponse);
+  rpc StreamJobStatus(StreamJobStatusRequest) returns (stream JobStatusUpdate);
+  rpc QueryJobs(QueryJobsRequest) returns (QueryJobsResponse);
+}
+
+message SubmitJobRequest {
+  string config_path = 1;
+  string input_file_path = 2;
+  repeated string tags = 3;
+  string callback_url = 4;
+}
+
+message SubmitJobResponse {
+  string job_id = 1;
+}
+
+message GetJobStatusRequest {
+  string job_id = 1;
+}
+
+message JobStatusResponse {
+  string job_id = 1;
+  string state = 2;
+  int32 progress_percent = 3;
+  string current_phase = 4;
+  int32 total_chunks = 12;
+  int32 processed_chunks = 13;
+  string created_at = 5;
+  string started_at = 6;
+  string completed_at = 7;
+  string updated_at = 8;
+  string md_output_path = 9;
+  string json_output_path = 10;
+  string error_message = 11;
+}
+
+message QueryJobsRequest {
+  string semantic_key = 1;
+  string status = 2;
+  string from = 3;
+  string to = 4;
+  int32 limit = 5;
+  int32 offset = 6;
+}
+
+message QueryJobsResponse {
+  repeated JobStatusResponse jobs = 1;
+}
+
+message StreamJobStatusRequest {
+  string job_id = 1;
+}
+
+message JobStatusUpdate {
+  string job_id = 1;
+  string state = 2;
+  int32 progress_percent = 3;
+  string current_phase = 4;
+  int32 total_chunks = 9;
+  int32 processed_chunks = 10;
+  string updated_at = 5;
+  string md_output_path = 6;
+  string json_output_path = 7;
+  string error_message = 8;
+}

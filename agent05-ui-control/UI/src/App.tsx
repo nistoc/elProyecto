@@ -1,0 +1,198 @@
+import { useState } from 'react';
+import { I18nProvider, useI18n } from './contexts/I18nContext';
+import { useJob, type StepId } from './hooks/useJob';
+import { StepCard } from './components/StepCard';
+import { UploadCard } from './components/UploadCard';
+import { JobsList } from './components/JobsList';
+import { LogsSection } from './components/LogsSection';
+import { ResultSection } from './components/ResultSection';
+
+function AppContent() {
+  const { t, locale, setLocale } = useI18n();
+  const [initialJobId] = useState<string | null>(() => null);
+  const {
+    jobId,
+    job,
+    jobsList,
+    loadingList,
+    activeStep,
+    setActiveStep,
+    file,
+    setFile,
+    isSubmitting,
+    error,
+    getStepStatus,
+    refreshList,
+    handleSelectJob,
+    handleStart,
+    handleReset,
+    handleDeleteJob,
+    logsPaused,
+    bufferedCount,
+    toggleLogsPause,
+    clearLogsForStep,
+  } = useJob(initialJobId);
+
+  const steps: { id: StepId; title: string }[] = [
+    { id: 'upload', title: t('upload') },
+    { id: 'transcriber', title: t('transcriber') },
+    { id: 'refiner', title: t('refiner') },
+    { id: 'result', title: t('result') },
+  ];
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <h1 className="topbar__title">{t('appTitle')}</h1>
+        <div className="topbar__actions">
+          <select
+            value={locale}
+            onChange={(e) => setLocale(e.target.value as 'en' | 'ru' | 'es')}
+            className="topbar__locale"
+          >
+            <option value="en">EN</option>
+            <option value="ru">RU</option>
+            <option value="es">ES</option>
+          </select>
+          <button type="button" onClick={handleReset} className="topbar__clear">
+            {t('clear')}
+          </button>
+        </div>
+      </header>
+
+      <div className="layout">
+        <aside className="sidebar">
+          <JobsList
+            jobs={jobsList}
+            currentJobId={jobId}
+            onSelectJob={handleSelectJob}
+            onRefresh={refreshList}
+            onDelete={handleDeleteJob}
+            loading={loadingList}
+            t={t}
+          />
+        </aside>
+
+        <main className="content">
+          <div className="steps-row">
+            {steps.map(({ id, title }) => (
+              <StepCard
+                key={id}
+                title={title}
+                status={getStepStatus(id)}
+                active={activeStep === id}
+                onSelect={() => setActiveStep(id)}
+              />
+            ))}
+          </div>
+
+          <div className="step-content">
+            {activeStep === 'upload' && (
+              <UploadCard
+                file={file}
+                onFileChange={setFile}
+                onStart={handleStart}
+                disabled={isSubmitting}
+                t={t}
+                error={error}
+              />
+            )}
+
+            {activeStep === 'transcriber' && (
+              <div className="step-panel">
+                {job ? (
+                  <>
+                    <p className="step-panel__meta">
+                      {t('status')}: {job.status} · {t('phase')}: {job.phase}
+                    </p>
+                    <LogsSection
+                      title={t('logs')}
+                      logs={job.logs ?? []}
+                      paused={logsPaused}
+                      bufferedCount={bufferedCount}
+                      onTogglePause={toggleLogsPause}
+                      onClearLogs={clearLogsForStep}
+                    />
+                  </>
+                ) : (
+                  <p className="step-panel__empty">
+                    {jobId
+                      ? 'Loading…'
+                      : 'Select a job or create one in Upload.'}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {activeStep === 'refiner' && (
+              <div className="step-panel">
+                {job ? (
+                  <>
+                    <p className="step-panel__meta">
+                      {t('phase')}: {job.phase}
+                    </p>
+                    {job.phase === 'awaiting_refiner' && (
+                      <p>
+                        Transcription done. Refiner can be started from the
+                        pipeline (auto in this app).
+                      </p>
+                    )}
+                    {job.phase === 'refiner' && <p>Refiner is running…</p>}
+                    {job.phase === 'completed' && <p>Refiner completed.</p>}
+                  </>
+                ) : (
+                  <p className="step-panel__empty">Select a job.</p>
+                )}
+              </div>
+            )}
+
+            {activeStep === 'result' && jobId && (
+              <ResultSection jobId={jobId} job={job} t={t} />
+            )}
+
+            {activeStep === 'result' && !jobId && (
+              <p className="step-panel__empty">Select a job to see result.</p>
+            )}
+          </div>
+        </main>
+      </div>
+
+      <style>{`
+        .app { min-height: 100vh; display: flex; flex-direction: column; }
+        .topbar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 0.75rem 1.5rem;
+          border-bottom: 1px solid #e2e8f0;
+          background: #fff;
+        }
+        .topbar__title { margin: 0; font-size: 1.25rem; }
+        .topbar__actions { display: flex; gap: 0.5rem; align-items: center; }
+        .topbar__locale { padding: 0.25rem 0.5rem; }
+        .topbar__clear { padding: 0.25rem 0.5rem; }
+        .layout { display: flex; flex: 1; min-height: 0; }
+        .sidebar {
+          width: 280px;
+          border-right: 1px solid #e2e8f0;
+          background: #f8fafc;
+          overflow-y: auto;
+        }
+        .content { flex: 1; padding: 1rem; overflow-y: auto; }
+        .steps-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        .step-content { margin-top: 0.5rem; }
+        .step-panel { padding: 1rem; }
+        .step-panel__meta { margin: 0 0 0.5rem 0; font-size: 0.875rem; color: #64748b; }
+        .step-panel__empty { color: #94a3b8; margin: 0; }
+      `}</style>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <I18nProvider>
+      <AppContent />
+    </I18nProvider>
+  );
+}

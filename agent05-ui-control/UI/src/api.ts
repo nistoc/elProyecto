@@ -1,0 +1,125 @@
+import type {
+  JobSnapshot,
+  JobListItem,
+  JobsListResponse,
+  CreateJobResponse,
+  StreamEvent,
+} from './types';
+
+const API_BASE = '';
+
+async function get<T>(path: string): Promise<T> {
+  const r = await fetch(`${API_BASE}${path}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${path}`);
+  return r.json() as Promise<T>;
+}
+
+async function del(path: string): Promise<void> {
+  const r = await fetch(`${API_BASE}${path}`, { method: 'DELETE' });
+  if (!r.ok && r.status !== 404) throw new Error(`HTTP ${r.status}: ${path}`);
+}
+
+export async function fetchJobsList(params?: {
+  semanticKey?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<JobListItem[]> {
+  const q = new URLSearchParams();
+  if (params?.semanticKey) q.set('semanticKey', params.semanticKey);
+  if (params?.status) q.set('status', params.status);
+  if (params?.from) q.set('from', params.from);
+  if (params?.to) q.set('to', params.to);
+  if (params?.limit != null) q.set('limit', String(params.limit));
+  if (params?.offset != null) q.set('offset', String(params.offset));
+  const query = q.toString();
+  const path = query ? `/api/jobs?${query}` : '/api/jobs';
+  const data = await get<JobsListResponse>(path);
+  return data.jobs;
+}
+
+export async function fetchJob(id: string): Promise<JobSnapshot | null> {
+  const r = await fetch(`${API_BASE}/api/jobs/${id}`);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json() as Promise<JobSnapshot>;
+}
+
+export async function createJob(
+  file: File,
+  tags?: string[]
+): Promise<CreateJobResponse> {
+  const form = new FormData();
+  form.append('file', file);
+  if (tags?.length) form.append('tags', tags.join(','));
+  const r = await fetch(`${API_BASE}/api/jobs`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    throw new Error(text || `HTTP ${r.status}`);
+  }
+  return r.json() as Promise<CreateJobResponse>;
+}
+
+export async function deleteJob(id: string): Promise<void> {
+  await del(`/api/jobs/${id}`);
+}
+
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_DELAY_MS = 2000;
+
+export function subscribeToJob(
+  jobId: string,
+  onEvent: (event: StreamEvent) => void,
+  options?: { signal?: AbortSignal }
+): () => void {
+  let attempt = 0;
+  let closed = false;
+  let eventSource: EventSource | null = null;
+
+  function close(): void {
+    closed = true;
+    eventSource?.close();
+    eventSource = null;
+  }
+
+  options?.signal?.addEventListener('abort', close);
+
+  function connect(): void {
+    if (closed || options?.signal?.aborted) return;
+    eventSource?.close();
+    const url = `${API_BASE}/api/jobs/${jobId}/stream`;
+    eventSource = new EventSource(url);
+
+    eventSource.onmessage = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as StreamEvent;
+        onEvent(data);
+        if (data.type === 'done') {
+          close();
+        }
+      } catch {
+        // skip invalid
+      }
+    };
+
+    eventSource.onerror = () => {
+      eventSource?.close();
+      eventSource = null;
+      if (closed || options?.signal?.aborted) return;
+      if (attempt >= MAX_RECONNECT_ATTEMPTS) {
+        onEvent({ type: 'done' });
+        return;
+      }
+      attempt += 1;
+      setTimeout(connect, RECONNECT_DELAY_MS);
+    };
+  }
+
+  connect();
+  return close;
+}
