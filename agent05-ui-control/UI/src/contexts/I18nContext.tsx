@@ -37,6 +37,8 @@ const messages: Record<Locale, Record<string, string>> = {
     pause: 'Pause',
     resume: 'Resume',
     clearLogs: 'Clear logs',
+    jobDirectoryPath: 'Path to folder',
+    projectFiles: 'Project files',
   },
   ru: {
     appTitle: 'XtractManager',
@@ -66,6 +68,8 @@ const messages: Record<Locale, Record<string, string>> = {
     pause: 'Пауза',
     resume: 'Продолжить',
     clearLogs: 'Очистить логи',
+    jobDirectoryPath: 'Путь к папке',
+    projectFiles: 'Файлы проекта',
   },
   es: {
     appTitle: 'XtractManager',
@@ -95,6 +99,8 @@ const messages: Record<Locale, Record<string, string>> = {
     pause: 'Pausar',
     resume: 'Reanudar',
     clearLogs: 'Borrar registros',
+    jobDirectoryPath: 'Ruta a la carpeta',
+    projectFiles: 'Archivos del proyecto',
   },
 };
 

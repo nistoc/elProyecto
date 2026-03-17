@@ -200,6 +200,8 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         var snap = await _store.GetAsync(jobId);
         if (snap == null) return "{}";
         snap.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(jobId);
+        if (snap.Files == null && !string.IsNullOrEmpty(snap.JobDirectoryPath) && Directory.Exists(snap.JobDirectoryPath))
+            snap.Files = JobDirectoryFileScanner.Scan(snap.JobDirectoryPath);
         return JsonSerializer.Serialize(snap);
     }
 }

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using XtractManager.Features.Jobs.Application;
+using XtractManager.Features.Jobs.Infrastructure;
 
 namespace XtractManager.Controllers;
 
@@ -101,6 +102,8 @@ public class JobsController : ControllerBase
         if (job == null)
             return NotFound();
         job.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(id);
+        if (job.Files == null && !string.IsNullOrEmpty(job.JobDirectoryPath) && Directory.Exists(job.JobDirectoryPath))
+            job.Files = JobDirectoryFileScanner.Scan(job.JobDirectoryPath);
         _logger.LogDebug("Get({Id}): JobDirectoryPath={Path}, Chunks={Chunks}, Result={Result}, MdOutputPath={Md}",
             id, job.JobDirectoryPath, job.Chunks != null ? "set" : "null", job.Result != null ? "set" : "null", job.MdOutputPath ?? "null");
         return Ok(job);
@@ -126,6 +129,8 @@ public class JobsController : ControllerBase
             return;
         }
         job.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(id);
+        if (job.Files == null && !string.IsNullOrEmpty(job.JobDirectoryPath) && Directory.Exists(job.JobDirectoryPath))
+            job.Files = JobDirectoryFileScanner.Scan(job.JobDirectoryPath);
         _logger.LogInformation("Stream({Id}): sending snapshot, JobDirectoryPath={Path}, Chunks={Chunks}, MdOutputPath={Md}",
             id, job.JobDirectoryPath, job.Chunks != null ? "set" : "null", job.MdOutputPath ?? "null");
         Response.ContentType = "text/event-stream";

@@ -1,10 +1,20 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using XtractManager.Features.Jobs.Application;
 using XtractManager.Features.Jobs.Infrastructure;
 using Xunit;
 
 namespace XtractManager.Tests;
+
+public class FakeHostEnvironment : IHostEnvironment
+{
+    public string EnvironmentName { get; set; } = "Test";
+    public string ApplicationName { get; set; } = "API.Tests";
+    public string ContentRootPath { get; set; } = Directory.GetCurrentDirectory();
+    public IFileProvider ContentRootFileProvider { get; set; } = new PhysicalFileProvider(Directory.GetCurrentDirectory());
+}
 
 public class JobCreateTests
 {
@@ -25,7 +35,8 @@ public class JobCreateTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Jobs:WorkspacePath"] = temp })
             .Build();
-        var workspace = new JobWorkspace(config, NullLogger<JobWorkspace>.Instance);
+        var env = new FakeHostEnvironment { ContentRootPath = Path.GetTempPath() };
+        var workspace = new JobWorkspace(config, env, NullLogger<JobWorkspace>.Instance);
         var jobId = "test-job-1";
         await workspace.EnsureJobDirectoryAsync(jobId);
         var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("fake audio content"));
