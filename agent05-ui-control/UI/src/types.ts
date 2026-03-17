@@ -57,6 +57,16 @@ export interface JobSnapshot {
   mdOutputPath?: string | null;
   /** Full path to the job directory (where files are stored). For debugging and display. */
   jobDirectoryPath?: string | null;
+  /** List of files in the job directory with display info (name, size; text: line count; audio: duration). */
+  files?: JobFileInfo[] | null;
+}
+
+export interface JobFileInfo {
+  name: string;
+  kind: 'text' | 'audio' | 'other';
+  sizeBytes: number;
+  lineCount?: number | null;
+  durationSeconds?: number | null;
 }
 
 export interface JobListItem {

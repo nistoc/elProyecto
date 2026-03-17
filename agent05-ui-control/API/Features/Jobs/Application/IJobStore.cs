@@ -45,6 +45,21 @@ public class JobSnapshot
     public string? MdOutputPath { get; set; }
     /// <summary>Full path to the job directory (workspace folder for this job). Used for debugging and UI to show where files are looked for.</summary>
     public string? JobDirectoryPath { get; set; }
+    /// <summary>List of files in the job directory with display-friendly info (for UI). Populated for archive jobs and can be set when serving snapshot.</summary>
+    public IReadOnlyList<JobFileInfo>? Files { get; set; }
+}
+
+/// <summary>Display info for a file in a job directory (name, size; for text: line count; for audio: duration).</summary>
+public class JobFileInfo
+{
+    public string Name { get; set; } = "";
+    /// <summary>One of: "text", "audio", "other".</summary>
+    public string Kind { get; set; } = "other";
+    public long SizeBytes { get; set; }
+    /// <summary>For text files: number of lines.</summary>
+    public int? LineCount { get; set; }
+    /// <summary>For audio files: duration in seconds.</summary>
+    public double? DurationSeconds { get; set; }
 }
 
 public class LogEntry

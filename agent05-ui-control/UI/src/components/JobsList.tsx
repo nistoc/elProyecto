@@ -1,6 +1,16 @@
 import { useState } from 'react';
 import type { JobListItem } from '../types';
 
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
+}
+
 interface JobsListProps {
   jobs: JobListItem[];
   currentJobId: string | null;
@@ -43,12 +53,19 @@ export function JobsList({
               type="button"
               onClick={() => onSelectJob(j.id)}
               className={`jobs-list__item ${currentJobId === j.id ? 'active' : ''}`}
+              title={j.id}
             >
-              <span className="jobs-list__id">{j.id}</span>
               <span className="jobs-list__name">
                 {j.originalFilename || j.id}
               </span>
-              <span className="jobs-list__status">{j.status}</span>
+              <span className="jobs-list__meta">
+                <span className="jobs-list__status">{j.status}</span>
+                {j.completedAt ? (
+                  <span className="jobs-list__date">{formatDate(j.completedAt)}</span>
+                ) : j.createdAt ? (
+                  <span className="jobs-list__date">{formatDate(j.createdAt)}</span>
+                ) : null}
+              </span>
             </button>
             {confirmId === j.id ? (
               <span className="jobs-list__confirm">
@@ -94,9 +111,10 @@ export function JobsList({
         }
         .jobs-list__item:hover { background: #f8fafc; }
         .jobs-list__item.active { border-color: #3b82f6; background: #eff6ff; }
-        .jobs-list__id { font-size: 0.75rem; color: #64748b; display: block; }
         .jobs-list__name { font-weight: 500; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .jobs-list__status { font-size: 0.75rem; color: #64748b; }
+        .jobs-list__meta { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: #64748b; margin-top: 0.125rem; }
+        .jobs-list__status { }
+        .jobs-list__date { }
         .jobs-list__del { width: 28px; height: 28px; padding: 0; border: 1px solid #e2e8f0; border-radius: 4px; background: #fff; cursor: pointer; }
         .jobs-list__confirm { font-size: 0.75rem; display: flex; gap: 0.25rem; align-items: center; }
         .jobs-list__confirm button { padding: 0.125rem 0.25rem; }

@@ -1,4 +1,4 @@
-using System.Text;
+using TagLib;
 
 namespace XtractManager.Features.Jobs.Infrastructure;
 
@@ -42,7 +42,7 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
                 jobId, dirPath, filesInDir.Count, string.Join(", ", filesInDir.Select(Path.GetFileName)));
 
             var originalFilename = GetOriginalFilenameFromDir(dirPath);
-            var result = GetResultFromDir(dirPath);
+            var files = GetFilesFromDir(dirPath);
 
             return new Application.JobSnapshot
             {
@@ -54,7 +54,7 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
                 CompletedAt = null,
                 Tags = null,
                 JobDirectoryPath = dirPath,
-                Result = result
+                Files = files
             };
         }
         catch (IOException ex)
@@ -127,14 +127,16 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
     public Task<bool> DeleteAsync(string jobId, CancellationToken ct = default)
         => _inner.DeleteAsync(jobId, ct);
 
-    /// <summary>Find "audio.*" in job dir and return that filename for display (e.g. "audio.mp3").</summary>
+    /// <summary>Find first audio file in job dir and return its name for display (e.g. "audio.mp3" or original name from agent-browser).</summary>
     private static string? GetOriginalFilenameFromDir(string dirPath)
     {
         try
         {
             var dir = new DirectoryInfo(dirPath);
-            var audioFile = dir.EnumerateFiles("audio.*").FirstOrDefault();
-            return audioFile?.Name;
+            var audioExtensions = new[] { ".m4a", ".mp3", ".wav", ".ogg", ".flac", ".bin" };
+            var firstAudio = dir.EnumerateFiles()
+                .FirstOrDefault(f => audioExtensions.Contains(f.Extension, StringComparer.OrdinalIgnoreCase));
+            return firstAudio?.Name;
         }
         catch
         {
@@ -142,30 +144,86 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
         }
     }
 
-    /// <summary>Read transcript.md and transcript_fixed.md from job dir to populate Result for archive jobs.</summary>
-    private static Application.JobResult? GetResultFromDir(string dirPath)
+    private static readonly string[] TextExtensions = { ".md", ".txt", ".json", ".srt", ".vtt", ".csv", ".xml", ".log" };
+    private static readonly string[] AudioExtensions = { ".m4a", ".mp3", ".wav", ".ogg", ".flac", ".bin" };
+
+    /// <summary>Build list of file infos for UI: text files get line count; audio files get size and duration.</summary>
+    private static IReadOnlyList<Application.JobFileInfo> GetFilesFromDir(string dirPath)
     {
-        string? transcript = null;
-        string? transcriptFixed = null;
+        var list = new List<Application.JobFileInfo>();
         try
         {
-            var transcriptPath = Path.Combine(dirPath, "transcript.md");
-            if (File.Exists(transcriptPath))
-                transcript = File.ReadAllText(transcriptPath, Encoding.UTF8);
-            var fixedPath = Path.Combine(dirPath, "transcript_fixed.md");
-            if (File.Exists(fixedPath))
-                transcriptFixed = File.ReadAllText(fixedPath, Encoding.UTF8);
+            var dir = new DirectoryInfo(dirPath);
+            foreach (var fi in dir.EnumerateFiles().OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var ext = fi.Extension;
+                var sizeBytes = fi.Length;
+                if (TextExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase))
+                {
+                    var lineCount = CountLines(fi.FullName);
+                    list.Add(new Application.JobFileInfo
+                    {
+                        Name = fi.Name,
+                        Kind = "text",
+                        SizeBytes = sizeBytes,
+                        LineCount = lineCount
+                    });
+                }
+                else if (AudioExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase))
+                {
+                    var durationSeconds = GetAudioDurationSeconds(fi.FullName);
+                    list.Add(new Application.JobFileInfo
+                    {
+                        Name = fi.Name,
+                        Kind = "audio",
+                        SizeBytes = sizeBytes,
+                        DurationSeconds = durationSeconds
+                    });
+                }
+                else
+                {
+                    list.Add(new Application.JobFileInfo
+                    {
+                        Name = fi.Name,
+                        Kind = "other",
+                        SizeBytes = sizeBytes
+                    });
+                }
+            }
         }
         catch
         {
-            // ignore
+            // return whatever we collected
         }
-        if (transcript == null && transcriptFixed == null)
-            return null;
-        return new Application.JobResult
+        return list;
+    }
+
+    private static int? CountLines(string filePath)
+    {
+        try
         {
-            Transcript = transcript,
-            TranscriptFixed = transcriptFixed
-        };
+            using var reader = new StreamReader(filePath, System.Text.Encoding.UTF8);
+            var count = 0;
+            while (reader.ReadLine() != null) count++;
+            return count;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static double? GetAudioDurationSeconds(string filePath)
+    {
+        try
+        {
+            using var tfile = TagLib.File.Create(filePath);
+            var duration = tfile.Properties.Duration;
+            return duration.TotalSeconds;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
