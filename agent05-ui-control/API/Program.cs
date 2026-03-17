@@ -2,6 +2,9 @@ using Microsoft.AspNetCore.Mvc;
 using XtractManager.Features.Jobs.Application;
 using XtractManager.Features.Jobs.Infrastructure;
 
+// gRPC over plain http (no TLS) requires HTTP/2 "prior knowledge" (h2c); enable it so GrpcChannel can connect to Agent04/Agent06.
+AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Graceful shutdown: при остановке (Ctrl+C) хост завершится за ShutdownTimeout и процесс освободит порт

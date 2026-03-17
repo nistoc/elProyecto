@@ -68,6 +68,13 @@ npm run build
 
 При старте в лог выводится фактический путь: `Job workspace base path (Jobs:WorkspacePath): ...`. Оба внешних сервиса вызываются только по gRPC; REST для agent06 не используется.
 
+### gRPC по HTTP (без TLS)
+
+При работе по `http://` (без HTTPS) gRPC использует HTTP/2 «prior knowledge» (h2c). Чтобы избежать ошибки `HTTP_1_1_REQUIRED` (0xd):
+
+- **agent05**: в `Program.cs` включён `AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true)` — клиент подключается по h2c к agent04 и agent06.
+- **agent04** (и при необходимости agent06): в конфиге Kestrel должен быть указан протокол HTTP/2, например в `appsettings.json`: `"Kestrel": { "EndpointDefaults": { "Protocols": "Http1AndHttp2" } }`. Без этого сервер может отклонять HTTP/2 и разрывать соединение.
+
 ## Endpoints
 
 | Метод  | Путь                    | Описание |
