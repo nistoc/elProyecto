@@ -4,7 +4,7 @@ All notable changes to XtractManager (agent05-ui-control) are documented here.
 
 ## [Unreleased]
 
-- Backend: исправлена ошибка gRPC `HTTP_1_1_REQUIRED` (0xd) при вызове agent04/agent06 по `http://`: включён `Http2UnencryptedSupport` в API (Program.cs), в README добавлена секция «gRPC по HTTP (без TLS)» с требованием к Kestrel agent04 (Protocols: Http1AndHttp2).
+- Backend: исправлена ошибка gRPC `HTTP_1_1_REQUIRED` (0xd) при вызове agent04/agent06 по `http://`: включён `Http2UnencryptedSupport` в API (Program.cs); в Agent04 добавлен отдельный порт 5032 для gRPC (h2c) через `ConfigureKestrel` (Http2 + AllowAlternateSchemes), REST на 5034; в README — секция «gRPC по HTTP (без TLS)».
 - Backend: интеграция с agent06 только по gRPC (RefinerGrpcClient, конфиг Agent06:GrpcAddress).
 - Backend: DELETE /api/jobs/{id}, поля CreatedAt/CompletedAt в JobSnapshot и в списке, фильтр from/to в GET /api/jobs.
 - Frontend: скелет UI (React + Vite + TypeScript), типы и API-слой (createJob, fetchJobsList, fetchJob, deleteJob, subscribeToJob с реконнектом), хуки useJob и useLogBuffer, компоненты StepCard, UploadCard, JobsList, LogsSection, ResultSection, макет Topbar/Sidebar и четыре шага (Upload, Transcriber, Refiner, Result), i18n (en/ru/es), AUTH.md.

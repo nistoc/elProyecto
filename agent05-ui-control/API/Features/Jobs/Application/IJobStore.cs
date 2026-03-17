@@ -43,6 +43,8 @@ public class JobSnapshot
     public string? AgentPaused { get; set; }
     /// <summary>Path to transcript.md from agent04 (relative to agent04 workspace).</summary>
     public string? MdOutputPath { get; set; }
+    /// <summary>Full path to the job directory (workspace folder for this job). Used for debugging and UI to show where files are looked for.</summary>
+    public string? JobDirectoryPath { get; set; }
 }
 
 public class LogEntry

@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace XtractManager.Features.Jobs.Infrastructure;
 
 /// <summary>
@@ -27,24 +29,37 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
             return snap;
         var dirPath = _workspace.GetJobDirectoryPath(jobId);
         if (!Directory.Exists(dirPath))
+        {
+            _logger.LogDebug("GetAsync({JobId}): directory does not exist: {Path}", jobId, dirPath);
             return null;
+        }
         try
         {
             var created = Directory.GetCreationTimeUtc(dirPath);
+            var filesInDir = Directory.EnumerateFileSystemEntries(dirPath).ToList();
+            _logger.LogInformation(
+                "GetAsync({JobId}): returning archive job from disk, JobDirectoryPath={Path}, fileCount={Count}, files=[{Files}]",
+                jobId, dirPath, filesInDir.Count, string.Join(", ", filesInDir.Select(Path.GetFileName)));
+
+            var originalFilename = GetOriginalFilenameFromDir(dirPath);
+            var result = GetResultFromDir(dirPath);
+
             return new Application.JobSnapshot
             {
                 Id = jobId,
                 Status = "completed",
                 Phase = "idle",
-                OriginalFilename = null,
+                OriginalFilename = originalFilename,
                 CreatedAt = created.ToString("O"),
                 CompletedAt = null,
-                Tags = null
+                Tags = null,
+                JobDirectoryPath = dirPath,
+                Result = result
             };
         }
         catch (IOException ex)
         {
-            _logger.LogWarning(ex, "Could not read archive job directory {JobId}", jobId);
+            _logger.LogWarning(ex, "Could not read archive job directory {JobId} at {Path}", jobId, dirPath);
             return null;
         }
     }
@@ -63,6 +78,7 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
         try
         {
             dirs = await _workspace.ListJobDirectoriesAsync(ct);
+            _logger.LogDebug("ListAsync: workspace returned {Count} job directories", dirs.Count);
         }
         catch (Exception ex)
         {
@@ -110,4 +126,46 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
 
     public Task<bool> DeleteAsync(string jobId, CancellationToken ct = default)
         => _inner.DeleteAsync(jobId, ct);
+
+    /// <summary>Find "audio.*" in job dir and return that filename for display (e.g. "audio.mp3").</summary>
+    private static string? GetOriginalFilenameFromDir(string dirPath)
+    {
+        try
+        {
+            var dir = new DirectoryInfo(dirPath);
+            var audioFile = dir.EnumerateFiles("audio.*").FirstOrDefault();
+            return audioFile?.Name;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Read transcript.md and transcript_fixed.md from job dir to populate Result for archive jobs.</summary>
+    private static Application.JobResult? GetResultFromDir(string dirPath)
+    {
+        string? transcript = null;
+        string? transcriptFixed = null;
+        try
+        {
+            var transcriptPath = Path.Combine(dirPath, "transcript.md");
+            if (File.Exists(transcriptPath))
+                transcript = File.ReadAllText(transcriptPath, Encoding.UTF8);
+            var fixedPath = Path.Combine(dirPath, "transcript_fixed.md");
+            if (File.Exists(fixedPath))
+                transcriptFixed = File.ReadAllText(fixedPath, Encoding.UTF8);
+        }
+        catch
+        {
+            // ignore
+        }
+        if (transcript == null && transcriptFixed == null)
+            return null;
+        return new Application.JobResult
+        {
+            Transcript = transcript,
+            TranscriptFixed = transcriptFixed
+        };
+    }
 }

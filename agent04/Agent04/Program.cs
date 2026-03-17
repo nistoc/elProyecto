@@ -1,5 +1,6 @@
 using Agent04.Application;
 using Agent04.Composition;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 
@@ -19,6 +20,15 @@ foreach (var p in envPaths)
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+// На Windows без TLS Kestrel не включает HTTP/2, если endpoint в режиме Http1AndHttp2 — только HTTP/1.1.
+// Для gRPC по http:// (h2c) нужен отдельный порт с Http2 и AllowAlternateSchemes.
+// Порт из applicationUrl (например 5034) — REST/OpenAPI; 5032 — только gRPC (h2c).
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.AllowAlternateSchemes = true;
+    serverOptions.ListenLocalhost(5032, listenOptions => listenOptions.Protocols = HttpProtocols.Http2);
+});
 
 // Graceful shutdown: при остановке (Ctrl+C) хост завершится за ShutdownTimeout и процесс освободит порт
 builder.Host.ConfigureHostOptions(o => o.ShutdownTimeout = TimeSpan.FromSeconds(5));

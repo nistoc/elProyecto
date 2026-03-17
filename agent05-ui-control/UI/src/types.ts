@@ -55,6 +55,8 @@ export interface JobSnapshot {
   completedAt?: string | null;
   agentPaused?: string | null;
   mdOutputPath?: string | null;
+  /** Full path to the job directory (where files are stored). For debugging and display. */
+  jobDirectoryPath?: string | null;
 }
 
 export interface JobListItem {

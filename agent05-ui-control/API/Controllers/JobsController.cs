@@ -100,6 +100,9 @@ public class JobsController : ControllerBase
         var job = await _store.GetAsync(id, ct);
         if (job == null)
             return NotFound();
+        job.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(id);
+        _logger.LogDebug("Get({Id}): JobDirectoryPath={Path}, Chunks={Chunks}, Result={Result}, MdOutputPath={Md}",
+            id, job.JobDirectoryPath, job.Chunks != null ? "set" : "null", job.Result != null ? "set" : "null", job.MdOutputPath ?? "null");
         return Ok(job);
     }
 
@@ -122,6 +125,9 @@ public class JobsController : ControllerBase
             Response.StatusCode = 404;
             return;
         }
+        job.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(id);
+        _logger.LogInformation("Stream({Id}): sending snapshot, JobDirectoryPath={Path}, Chunks={Chunks}, MdOutputPath={Md}",
+            id, job.JobDirectoryPath, job.Chunks != null ? "set" : "null", job.MdOutputPath ?? "null");
         Response.ContentType = "text/event-stream";
         Response.Headers.CacheControl = "no-cache";
         await Response.StartAsync(ct);

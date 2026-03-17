@@ -75,6 +75,8 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
 
         await foreach (var update in _transcription.StreamJobStatusAsync(transcriptionJobId, ct))
         {
+            _logger.LogDebug("Job {JobId}: Agent04 status update State={State}, MdOutputPath={Md}, TotalChunks={Total}, Processed={Processed}",
+                jobId, update.State, update.MdOutputPath ?? "null", update.TotalChunks, update.ProcessedChunks);
             await UpdateAndBroadcastAsync(jobId, s =>
             {
                 s.Status = MapState(update.State);
@@ -98,9 +100,12 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         string? transcriptContent = null;
         snap = await _store.GetAsync(jobId, ct);
         var mdRel = snap?.MdOutputPath?.Trim().TrimStart('/', '\\');
+        _logger.LogInformation("Job {JobId}: resolving transcript, MdOutputPath(rel)={MdRel}, workspaceRoot={WorkspaceRoot}, jobDir={JobDir}",
+            jobId, mdRel ?? "null", workspaceRoot, jobDir);
         if (!string.IsNullOrEmpty(mdRel))
         {
             var mdFull = Path.Combine(workspaceRoot, mdRel.Replace('/', Path.DirectorySeparatorChar));
+            _logger.LogInformation("Job {JobId}: transcript path (from Agent04)={Path}, exists={Exists}", jobId, mdFull, File.Exists(mdFull));
             if (File.Exists(mdFull))
             {
                 try
@@ -116,6 +121,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         if (string.IsNullOrEmpty(transcriptContent))
         {
             var fallbackMd = Path.Combine(jobDir, "transcript.md");
+            _logger.LogInformation("Job {JobId}: fallback transcript path={Path}, exists={Exists}", jobId, fallbackMd, File.Exists(fallbackMd));
             if (File.Exists(fallbackMd))
             {
                 try { transcriptContent = await File.ReadAllTextAsync(fallbackMd, Encoding.UTF8, ct); } catch { /* ignore */ }
@@ -192,6 +198,8 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
     private async Task<string> GetSnapshotJsonAsync(string jobId)
     {
         var snap = await _store.GetAsync(jobId);
-        return snap == null ? "{}" : JsonSerializer.Serialize(snap);
+        if (snap == null) return "{}";
+        snap.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(jobId);
+        return JsonSerializer.Serialize(snap);
     }
 }

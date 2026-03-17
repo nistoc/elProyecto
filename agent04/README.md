@@ -24,7 +24,7 @@ dotnet run
 
 Ensure `appsettings.json` (or environment) contains a valid `WorkspaceRoot` path before starting.
 
-- **Base URL:** http://localhost:5032 (or https, see launchSettings).
+- **Порты (профиль http):** gRPC — **http://localhost:5032** (только HTTP/2, h2c); REST и OpenAPI — **http://localhost:5034**. На Windows без TLS для gRPC нужен отдельный endpoint с h2c (см. `Program.cs` → `ConfigureKestrel`).
 - **POST /api/transcription/jobs** — submit job. Body: `{ "configPath": "config/default.json", "inputFilePath": "project1/audio.m4a", "tags": ["optional"] }`. `configPath` and `inputFilePath` are **relative to workspace_root**; absolute paths in `inputFilePath` are rejected with 400. Returns `202 Accepted` and `jobId`; `Location` header points to the job.
 - **GET /api/transcription/jobs/{id}** — job status (state, progress, phase, paths when completed).
 - **GET /api/transcription/jobs** — list jobs (query: `status`, `limit`, `offset`).

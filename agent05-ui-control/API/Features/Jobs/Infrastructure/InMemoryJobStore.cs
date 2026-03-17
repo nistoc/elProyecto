@@ -16,7 +16,7 @@ public sealed class InMemoryJobStore : Application.IJobStore
     {
         var list = _jobs.Values
             .Where(j => Filter(j, filter))
-            .OrderByDescending(j => j.Id)
+            .OrderByDescending(j => j.CreatedAt ?? "")
             .Skip(filter.Offset)
             .Take(filter.Limit)
             .Select(j => new Application.JobListItem(

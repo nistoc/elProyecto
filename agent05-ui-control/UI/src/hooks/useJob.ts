@@ -99,7 +99,10 @@ export function useJob(initialJobId: string | null): {
     setLoadingList(true);
     try {
       const list = await fetchJobsList();
-      setJobsList(list);
+      const sorted = [...list].sort((a, b) =>
+        (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
+      );
+      setJobsList(sorted);
     } finally {
       setLoadingList(false);
     }

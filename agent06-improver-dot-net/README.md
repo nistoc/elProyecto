@@ -2,6 +2,11 @@
 
 .NET service for refining transcripts: fixes Cyrillic transliterations of Spanish words back to Latin script using an LLM (OpenAI or compatible API). Port of the Python agent03-trans-improver with REST and gRPC APIs.
 
+## Structure
+
+- **API/** — main project (.NET 9). Solution: `TranslationImprover.slnx` (API, API.Tests). Build and run from `API/`.
+- **docs/** — e.g. RENTGEN_IMPLEMENTATION.md (nodes, semanticKey, tag).
+
 ## Requirements
 
 - .NET 9.0
@@ -41,11 +46,12 @@ You can also use `appsettings.Development.json` or environment variables; `.env`
 ## Running
 
 ```bash
-cd API
-dotnet run --project TranslationImprover.Instance
+cd agent06-improver-dot-net/API
+dotnet build
+dotnet run
 ```
 
-Ensure `WorkspaceRoot` and (for refinement) `OPENAI_API_KEY` are set in `.env`, appsettings, or environment before starting.
+By default the API listens on **http://localhost:5033** (see `API/Properties/launchSettings.json`). Ensure `WorkspaceRoot` and (for refinement) `OPENAI_API_KEY` are set in `.env`, appsettings, or environment before starting.
 
 ## API overview
 
@@ -56,3 +62,10 @@ Ensure `WorkspaceRoot` and (for refinement) `OPENAI_API_KEY` are set in `.env`, 
 Input: `input_file_path` (relative to WorkspaceRoot) or `input_content`. Output: optional `output_file_path` (relative). Prompt template: optional `prompt_file` or built-in default with `{context}` and `{batch}` placeholders.
 
 See [docs/RENTGEN_IMPLEMENTATION.md](docs/RENTGEN_IMPLEMENTATION.md) for the virtual model (nodes, semanticKey, tag).
+
+## Tests
+
+```bash
+cd agent06-improver-dot-net
+dotnet test
+```
