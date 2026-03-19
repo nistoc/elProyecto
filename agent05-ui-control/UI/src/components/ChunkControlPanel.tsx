@@ -150,19 +150,20 @@ export function ChunkControlPanel({
         .chunk-panel {
           margin: 1rem 0;
           padding: 0.75rem 1rem;
-          border: 1px solid #e2e8f0;
+          border: 1px solid var(--color-border);
           border-radius: 8px;
-          background: #f8fafc;
+          background: var(--color-subtle-panel);
+          color: var(--color-text);
         }
         .chunk-panel__title {
           margin: 0 0 0.35rem 0;
           font-size: 0.9rem;
-          color: #334155;
+          color: var(--color-heading);
         }
         .chunk-panel__hint {
           margin: 0 0 0.75rem 0;
           font-size: 0.8125rem;
-          color: #64748b;
+          color: var(--color-text-secondary);
         }
         .chunk-panel__row {
           display: flex;
@@ -177,28 +178,30 @@ export function ChunkControlPanel({
           align-items: center;
           gap: 0.5rem;
           font-size: 0.8125rem;
-          color: #475569;
+          color: var(--color-label);
         }
         .chunk-panel__input {
           width: 4.5rem;
           padding: 0.25rem 0.5rem;
-          border: 1px solid #cbd5e1;
+          border: 1px solid var(--color-border-strong);
           border-radius: 4px;
+          background: var(--color-surface);
+          color: var(--color-text);
         }
-        .chunk-panel__total { font-size: 0.75rem; color: #64748b; }
+        .chunk-panel__total { font-size: 0.75rem; color: var(--color-text-secondary); }
         .chunk-panel__total--muted { font-style: italic; }
         .chunk-panel__filter {
           display: flex;
           align-items: center;
           gap: 0.35rem;
           font-size: 0.8125rem;
-          color: #475569;
+          color: var(--color-label);
           cursor: pointer;
         }
         .chunk-panel__filter-note {
           margin: 0 0 0.5rem 0;
           font-size: 0.75rem;
-          color: #0369a1;
+          color: var(--color-info);
         }
         .chunk-panel__actions {
           display: flex;
@@ -208,14 +211,14 @@ export function ChunkControlPanel({
         .chunk-panel__actions button {
           padding: 0.35rem 0.65rem;
           font-size: 0.8125rem;
-          border: 1px solid #cbd5e1;
+          border: 1px solid var(--color-border-strong);
           border-radius: 4px;
-          background: #fff;
+          background: var(--color-surface);
           cursor: pointer;
-          color: #334155;
+          color: var(--color-heading);
         }
         .chunk-panel__actions button:hover:not(:disabled) {
-          background: #f1f5f9;
+          background: var(--color-surface-hover);
         }
         .chunk-panel__actions button:disabled {
           opacity: 0.5;
@@ -224,7 +227,7 @@ export function ChunkControlPanel({
         .chunk-panel__message {
           margin: 0.75rem 0 0 0;
           font-size: 0.8125rem;
-          color: #475569;
+          color: var(--color-label);
         }
       `}</style>
     </section>

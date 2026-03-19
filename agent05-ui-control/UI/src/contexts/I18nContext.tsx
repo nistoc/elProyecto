@@ -75,6 +75,9 @@ const messages: Record<Locale, Record<string, string>> = {
     saveFailed: 'Save failed',
     loadEditorFailed: 'Could not load file',
     doubleClickToEdit: 'Double-click to edit',
+    themeLight: 'Light',
+    themeDark: 'Dark',
+    themeSwitch: 'Color theme',
     chunkOperatorTitle: 'Chunk controls',
     chunkOperatorHint:
       'Cancel requests Agent04 to skip the current chunk. Skip / Retranscribe / Split may return not_implemented until supported in Agent04.',
@@ -157,6 +160,9 @@ const messages: Record<Locale, Record<string, string>> = {
     saveFailed: 'Не удалось сохранить',
     loadEditorFailed: 'Не удалось загрузить файл',
     doubleClickToEdit: 'Двойной щелчок — открыть редактор',
+    themeLight: 'Светлая',
+    themeDark: 'Тёмная',
+    themeSwitch: 'Тема оформления',
     chunkOperatorTitle: 'Управление чанками',
     chunkOperatorHint:
       '«Отменить чанк» отправляет в Agent04 запрос пропустить указанный чанк. Skip / Retranscribe / Split могут вернуть not_implemented, пока не реализованы в Agent04.',
@@ -239,6 +245,9 @@ const messages: Record<Locale, Record<string, string>> = {
     saveFailed: 'Error al guardar',
     loadEditorFailed: 'No se pudo cargar el archivo',
     doubleClickToEdit: 'Doble clic para editar',
+    themeLight: 'Claro',
+    themeDark: 'Oscuro',
+    themeSwitch: 'Tema de color',
     chunkOperatorTitle: 'Control de fragmentos',
     chunkOperatorHint:
       'Cancelar pide a Agent04 omitir el fragmento indicado. Omitir / Retranscribir / Dividir pueden devolver not_implemented hasta que Agent04 lo implemente.',

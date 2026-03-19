@@ -47,15 +47,16 @@ export function StepCard({
           gap: 0.5rem;
           width: 100%;
           padding: 0.75rem 1rem;
-          border: 1px solid #e2e8f0;
+          border: 1px solid var(--color-border);
           border-left: 3px solid transparent;
           border-radius: 6px;
-          background: #fff;
+          background: var(--color-surface);
+          color: var(--color-text);
           cursor: pointer;
           text-align: left;
         }
-        .step-card:hover { background: #f8fafc; }
-        .step-card.active { background: #f1f5f9; }
+        .step-card:hover { background: var(--color-surface-hover); }
+        .step-card.active { background: var(--color-surface-active); }
         .step-card__dot {
           width: 10px;
           height: 10px;
@@ -64,8 +65,8 @@ export function StepCard({
         }
         .step-card__body { flex: 1; min-width: 0; }
         .step-card__title { font-weight: 600; display: block; }
-        .step-card__desc { font-size: 0.875rem; color: #64748b; display: block; }
-        .step-card__badge { font-size: 0.75rem; color: #64748b; margin-left: 0.25rem; }
+        .step-card__desc { font-size: 0.875rem; color: var(--color-text-secondary); display: block; }
+        .step-card__badge { font-size: 0.75rem; color: var(--color-text-secondary); margin-left: 0.25rem; }
       `}</style>
     </button>
   );

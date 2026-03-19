@@ -54,23 +54,24 @@ export function LogsSection({
       <style>{`
         .logs-section { margin-top: 1rem; }
         .logs-section__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
-        .logs-section__title { margin: 0; font-size: 0.875rem; }
+        .logs-section__title { margin: 0; font-size: 0.875rem; color: var(--color-text); }
         .logs-section__actions { display: flex; gap: 0.5rem; }
-        .logs-section__actions button { font-size: 0.75rem; padding: 0.25rem 0.5rem; }
+        .logs-section__actions button { font-size: 0.75rem; padding: 0.25rem 0.5rem; border-radius: 4px; border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
         .logs-section__panel {
           max-height: 200px;
           overflow-y: auto;
-          border: 1px solid #e2e8f0;
+          border: 1px solid var(--color-border);
           border-radius: 4px;
           padding: 0.5rem;
           font-family: monospace;
           font-size: 0.75rem;
-          background: #f8fafc;
+          background: var(--color-logs-bg);
+          color: var(--color-text);
         }
         .logs-section__line { margin-bottom: 0.25rem; word-break: break-all; }
-        .logs-section__line[data-level="error"] { color: #dc2626; }
-        .logs-section__ts { color: #64748b; margin-right: 0.5rem; }
-        .logs-section__empty { color: #94a3b8; margin: 0; }
+        .logs-section__line[data-level="error"] { color: var(--color-error); }
+        .logs-section__ts { color: var(--color-text-secondary); margin-right: 0.5rem; }
+        .logs-section__empty { color: var(--color-text-muted); margin: 0; }
       `}</style>
     </div>
   );

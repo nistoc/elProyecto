@@ -96,29 +96,30 @@ export function JobsList({
       <style>{`
         .jobs-list { padding: 0.5rem; }
         .jobs-list__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
-        .jobs-list__title { font-size: 1rem; margin: 0; }
-        .jobs-list__refresh { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
+        .jobs-list__title { font-size: 1rem; margin: 0; color: var(--color-text); }
+        .jobs-list__refresh { padding: 0.25rem 0.5rem; font-size: 0.875rem; border-radius: 4px; border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
         .jobs-list__ul { list-style: none; margin: 0; padding: 0; }
         .jobs-list__li { display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.25rem; }
         .jobs-list__item {
           flex: 1;
           text-align: left;
           padding: 0.5rem;
-          border: 1px solid #e2e8f0;
+          border: 1px solid var(--color-border);
           border-radius: 4px;
-          background: #fff;
+          background: var(--color-surface);
+          color: var(--color-text);
           cursor: pointer;
         }
-        .jobs-list__item:hover { background: #f8fafc; }
-        .jobs-list__item.active { border-color: #3b82f6; background: #eff6ff; }
+        .jobs-list__item:hover { background: var(--color-surface-hover); }
+        .jobs-list__item.active { border-color: var(--color-primary); background: var(--color-accent-soft); }
         .jobs-list__name { font-weight: 500; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .jobs-list__meta { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: #64748b; margin-top: 0.125rem; }
+        .jobs-list__meta { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: var(--color-text-secondary); margin-top: 0.125rem; }
         .jobs-list__status { }
         .jobs-list__date { }
-        .jobs-list__del { width: 28px; height: 28px; padding: 0; border: 1px solid #e2e8f0; border-radius: 4px; background: #fff; cursor: pointer; }
+        .jobs-list__del { width: 28px; height: 28px; padding: 0; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-surface); color: var(--color-text); cursor: pointer; }
         .jobs-list__confirm { font-size: 0.75rem; display: flex; gap: 0.25rem; align-items: center; }
         .jobs-list__confirm button { padding: 0.125rem 0.25rem; }
-        .jobs-list__loading, .jobs-list__empty { color: #94a3b8; font-size: 0.875rem; margin: 0.5rem 0; }
+        .jobs-list__loading, .jobs-list__empty { color: var(--color-text-muted); font-size: 0.875rem; margin: 0.5rem 0; }
       `}</style>
     </div>
   );

@@ -212,20 +212,20 @@ export function ResultSection({
         </div>
       )}
       <style>{`
-        .result-section { padding: 1rem; }
-        .result-section__title { margin: 0 0 0.5rem 0; font-size: 1rem; }
+        .result-section { padding: 1rem; color: var(--color-text); }
+        .result-section__title { margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--color-text); }
         .result-section__meta { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 1rem; font-size: 0.875rem; }
-        .result-section__meta dt { color: #64748b; }
+        .result-section__meta dt { color: var(--color-text-secondary); }
         .result-section__meta dd { margin: 0; }
-        .result-section__path { word-break: break-all; font-size: 0.8rem; color: #64748b; }
-        .result-section__copy { margin-left: 0.5rem; font-size: 0.75rem; padding: 0.125rem 0.25rem; }
-        .result-section__files-title { margin: 0.75rem 0 0.5rem 0; font-size: 0.9rem; }
+        .result-section__path { word-break: break-all; font-size: 0.8rem; color: var(--color-text-secondary); }
+        .result-section__copy { margin-left: 0.5rem; font-size: 0.75rem; padding: 0.125rem 0.25rem; border-radius: 4px; border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
+        .result-section__files-title { margin: 0.75rem 0 0.5rem 0; font-size: 0.9rem; color: var(--color-heading); }
         .result-section__links { margin-top: 1rem; font-size: 0.875rem; }
         .result-section__key-links { margin-top: 1rem; }
         .result-section__links-list { margin: 0; padding-left: 1.25rem; font-size: 0.875rem; }
-        .result-section__links-list a { color: #2563eb; }
-        .result-section__hint { margin: 0.5rem 0; font-size: 0.875rem; color: #64748b; }
-        .result-section__hint--err { color: #b91c1c; }
+        .result-section__links-list a { color: var(--color-link); }
+        .result-section__hint { margin: 0.5rem 0; font-size: 0.875rem; color: var(--color-text-secondary); }
+        .result-section__hint--err { color: var(--color-error-muted); }
       `}</style>
     </div>
   );

@@ -4,6 +4,7 @@ All notable changes to XtractManager (agent05-ui-control) are documented here.
 
 ## [Unreleased]
 
+- **UI:** переключатель **светлой и тёмной** темы (кнопка в topbar, CSS variables в `index.css`, `ThemeProvider` + `localStorage` `xtract-theme`, ранний скрипт в `index.html` против мигания).
 - **План §6 + критерий готовности:** документы **`docs/JOB_FILES_SCANNER_AND_AGENTS.md`** (таблицы сканера vs Agent04/06) и **`docs/PARITY_MINIMUM_READINESS.md`** (чеклист минимального паритета); в README — краткая сводка и ссылки.
 - **План §5.7:** тесты **`ChunkActionsControllerTests`** — `POST /api/jobs/{id}/chunk-actions` с моком **`ITranscriptionServiceClient`** (успех cancel, conflict при неверной фазе / без `Agent04JobId`, `ok:false` от gRPC, unknown action). В agent04 добавлен документ **`docs/CHUNKS_AND_RENTGEN.md`** (аудит чанков / под-чанков / RENTGEN).
 - **Chunk controls (план §5):** после `SubmitJob` в снепшот пишется **`agent04JobId`**, в **`chunks`** подставляются **`total`**, **`completed`**, **`active`** из стрима Agent04; в SSE дополнительно шлётся **`snapshot`** при обновлениях транскрипции. **POST /api/jobs/{id}/chunk-actions** JSON `{ "action": "cancel"|"skip"|"retranscribe"|"split", "chunkIndex": number }` проксирует в Agent04 gRPC `ChunkCommand` (409 если не `phase=transcriber`+`running`; **cancel** реализован в Agent04, остальное может вернуть `not_implemented`). UI: **`ChunkControlPanel`** на вкладке Transcriber, чекбокс **фильтра файлов по выбранному чанку** (`ProjectFilesPanel` / `ProjectFilesView`).

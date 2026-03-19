@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { I18nProvider, useI18n } from './contexts/I18nContext';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { useJob, type StepId } from './hooks/useJob';
 import { StepCard } from './components/StepCard';
 import { UploadCard } from './components/UploadCard';
@@ -11,6 +12,7 @@ import { ChunkControlPanel } from './components/ChunkControlPanel';
 
 function AppContent() {
   const { t, locale, setLocale } = useI18n();
+  const { theme, toggleTheme } = useTheme();
   const [initialJobId] = useState<string | null>(() => null);
   const {
     jobId,
@@ -60,6 +62,16 @@ function AppContent() {
       <header className="topbar">
         <h1 className="topbar__title">{t('appTitle')}</h1>
         <div className="topbar__actions">
+          <button
+            type="button"
+            className="topbar__theme"
+            onClick={toggleTheme}
+            title={t('themeSwitch')}
+            aria-label={t('themeSwitch')}
+          >
+            {theme === 'dark' ? '☀️ ' : '🌙 '}
+            {theme === 'dark' ? t('themeLight') : t('themeDark')}
+          </button>
           <select
             value={locale}
             onChange={(e) => setLocale(e.target.value as 'en' | 'ru' | 'es')}
@@ -221,28 +233,41 @@ function AppContent() {
           justify-content: space-between;
           align-items: center;
           padding: 0.75rem 1.5rem;
-          border-bottom: 1px solid #e2e8f0;
-          background: #fff;
+          border-bottom: 1px solid var(--color-border);
+          background: var(--color-surface-raised);
+          color: var(--color-text);
         }
-        .topbar__title { margin: 0; font-size: 1.25rem; }
-        .topbar__actions { display: flex; gap: 0.5rem; align-items: center; }
-        .topbar__locale { padding: 0.25rem 0.5rem; }
-        .topbar__clear { padding: 0.25rem 0.5rem; }
+        .topbar__title { margin: 0; font-size: 1.25rem; color: var(--color-text); }
+        .topbar__actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+        .topbar__theme,
+        .topbar__locale,
+        .topbar__clear {
+          padding: 0.25rem 0.5rem;
+          border-radius: 6px;
+          border: 1px solid var(--color-border-strong);
+          background: var(--color-surface);
+          color: var(--color-text);
+          cursor: pointer;
+          font-size: 0.875rem;
+        }
+        .topbar__theme:hover,
+        .topbar__clear:hover { background: var(--color-surface-hover); }
+        .topbar__locale { cursor: pointer; }
         .layout { display: flex; flex: 1; min-height: 0; }
         .sidebar {
           width: 280px;
-          border-right: 1px solid #e2e8f0;
-          background: #f8fafc;
+          border-right: 1px solid var(--color-border);
+          background: var(--color-sidebar);
           overflow-y: auto;
         }
         .content { flex: 1; padding: 1rem; overflow-y: auto; }
         .steps-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
         .step-content { margin-top: 0.5rem; }
         .step-panel { padding: 1rem; }
-        .step-panel__meta { margin: 0 0 0.5rem 0; font-size: 0.875rem; color: #64748b; }
-        .step-panel__files-heading { margin: 1rem 0 0.35rem 0; font-size: 0.9rem; color: #334155; }
-        .step-panel__empty { color: #94a3b8; margin: 0; }
-        .step-panel__hint { margin: 0 0 0.75rem 0; font-size: 0.875rem; color: #475569; }
+        .step-panel__meta { margin: 0 0 0.5rem 0; font-size: 0.875rem; color: var(--color-text-secondary); }
+        .step-panel__files-heading { margin: 1rem 0 0.35rem 0; font-size: 0.9rem; color: var(--color-heading); }
+        .step-panel__empty { color: var(--color-text-muted); margin: 0; }
+        .step-panel__hint { margin: 0 0 0.75rem 0; font-size: 0.875rem; color: var(--color-label); }
       `}</style>
     </div>
   );
@@ -250,8 +275,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <I18nProvider>
-      <AppContent />
-    </I18nProvider>
+    <ThemeProvider>
+      <I18nProvider>
+        <AppContent />
+      </I18nProvider>
+    </ThemeProvider>
   );
 }
