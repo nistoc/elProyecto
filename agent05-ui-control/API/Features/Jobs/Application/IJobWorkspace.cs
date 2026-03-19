@@ -20,4 +20,10 @@ public interface IJobWorkspace
 
     /// <summary>Lists existing job directory ids and their creation time (for archive/listing from disk).</summary>
     Task<IReadOnlyList<(string JobId, DateTime CreatedUtc)>> ListJobDirectoriesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes the job directory under the workspace if it exists (recursive).
+    /// Returns true if a directory was removed. Path must stay under <see cref="WorkspaceRootPath"/>.
+    /// </summary>
+    Task<bool> TryDeleteJobDirectoryAsync(string jobId, CancellationToken ct = default);
 }

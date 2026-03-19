@@ -71,4 +71,42 @@ public sealed class JobWorkspace : Application.IJobWorkspace
         }
         return Task.FromResult<IReadOnlyList<(string JobId, DateTime CreatedUtc)>>(list);
     }
+
+    /// <inheritdoc />
+    public Task<bool> TryDeleteJobDirectoryAsync(string jobId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+            return Task.FromResult(false);
+        // Reject path segments in job id (only flat names under workspace, as created by the API / lister)
+        if (jobId.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, '/', '\\']) >= 0)
+            return Task.FromResult(false);
+        if (jobId is "." or "..")
+            return Task.FromResult(false);
+
+        var full = Path.GetFullPath(GetJobDirectoryPath(jobId));
+        var root = Path.GetFullPath(_basePath);
+        var rootPrefix = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var underRoot = full.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(full, root, StringComparison.OrdinalIgnoreCase);
+        if (!underRoot)
+        {
+            _logger.LogWarning("TryDeleteJobDirectoryAsync: path outside workspace, refusing: {Full}", full);
+            return Task.FromResult(false);
+        }
+
+        if (!Directory.Exists(full))
+            return Task.FromResult(false);
+
+        try
+        {
+            Directory.Delete(full, recursive: true);
+            _logger.LogInformation("Deleted job directory: {Path}", full);
+            return Task.FromResult(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete job directory {Path}", full);
+            return Task.FromResult(false);
+        }
+    }
 }

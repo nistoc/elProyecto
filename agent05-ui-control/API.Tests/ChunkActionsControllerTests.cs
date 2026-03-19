@@ -24,6 +24,9 @@ internal sealed class StubJobWorkspace : IJobWorkspace
 
     public Task<IReadOnlyList<(string JobId, DateTime CreatedUtc)>> ListJobDirectoriesAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<(string JobId, DateTime CreatedUtc)>>(Array.Empty<(string, DateTime)>());
+
+    public Task<bool> TryDeleteJobDirectoryAsync(string jobId, CancellationToken ct = default) =>
+        Task.FromResult(false);
 }
 
 internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient

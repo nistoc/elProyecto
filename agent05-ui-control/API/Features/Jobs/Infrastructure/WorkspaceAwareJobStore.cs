@@ -122,8 +122,14 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
     public Task<bool> UpdateAsync(string jobId, Action<Application.JobSnapshot> update, CancellationToken ct = default)
         => _inner.UpdateAsync(jobId, update, ct);
 
-    public Task<bool> DeleteAsync(string jobId, CancellationToken ct = default)
-        => _inner.DeleteAsync(jobId, ct);
+    public async Task<bool> DeleteAsync(string jobId, CancellationToken ct = default)
+    {
+        var removedFromMemory = await _inner.DeleteAsync(jobId, ct);
+        var removedFromDisk = await _workspace.TryDeleteJobDirectoryAsync(jobId, ct);
+        if (removedFromDisk)
+            _logger.LogDebug("DeleteAsync({JobId}): removed workspace directory (archive or leftover files)", jobId);
+        return removedFromMemory || removedFromDisk;
+    }
 
     /// <summary>Find first audio file in job dir and return its name for display (e.g. "audio.mp3" or original name from agent-browser).</summary>
     private static string? GetOriginalFilenameFromDir(string dirPath)
