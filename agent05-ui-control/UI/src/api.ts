@@ -4,6 +4,7 @@ import type {
   JobsListResponse,
   CreateJobResponse,
   StreamEvent,
+  JobFilesApiResponse,
 } from './types';
 
 const API_BASE = '';
@@ -45,6 +46,66 @@ export async function fetchJob(id: string): Promise<JobSnapshot | null> {
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json() as Promise<JobSnapshot>;
+}
+
+/** Structured files under the job directory (404 if folder missing and not archive). */
+export async function fetchJobFiles(
+  id: string
+): Promise<JobFilesApiResponse | null> {
+  const r = await fetch(
+    `${API_BASE}/api/jobs/${encodeURIComponent(id)}/files`
+  );
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`HTTP ${r.status}: /api/jobs/.../files`);
+  return r.json() as Promise<JobFilesApiResponse>;
+}
+
+/** URL to stream/download a file by path relative to the job directory. */
+export function jobProjectFileContentUrl(
+  jobId: string,
+  relativePath: string
+): string {
+  const q = new URLSearchParams({ path: relativePath });
+  return `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/files/content?${q}`;
+}
+
+/** Load file body as UTF-8 text (for editor). */
+export async function fetchJobFileText(
+  jobId: string,
+  relativePath: string
+): Promise<string> {
+  const url = jobProjectFileContentUrl(jobId, relativePath);
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.text();
+}
+
+/** Save text file (existing path only). Max body 50 MB (server limit). */
+export async function putJobFileContent(
+  jobId: string,
+  relativePath: string,
+  content: string
+): Promise<void> {
+  const q = new URLSearchParams({ path: relativePath });
+  const r = await fetch(
+    `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/files/content?${q}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body: content,
+    }
+  );
+  if (!r.ok) {
+    const textBody = await r.text();
+    let msg = textBody || `HTTP ${r.status}`;
+    try {
+      const j = JSON.parse(textBody) as { error?: string };
+      if (j?.error) msg = j.error;
+    } catch {
+      /* keep msg */
+    }
+    throw new Error(msg);
+  }
 }
 
 export async function createJob(

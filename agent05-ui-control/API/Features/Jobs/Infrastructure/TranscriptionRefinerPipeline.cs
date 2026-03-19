@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using XtractManager.Features.Jobs.Application;
 
@@ -13,6 +14,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
     private readonly Application.ITranscriptionServiceClient _transcription;
     private readonly Application.IRefinerServiceClient _refiner;
     private readonly IConfiguration _configuration;
+    private readonly IHostEnvironment _hostEnvironment;
     private readonly ILogger<TranscriptionRefinerPipeline> _logger;
 
     public TranscriptionRefinerPipeline(
@@ -22,6 +24,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         ITranscriptionServiceClient transcription,
         IRefinerServiceClient refiner,
         IConfiguration configuration,
+        IHostEnvironment hostEnvironment,
         ILogger<TranscriptionRefinerPipeline> logger)
     {
         _store = store;
@@ -30,6 +33,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         _transcription = transcription;
         _refiner = refiner;
         _configuration = configuration;
+        _hostEnvironment = hostEnvironment;
         _logger = logger;
     }
 
@@ -131,6 +135,10 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         await UpdateAndBroadcastAsync(jobId, s => s.Phase = "refiner");
         Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = "refiner" }));
 
+        var outputRelForRefiner = TryGetRefinerOutputRelativePath(jobId, jobDir);
+        if (outputRelForRefiner != null)
+            _logger.LogInformation("Job {JobId}: Agent06 OutputFilePath (relative to refiner workspace)={Path}", jobId, outputRelForRefiner);
+
         Application.SubmitRefineJobResult? refinerResult = null;
         var tagsList = snap?.Tags?.ToList();
         try
@@ -138,7 +146,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             refinerResult = await _refiner.SubmitRefineJobAsync(new RefineJobInput(
                 InputFilePath: null,
                 InputContent: transcriptContent ?? "",
-                OutputFilePath: null,
+                OutputFilePath: outputRelForRefiner,
                 BatchSize: 5,
                 ContextLines: 2,
                 Tags: tagsList), ct);
@@ -171,6 +179,54 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         Broadcast(jobId, "done", null);
     }
 
+    /// <summary>
+    /// agent06 requires <c>output_file_path</c> relative to its WorkspaceRoot.
+    /// When <c>Agent06:WorkspaceRoot</c> is unset, we assume it matches <see cref="IJobWorkspace.WorkspaceRootPath"/> (same folder as Jobs:WorkspacePath).
+    /// </summary>
+    private string? TryGetRefinerOutputRelativePath(string jobId, string jobDir)
+    {
+        var refinerRoot = ResolveRefinerWorkspaceRootFullPath();
+        var outputFull = Path.GetFullPath(Path.Combine(jobDir, "transcript_fixed.md"));
+        try
+        {
+            var rel = Path.GetRelativePath(refinerRoot, outputFull);
+            var normalized = rel.Replace('\\', '/');
+            if (string.IsNullOrEmpty(normalized) || normalized == ".")
+            {
+                _logger.LogWarning("Job {JobId}: unexpected relative path for transcript_fixed.md (rel empty or '.'); OutputFilePath omitted", jobId);
+                return null;
+            }
+
+            if (normalized.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(rel))
+            {
+                _logger.LogWarning(
+                    "Job {JobId}: transcript_fixed.md is not under Agent06 workspace root {Root} (relative={Rel}). Set Agent06:WorkspaceRoot to the same path as Jobs:WorkspacePath to write the file next to the job.",
+                    jobId, refinerRoot, rel);
+                return null;
+            }
+
+            return normalized;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Job {JobId}: could not compute OutputFilePath for refiner", jobId);
+            return null;
+        }
+    }
+
+    private string ResolveRefinerWorkspaceRootFullPath()
+    {
+        var raw = _configuration["Agent06:WorkspaceRoot"]?.Trim();
+        if (string.IsNullOrEmpty(raw))
+            return _workspace.WorkspaceRootPath;
+
+        if (Path.IsPathRooted(raw))
+            return Path.GetFullPath(raw);
+
+        var contentRoot = _hostEnvironment.ContentRootPath ?? Directory.GetCurrentDirectory();
+        return Path.GetFullPath(Path.Combine(contentRoot, raw));
+    }
+
     private static string MapState(string state) =>
         state switch
         {
@@ -200,8 +256,6 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         var snap = await _store.GetAsync(jobId);
         if (snap == null) return "{}";
         snap.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(jobId);
-        if (snap.Files == null && !string.IsNullOrEmpty(snap.JobDirectoryPath) && Directory.Exists(snap.JobDirectoryPath))
-            snap.Files = JobDirectoryFileScanner.Scan(snap.JobDirectoryPath);
         return JsonSerializer.Serialize(snap);
     }
 }

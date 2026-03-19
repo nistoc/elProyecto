@@ -45,11 +45,13 @@ public class JobSnapshot
     public string? MdOutputPath { get; set; }
     /// <summary>Full path to the job directory (workspace folder for this job). Used for debugging and UI to show where files are looked for.</summary>
     public string? JobDirectoryPath { get; set; }
-    /// <summary>List of files in the job directory with display-friendly info (for UI). Populated for archive jobs and can be set when serving snapshot.</summary>
+    /// <summary>
+    /// Deprecated: no longer populated. Use <c>GET /api/jobs/{id}/files</c> for structured project files. Kept for JSON backward compatibility with older clients.
+    /// </summary>
     public IReadOnlyList<JobFileInfo>? Files { get; set; }
 }
 
-/// <summary>Display info for a file in a job directory (name, size; for text: line count; for audio: duration).</summary>
+/// <summary>Legacy flat file row (root-only scan). Prefer <see cref="JobProjectFiles"/> via GET /api/jobs/:id/files.</summary>
 public class JobFileInfo
 {
     public string Name { get; set; } = "";

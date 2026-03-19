@@ -6,6 +6,9 @@ namespace XtractManager.Features.Jobs.Application;
 /// </summary>
 public interface IJobWorkspace
 {
+    /// <summary>Absolute path to the jobs workspace root (configured Jobs:WorkspacePath), parent of all job directories.</summary>
+    string WorkspaceRootPath { get; }
+
     /// <summary>Full path to the job directory (e.g. .../runtime/{jobId}).</summary>
     string GetJobDirectoryPath(string jobId);
 

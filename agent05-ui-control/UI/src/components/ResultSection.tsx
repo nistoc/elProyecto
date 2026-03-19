@@ -1,4 +1,7 @@
-import type { JobSnapshot, JobFileInfo } from '../types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { JobSnapshot, JobProjectFiles } from '../types';
+import { fetchJobFiles, jobProjectFileContentUrl } from '../api';
+import { ProjectFilesView } from './ProjectFilesPanel';
 
 interface ResultSectionProps {
   jobId: string;
@@ -6,16 +9,8 @@ interface ResultSectionProps {
   t: (key: string) => string;
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
+function findByName(files: { name: string; relativePath: string }[], name: string) {
+  return files.find((f) => f.name === name);
 }
 
 export function ResultSection({ jobId, job, t }: ResultSectionProps) {
@@ -25,11 +20,56 @@ export function ResultSection({ jobId, job, t }: ResultSectionProps) {
     }
   };
 
+  const [projectFiles, setProjectFiles] = useState<JobProjectFiles | null>(null);
+  const [filesErr, setFilesErr] = useState<string | null>(null);
+  const [filesLoading, setFilesLoading] = useState(true);
+  const [filesReloadKey, setFilesReloadKey] = useState(0);
+
+  const reloadProjectFiles = useCallback(() => {
+    setFilesReloadKey((k) => k + 1);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFilesLoading(true);
+    setFilesErr(null);
+    fetchJobFiles(jobId)
+      .then((res) => {
+        if (cancelled) return;
+        setProjectFiles(res?.files ?? null);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setFilesErr(e instanceof Error ? e.message : t('failedToLoadFiles'));
+          setProjectFiles(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setFilesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, filesReloadKey, t]);
+
+  const keyLinks = useMemo(() => {
+    if (!projectFiles) return [];
+    const transcripts = projectFiles.transcripts;
+    const entries: { label: string; path: string }[] = [];
+    const tr = findByName(transcripts, 'transcript.md');
+    if (tr) entries.push({ label: t('linkTranscript'), path: tr.relativePath });
+    const tf = findByName(transcripts, 'transcript_fixed.md');
+    if (tf) entries.push({ label: t('linkTranscriptFixed'), path: tf.relativePath });
+    const rj = findByName(transcripts, 'response.json');
+    if (rj) entries.push({ label: t('linkResponseJson'), path: rj.relativePath });
+    return entries;
+  }, [projectFiles, t]);
+
   return (
     <div className="result-section">
-      <h3 className="result-section__title">Result</h3>
+      <h3 className="result-section__title">{t('result')}</h3>
       <dl className="result-section__meta">
-        <dt>Job ID</dt>
+        <dt>{t('jobId')}</dt>
         <dd>{jobId}</dd>
         <dt>{t('filename')}</dt>
         <dd>
@@ -55,33 +95,56 @@ export function ResultSection({ jobId, job, t }: ResultSectionProps) {
           </>
         )}
       </dl>
-      {job?.files && job.files.length > 0 && (
-        <div className="result-section__files">
-          <h4 className="result-section__files-title">{t('projectFiles')}</h4>
-          <ul className="result-section__files-list">
-            {job.files.map((f: JobFileInfo) => (
-              <li key={f.name} className="result-section__file">
-                <span className="result-section__file-name">{f.name}</span>
-                <span className="result-section__file-meta">
-                  {formatSize(f.sizeBytes)}
-                  {f.kind === 'text' && f.lineCount != null && ` · ${f.lineCount} lines`}
-                  {f.kind === 'audio' && f.durationSeconds != null && ` · ${formatDuration(f.durationSeconds)}`}
-                </span>
+
+      {keyLinks.length > 0 && (
+        <div className="result-section__key-links">
+          <h4 className="result-section__files-title">{t('resultQuickLinks')}</h4>
+          <ul className="result-section__links-list">
+            {keyLinks.map(({ label, path }) => (
+              <li key={path}>
+                <a
+                  href={jobProjectFileContentUrl(jobId, path)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {label}
+                </a>
               </li>
             ))}
           </ul>
         </div>
       )}
+
+      {filesLoading && (
+        <p className="result-section__hint">{t('loadingFiles')}</p>
+      )}
+      {filesErr && (
+        <p className="result-section__hint result-section__hint--err">{filesErr}</p>
+      )}
+      {projectFiles && (
+        <ProjectFilesView
+          jobId={jobId}
+          data={projectFiles}
+          mode="transcripts"
+          t={t}
+          onFilesMutated={reloadProjectFiles}
+        />
+      )}
+
+      {!projectFiles && !filesLoading && !filesErr && (
+        <p className="result-section__hint">{t('noProjectFiles')}</p>
+      )}
+
       {job?.result && (
         <div className="result-section__links">
-          {job.result.transcript && (
+          {job.result.transcript && !findByName(projectFiles?.transcripts ?? [], 'transcript.md') && (
             <p>
-              <strong>Transcript:</strong> available in workspace
+              <strong>{t('linkTranscript')}:</strong> {t('inWorkspace')}
             </p>
           )}
-          {job.result.transcriptFixed && (
+          {job.result.transcriptFixed && !findByName(projectFiles?.transcripts ?? [], 'transcript_fixed.md') && (
             <p>
-              <strong>Fixed transcript:</strong> available in workspace
+              <strong>{t('linkTranscriptFixed')}:</strong> {t('inWorkspace')}
             </p>
           )}
         </div>
@@ -94,13 +157,13 @@ export function ResultSection({ jobId, job, t }: ResultSectionProps) {
         .result-section__meta dd { margin: 0; }
         .result-section__path { word-break: break-all; font-size: 0.8rem; color: #64748b; }
         .result-section__copy { margin-left: 0.5rem; font-size: 0.75rem; padding: 0.125rem 0.25rem; }
-        .result-section__files { margin-top: 1rem; }
-        .result-section__files-title { margin: 0 0 0.5rem 0; font-size: 0.9rem; }
-        .result-section__files-list { list-style: none; margin: 0; padding: 0; }
-        .result-section__file { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; padding: 0.25rem 0; font-size: 0.875rem; border-bottom: 1px solid #e2e8f0; }
-        .result-section__file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .result-section__file-meta { flex-shrink: 0; color: #64748b; font-size: 0.8rem; }
+        .result-section__files-title { margin: 0.75rem 0 0.5rem 0; font-size: 0.9rem; }
         .result-section__links { margin-top: 1rem; font-size: 0.875rem; }
+        .result-section__key-links { margin-top: 1rem; }
+        .result-section__links-list { margin: 0; padding-left: 1.25rem; font-size: 0.875rem; }
+        .result-section__links-list a { color: #2563eb; }
+        .result-section__hint { margin: 0.5rem 0; font-size: 0.875rem; color: #64748b; }
+        .result-section__hint--err { color: #b91c1c; }
       `}</style>
     </div>
   );

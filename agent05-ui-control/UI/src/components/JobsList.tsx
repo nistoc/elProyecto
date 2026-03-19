@@ -91,7 +91,7 @@ export function JobsList({
         ))}
       </ul>
       {!loading && jobs.length === 0 && (
-        <p className="jobs-list__empty">No jobs</p>
+        <p className="jobs-list__empty">{t('noJobs')}</p>
       )}
       <style>{`
         .jobs-list { padding: 0.5rem; }

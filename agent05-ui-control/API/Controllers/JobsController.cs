@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using XtractManager.Features.Jobs.Application;
@@ -95,6 +96,152 @@ public class JobsController : ControllerBase
         return Ok(new { jobs = list });
     }
 
+    /// <summary>Structured project files for UI (same categories as agent-browser). Job must exist in store or as a directory on disk.</summary>
+    [HttpGet("{id}/files")]
+    public async Task<ActionResult> GetProjectFiles(string id, CancellationToken ct = default)
+    {
+        var job = await _store.GetAsync(id, ct);
+        var jobDir = _workspace.GetJobDirectoryPath(id);
+        if (!Directory.Exists(jobDir))
+        {
+            if (job == null)
+                return NotFound();
+            return NotFound(new { error = "job directory not found" });
+        }
+
+        if (job == null)
+        {
+            _logger.LogDebug("GetProjectFiles({Id}): archive job (directory only)", id);
+        }
+
+        var files = JobProjectFilesScanner.Scan(jobDir);
+        _logger.LogDebug("GetProjectFiles({Id}): jobDir={Path}, original={O}, chunks={C}", id, jobDir, files.Original.Count, files.Chunks.Count);
+        return Ok(new { files, jobDir });
+    }
+
+    /// <summary>Stream a file from the job directory (relative path only). Supports range requests for audio.</summary>
+    [HttpGet("{id}/files/content")]
+    public IActionResult GetProjectFileContent(string id, [FromQuery] string? path)
+    {
+        if (!TryResolveJobContentPath(id, path, out var fullPath, out var error))
+            return error!;
+        if (!System.IO.File.Exists(fullPath))
+            return NotFound(new { error = "file not found" });
+
+        var contentType = GuessContentType(fullPath);
+        return PhysicalFile(fullPath, contentType, enableRangeProcessing: true);
+    }
+
+    /// <summary>Overwrite an existing text file under the job directory (UTF-8). Same allowed extensions as agent-browser PUT /files/*.</summary>
+    [HttpPut("{id}/files/content")]
+    [RequestSizeLimit(50 * 1024 * 1024)]
+    public async Task<IActionResult> PutProjectFileContent(string id, [FromQuery] string? path, CancellationToken ct = default)
+    {
+        if (!TryResolveJobContentPath(id, path, out var fullPath, out var error))
+            return error!;
+        if (!System.IO.File.Exists(fullPath))
+            return NotFound(new { error = "file not found" });
+        if (!IsEditableTextExtension(fullPath))
+            return BadRequest(new { error = "only text-like files can be saved (md, txt, json, log, …)" });
+
+        string body;
+        try
+        {
+            using var reader = new StreamReader(Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: true);
+            body = await reader.ReadToEndAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "PutProjectFileContent({Id}): failed to read body", id);
+            return StatusCode(400, new { error = "failed to read request body" });
+        }
+
+        try
+        {
+            await System.IO.File.WriteAllTextAsync(fullPath, body, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PutProjectFileContent({Id}): write failed for {Path}", id, fullPath);
+            return StatusCode(500, new { error = "failed to write file" });
+        }
+
+        _logger.LogDebug("PutProjectFileContent({Id}): saved {Path}, bytes={Len}", id, fullPath, body.Length);
+        return Ok(new { ok = true, message = "file saved successfully" });
+    }
+
+    /// <summary>Resolves <paramref name="path"/> to an absolute file path under the job directory, or sets <paramref name="error"/>.</summary>
+    private bool TryResolveJobContentPath(string id, string? path, out string fullPath, out IActionResult? error)
+    {
+        error = null;
+        fullPath = "";
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            error = BadRequest(new { error = "path query parameter is required" });
+            return false;
+        }
+
+        var jobDir = Path.GetFullPath(_workspace.GetJobDirectoryPath(id));
+        if (!Directory.Exists(jobDir))
+        {
+            error = NotFound(new { error = "job directory not found" });
+            return false;
+        }
+
+        var normalized = path.Replace('\\', '/').TrimStart('/');
+        foreach (var segment in normalized.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (segment is "." or "..")
+            {
+                error = BadRequest(new { error = "invalid path" });
+                return false;
+            }
+        }
+
+        fullPath = Path.GetFullPath(Path.Combine(jobDir, normalized.Replace('/', Path.DirectorySeparatorChar)));
+        var jobDirWithSep = jobDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!fullPath.StartsWith(jobDirWithSep, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(fullPath, jobDir, StringComparison.OrdinalIgnoreCase))
+        {
+            error = StatusCode(403, new { error = "access denied" });
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsEditableTextExtension(string filePath)
+    {
+        var ext = Path.GetExtension(filePath);
+        return EditableTextExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static readonly string[] EditableTextExtensions =
+    {
+        ".md", ".txt", ".json", ".log", ".text", ".srt", ".vtt", ".csv", ".xml", ".flag"
+    };
+
+    private static string GuessContentType(string filePath)
+    {
+        var ext = Path.GetExtension(filePath).ToLowerInvariant();
+        return ext switch
+        {
+            ".wav" => "audio/wav",
+            ".mp3" => "audio/mpeg",
+            ".m4a" => "audio/mp4",
+            ".ogg" => "audio/ogg",
+            ".flac" => "audio/flac",
+            ".md" => "text/markdown; charset=utf-8",
+            ".txt" => "text/plain; charset=utf-8",
+            ".json" => "application/json; charset=utf-8",
+            ".log" => "text/plain; charset=utf-8",
+            ".srt" => "text/plain; charset=utf-8",
+            ".vtt" => "text/vtt; charset=utf-8",
+            _ => "application/octet-stream",
+        };
+    }
+
     [HttpGet("{id}")]
     public async Task<ActionResult<JobSnapshot>> Get(string id, CancellationToken ct = default)
     {
@@ -102,8 +249,6 @@ public class JobsController : ControllerBase
         if (job == null)
             return NotFound();
         job.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(id);
-        if (job.Files == null && !string.IsNullOrEmpty(job.JobDirectoryPath) && Directory.Exists(job.JobDirectoryPath))
-            job.Files = JobDirectoryFileScanner.Scan(job.JobDirectoryPath);
         _logger.LogDebug("Get({Id}): JobDirectoryPath={Path}, Chunks={Chunks}, Result={Result}, MdOutputPath={Md}",
             id, job.JobDirectoryPath, job.Chunks != null ? "set" : "null", job.Result != null ? "set" : "null", job.MdOutputPath ?? "null");
         return Ok(job);
@@ -129,8 +274,6 @@ public class JobsController : ControllerBase
             return;
         }
         job.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(id);
-        if (job.Files == null && !string.IsNullOrEmpty(job.JobDirectoryPath) && Directory.Exists(job.JobDirectoryPath))
-            job.Files = JobDirectoryFileScanner.Scan(job.JobDirectoryPath);
         _logger.LogInformation("Stream({Id}): sending snapshot, JobDirectoryPath={Path}, Chunks={Chunks}, MdOutputPath={Md}",
             id, job.JobDirectoryPath, job.Chunks != null ? "set" : "null", job.MdOutputPath ?? "null");
         Response.ContentType = "text/event-stream";

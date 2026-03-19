@@ -6,6 +6,7 @@ import { UploadCard } from './components/UploadCard';
 import { JobsList } from './components/JobsList';
 import { LogsSection } from './components/LogsSection';
 import { ResultSection } from './components/ResultSection';
+import { ProjectFilesPanel } from './components/ProjectFilesPanel';
 
 function AppContent() {
   const { t, locale, setLocale } = useI18n();
@@ -113,12 +114,18 @@ function AppContent() {
                       onTogglePause={toggleLogsPause}
                       onClearLogs={clearLogsForStep}
                     />
+                    {jobId && (
+                      <>
+                        <h4 className="step-panel__files-heading">
+                          {t('projectFiles')}
+                        </h4>
+                        <ProjectFilesPanel jobId={jobId} mode="full" t={t} />
+                      </>
+                    )}
                   </>
                 ) : (
                   <p className="step-panel__empty">
-                    {jobId
-                      ? 'Loading…'
-                      : 'Select a job or create one in Upload.'}
+                    {jobId ? t('loading') : t('selectJobOrCreate')}
                   </p>
                 )}
               </div>
@@ -132,16 +139,29 @@ function AppContent() {
                       {t('phase')}: {job.phase}
                     </p>
                     {job.phase === 'awaiting_refiner' && (
-                      <p>
-                        Transcription done. Refiner can be started from the
-                        pipeline (auto in this app).
-                      </p>
+                      <p>{t('refinerAwaitingHint')}</p>
                     )}
-                    {job.phase === 'refiner' && <p>Refiner is running…</p>}
-                    {job.phase === 'completed' && <p>Refiner completed.</p>}
+                    {job.phase === 'refiner' && (
+                      <p>{t('refinerRunning')}</p>
+                    )}
+                    {job.phase === 'completed' && (
+                      <p>{t('refinerCompleted')}</p>
+                    )}
+                    {jobId && (
+                      <>
+                        <h4 className="step-panel__files-heading">
+                          {t('sectionTranscripts')}
+                        </h4>
+                        <ProjectFilesPanel
+                          jobId={jobId}
+                          mode="transcripts"
+                          t={t}
+                        />
+                      </>
+                    )}
                   </>
                 ) : (
-                  <p className="step-panel__empty">Select a job.</p>
+                  <p className="step-panel__empty">{t('selectJob')}</p>
                 )}
               </div>
             )}
@@ -151,7 +171,7 @@ function AppContent() {
             )}
 
             {activeStep === 'result' && !jobId && (
-              <p className="step-panel__empty">Select a job to see result.</p>
+              <p className="step-panel__empty">{t('selectJobForResult')}</p>
             )}
           </div>
         </main>
@@ -183,6 +203,7 @@ function AppContent() {
         .step-content { margin-top: 0.5rem; }
         .step-panel { padding: 1rem; }
         .step-panel__meta { margin: 0 0 0.5rem 0; font-size: 0.875rem; color: #64748b; }
+        .step-panel__files-heading { margin: 1rem 0 0.35rem 0; font-size: 0.9rem; color: #334155; }
         .step-panel__empty { color: #94a3b8; margin: 0; }
       `}</style>
     </div>

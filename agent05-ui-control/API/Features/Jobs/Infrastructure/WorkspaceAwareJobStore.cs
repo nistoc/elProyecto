@@ -40,7 +40,6 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
                 jobId, dirPath, filesInDir.Count, string.Join(", ", filesInDir.Select(Path.GetFileName)));
 
             var originalFilename = GetOriginalFilenameFromDir(dirPath);
-            var files = JobDirectoryFileScanner.Scan(dirPath);
 
             return new Application.JobSnapshot
             {
@@ -52,7 +51,6 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
                 CompletedAt = null,
                 Tags = null,
                 JobDirectoryPath = dirPath,
-                Files = files
             };
         }
         catch (IOException ex)

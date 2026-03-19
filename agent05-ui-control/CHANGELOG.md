@@ -4,6 +4,10 @@ All notable changes to XtractManager (agent05-ui-control) are documented here.
 
 ## [Unreleased]
 
+- Backend/UI (шаг 8 плана): поле **JobSnapshot.files** больше не заполняется; плоский сканер корня **JobDirectoryFileScanner** удалён. Список файлов только через **GET /api/jobs/{id}/files**. README: диаграмма потока данных (mermaid).
+- Backend: **PUT /api/jobs/{id}/files/content?path=** — сохранение существующего текстового файла в каталоге задания (UTF-8, лимит 50 MB); общая валидация пути с GET. Frontend: кнопка «Править» / модальное окно для `kind === text`.
+- Backend: пайплайн передаёт в agent06 **OutputFilePath** — относительный путь `{jobId}/transcript_fixed.md` (корень = `Agent06:WorkspaceRoot` или при пустом значении — `Jobs:WorkspacePath`), чтобы refined-транскрипт появлялся в папке задания при совпадении workspace с agent06. Конфиг `Agent06:WorkspaceRoot`, свойство `IJobWorkspace.WorkspaceRootPath`.
+- Backend: **GET /api/jobs/{id}/files** — структурированный список файлов задания (категории как в agent-browser); **GET /api/jobs/{id}/files/content?path=** — безопасная раздача файла из каталога задания (Range для аудио). README: таблица эндпоинтов и разделы «Файлы проекта», «Раздача файла».
 - Backend: исправлена ошибка gRPC `HTTP_1_1_REQUIRED` (0xd) при вызове agent04/agent06 по `http://`: включён `Http2UnencryptedSupport` в API (Program.cs); в Agent04 добавлен отдельный порт 5032 для gRPC (h2c) через `ConfigureKestrel` (Http2 + AllowAlternateSchemes), REST на 5034; в README — секция «gRPC по HTTP (без TLS)».
 - Backend: интеграция с agent06 только по gRPC (RefinerGrpcClient, конфиг Agent06:GrpcAddress).
 - Backend: DELETE /api/jobs/{id}, поля CreatedAt/CompletedAt в JobSnapshot и в списке, фильтр from/to в GET /api/jobs.

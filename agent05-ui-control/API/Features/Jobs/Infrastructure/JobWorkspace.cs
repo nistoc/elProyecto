@@ -20,6 +20,9 @@ public sealed class JobWorkspace : Application.IJobWorkspace
         _logger.LogInformation("Job workspace base path (Jobs:WorkspacePath): {Path}", _basePath);
     }
 
+    /// <inheritdoc />
+    public string WorkspaceRootPath => _basePath;
+
     public string GetJobDirectoryPath(string jobId)
     {
         return Path.Combine(_basePath, jobId);

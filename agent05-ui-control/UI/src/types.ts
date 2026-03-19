@@ -57,7 +57,7 @@ export interface JobSnapshot {
   mdOutputPath?: string | null;
   /** Full path to the job directory (where files are stored). For debugging and display. */
   jobDirectoryPath?: string | null;
-  /** List of files in the job directory with display info (name, size; text: line count; audio: duration). */
+  /** @deprecated Not populated by API. Use GET /api/jobs/:id/files (JobProjectFiles). */
   files?: JobFileInfo[] | null;
 }
 
@@ -67,6 +67,37 @@ export interface JobFileInfo {
   sizeBytes: number;
   lineCount?: number | null;
   durationSeconds?: number | null;
+}
+
+/** Structured project files (GET /api/jobs/:id/files), aligned with agent-browser. */
+export interface JobProjectFile {
+  name: string;
+  relativePath: string;
+  fullPath?: string | null;
+  sizeBytes: number;
+  kind: string;
+  lineCount?: number | null;
+  durationSeconds?: number | null;
+  index?: number | null;
+  parentIndex?: number | null;
+  subIndex?: number | null;
+  hasTranscript?: boolean | null;
+  isTranscript?: boolean | null;
+}
+
+export interface JobProjectFiles {
+  original: JobProjectFile[];
+  chunks: JobProjectFile[];
+  chunkJson: JobProjectFile[];
+  transcripts: JobProjectFile[];
+  intermediate: JobProjectFile[];
+  converted: JobProjectFile[];
+  splitChunks: JobProjectFile[];
+}
+
+export interface JobFilesApiResponse {
+  files: JobProjectFiles;
+  jobDir: string;
 }
 
 export interface JobListItem {

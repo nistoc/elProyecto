@@ -68,6 +68,7 @@ npm run build
 | Agent04     | ConfigPath    | Путь к конфигу agent04 (например config/default.json) |
 | Agent04     | WorkspaceRoot | Рабочий каталог agent04 (пустой — подставляется Jobs:WorkspacePath) |
 | Agent06     | GrpcAddress   | Адрес gRPC agent06 (refiner)                          |
+| Agent06     | WorkspaceRoot | Корень workspace **agent06** (тот же смысл, что `WorkspaceRoot` в appsettings agent06). Нужен, чтобы путь `output_file_path` в gRPC совпадал с диском: пайплайн передаёт относительный путь `{jobId}/transcript_fixed.md`. Пустая строка или отсутствие ключа — используется тот же каталог, что и **Jobs:WorkspacePath** (оба сервиса должны видеть один и тот же `runtime`). Если у agent06 другой корень — задайте здесь **абсолютный** путь к тому же каталогу, что и задания, либо путь, относительно Content Root API. |
 | Jobs        | WorkspacePath | Каталог для рабочих данных заданий (аудио, артефакты). Абсолютный путь или относительный от Content Root. По умолчанию `./runtime`. Логи приложения — в корень запущенного проекта. |
 
 При старте в лог выводится фактический путь: `Job workspace base path (Jobs:WorkspacePath): ...`. Оба внешних сервиса вызываются только по gRPC; REST для agent06 не используется.
@@ -85,10 +86,75 @@ npm run build
 |--------|-------------------------|----------|
 | GET    | /health                 | Проверка состояния (JSON: status, service) |
 | GET    | /api/jobs               | Список заданий. Query: semanticKey, status, from, to, limit, offset. Ответ: `{ "jobs": JobListItem[] }`. |
-| GET    | /api/jobs/{id}          | Снепшот задания (JobSnapshot). 404 если нет. |
+| GET    | /api/jobs/{id}          | Снепшот задания (JobSnapshot). 404 если нет. Поле `files` в JSON больше не заполняется — список файлов: **GET /api/jobs/{id}/files**. |
 | POST   | /api/jobs               | Создать задание. Form: file (обязательно), tags (опционально, строка через запятую). Ответ: 202, `{ "jobId": string }`. Пайплайн запускается в фоне (agent04 → agent06). Лимит тела запроса 512 MB. |
 | DELETE | /api/jobs/{id}          | Удалить задание. 204 при успехе, 404 если нет. |
 | GET    | /api/jobs/{id}/stream   | SSE: первый ответ — snapshot (type: "snapshot", payload: JobSnapshot), далее события type: "status" | "done". При "done" стрим завершается. |
+| GET    | /api/jobs/{id}/files    | Структурированный список файлов задания (как в agent-browser). См. ниже. |
+| GET    | /api/jobs/{id}/files/content | Отдача файла из каталога задания по относительному пути. Query: **path** (обязательно), например `path=chunks/foo_part_000.wav`. Поддержка Range для аудио. |
+| PUT    | /api/jobs/{id}/files/content | Перезапись **существующего** текстового файла (UTF-8 без BOM). Тот же query **path**. Тело запроса — сырое содержимое (`text/plain` или любой тип). Расширения: `.md`, `.txt`, `.json`, `.log`, `.text`, `.srt`, `.vtt`, `.csv`, `.xml`, `.flag`. Лимит тела 50 MB. Ответ 200: `{ "ok": true, "message": "..." }`. |
+
+### Файлы проекта: `GET /api/jobs/{id}/files`
+
+Ответ **200**: `{ "files": { ... }, "jobDir": "<абсолютный путь к каталогу задания>" }`.
+
+Объект **`files`** (имена полей в JSON — camelCase):
+
+| Поле | Описание |
+|------|----------|
+| `original` | Корневые аудио (m4a, mp3, wav, ogg, flac). |
+| `transcripts` | Корневые транскрипты/JSON: имя содержит `transcript`, или `.md`, или `.json`. |
+| `chunks` | Файлы в `chunks/` (индекс чанка из имени файла). |
+| `chunkJson` | Файлы в `chunks_json/`. |
+| `intermediate` | `intermediate_results/`. |
+| `converted` | `converted_wav/`. |
+| `splitChunks` | `split_chunks/chunk_N/…` (аудио подчанков и результаты в `results/`). |
+
+Элемент списка — объект с полями вроде `name`, `relativePath`, `sizeBytes`, `kind` (`text` | `audio` | `other`), при необходимости `lineCount`, `durationSeconds`, `index`, `parentIndex`, `subIndex`, `hasTranscript`, `isTranscript`.
+
+**404**: каталог задания на диске отсутствует. Если задания нет и в хранилище — тело пустое; если задание есть в store, но папки нет — `{ "error": "job directory not found" }`.
+
+**Архивные задания**: если каталог `{id}` под `Jobs:WorkspacePath` есть, а записи в store уже нет, ответ **200** всё равно возвращается (удобно для папок, оставшихся после перезапуска).
+
+### Раздача файла: `GET /api/jobs/{id}/files/content?path=...`
+
+- **path** — путь **относительно** каталога задания, сегменты `.` и `..` запрещены; выход за пределы каталога даёт **403** `{ "error": "access denied" }`.
+- **400**: нет `path` или неверный путь.
+- **404**: нет каталога задания или файла.
+- Тип содержимого выбирается по расширению (аудио, markdown, json и т.д.); иначе `application/octet-stream`.
+
+UI использует эти эндпоинты для списка секций (Transcriber / Refiner / Result) и ссылок «Открыть» / `<audio src=…>`.
+
+### Поток данных: структурированные файлы проекта (UI)
+
+Схема из плана «Project files like old Transcriber tab»: UI не берёт дерево файлов из снапшота задания, а запрашивает отдельный ресурс; метаданные читает сканер с диска.
+
+```mermaid
+sequenceDiagram
+  participant UI
+  participant API
+  participant Scanner
+  participant Disk
+
+  UI->>API: GET /api/jobs/{id}/files
+  API->>API: GetJobDirectoryPath(id)
+  API->>Scanner: Scan(jobDir)
+  Scanner->>Disk: read root, chunks/, chunks_json/, ...
+  Disk-->>Scanner: file list + metadata
+  Scanner-->>API: JobProjectFiles
+  API-->>UI: { files, jobDir }
+  UI->>UI: render sections (Original, Chunks, ...)
+
+  opt Play audio
+    UI->>API: GET /api/jobs/{id}/files/content?path=chunks/foo.wav
+    API->>Disk: read file (path safe)
+    API-->>UI: stream audio
+  end
+```
+
+### Сохранение текстового файла: `PUT /api/jobs/{id}/files/content?path=...`
+
+Как в agent-browser: файл уже должен существовать; создать новый через этот эндпоинт нельзя. Недопустимые расширения → **400** `only text-like files can be saved`.
 
 В Development при включённом OpenAPI: **GET /openapi/v1.json** — схема API.
 
