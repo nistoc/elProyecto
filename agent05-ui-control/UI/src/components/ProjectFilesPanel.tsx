@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   fetchJobFiles,
   jobProjectFileContentUrl,
@@ -19,6 +19,25 @@ function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/** Section title with chunk count or 1-based index range when all rows have `index`. */
+function indexedSectionTitle(
+  items: JobProjectFile[],
+  baseTitle: string
+): string {
+  if (!items.length) return baseTitle;
+  const count = items.length;
+  const idxs = items
+    .map((x) => x.index)
+    .filter((x): x is number => x != null);
+  if (idxs.length === count) {
+    const mn = Math.min(...idxs);
+    const mx = Math.max(...idxs);
+    if (mn === mx) return `${baseTitle} [${mn + 1}]`;
+    return `${baseTitle} [${mn + 1}–${mx + 1}]`;
+  }
+  return `${baseTitle} [${count}]`;
 }
 
 function fileMeta(f: JobProjectFile, t: (key: string) => string): string {
@@ -151,7 +170,19 @@ function FileRow({
   const url = jobProjectFileContentUrl(jobId, f.relativePath);
   return (
     <li className="pf-file">
-      <div className="pf-file-main">
+      <div
+        className="pf-file-main"
+        title={
+          f.kind === 'text' && onEditText
+            ? `${f.relativePath}\n${t('doubleClickToEdit')}`
+            : f.relativePath
+        }
+        onDoubleClick={(e) => {
+          if (f.kind !== 'text' || !onEditText) return;
+          e.preventDefault();
+          onEditText(f);
+        }}
+      >
         <span className="pf-file-name" title={f.relativePath}>
           {f.name}
         </span>
@@ -280,14 +311,14 @@ export function ProjectFilesView({
           onEditText={openEditor}
         />
         <Section
-          title={t('sectionChunks')}
+          title={indexedSectionTitle(data.chunks, t('sectionChunks'))}
           jobId={jobId}
           items={data.chunks}
           t={t}
           onEditText={openEditor}
         />
         <Section
-          title={t('sectionChunkJson')}
+          title={indexedSectionTitle(data.chunkJson, t('sectionChunkJson'))}
           jobId={jobId}
           items={data.chunkJson}
           t={t}
@@ -342,39 +373,99 @@ interface ProjectFilesPanelProps {
 
 export function ProjectFilesPanel({ jobId, mode, t }: ProjectFilesPanelProps) {
   const [data, setData] = useState<JobProjectFiles | null>(null);
+  const [jobDir, setJobDir] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const prevJobIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const jobChanged = prevJobIdRef.current !== jobId;
+    prevJobIdRef.current = jobId;
+
+    if (jobChanged) {
+      setLoading(true);
+      setData(null);
+      setJobDir(null);
+    } else {
+      setRefreshing(true);
+    }
     setErr(null);
+
     fetchJobFiles(jobId)
       .then((res) => {
         if (cancelled) return;
-        setData(res?.files ?? null);
+        if (!res) {
+          setData(null);
+          setJobDir(null);
+          return;
+        }
+        setData(res.files);
+        setJobDir(typeof res.jobDir === 'string' ? res.jobDir : null);
       })
       .catch((e) => {
         if (!cancelled) {
           setErr(e instanceof Error ? e.message : t('failedToLoadFiles'));
           setData(null);
+          setJobDir(null);
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       });
+
     return () => {
       cancelled = true;
     };
   }, [jobId, reloadKey, t]);
 
-  if (loading) {
-    return <p className="pf-status">{t('loadingFiles')}</p>;
+  const showFullSpinner = loading && !data && !err;
+
+  const fullModeToolbar =
+    mode === 'full' ? (
+      <div className="pf-panel-toolbar">
+        {jobDir && jobDir.length > 0 ? (
+          <p className="pf-jobdir">
+            <span className="pf-jobdir__label">{t('jobDirectoryPath')}:</span>{' '}
+            <code className="pf-jobdir__path">{jobDir}</code>
+          </p>
+        ) : (
+          <div className="pf-jobdir-spacer" aria-hidden />
+        )}
+        <div className="pf-toolbar-actions">
+          {refreshing && (
+            <span className="pf-refresh-hint">{t('loadingFiles')}</span>
+          )}
+          <button
+            type="button"
+            className="pf-refresh-files"
+            onClick={() => setReloadKey((k) => k + 1)}
+            disabled={refreshing}
+          >
+            {t('refresh')}
+          </button>
+        </div>
+      </div>
+    ) : null;
+
+  if (showFullSpinner) {
+    return (
+      <>
+        {fullModeToolbar}
+        <p className="pf-status">{t('loadingFiles')}</p>
+        <style>{styles}</style>
+      </>
+    );
   }
   if (err) {
     return (
       <>
+        {fullModeToolbar}
         <p className="pf-status pf-status--err">{err}</p>
         <style>{styles}</style>
       </>
@@ -383,6 +474,7 @@ export function ProjectFilesPanel({ jobId, mode, t }: ProjectFilesPanelProps) {
   if (!data) {
     return (
       <>
+        {fullModeToolbar}
         <p className="pf-status">{t('noProjectFiles')}</p>
         <style>{styles}</style>
       </>
@@ -390,13 +482,16 @@ export function ProjectFilesPanel({ jobId, mode, t }: ProjectFilesPanelProps) {
   }
 
   return (
-    <ProjectFilesView
-      jobId={jobId}
-      data={data}
-      mode={mode}
-      t={t}
-      onFilesMutated={() => setReloadKey((k) => k + 1)}
-    />
+    <>
+      {fullModeToolbar}
+      <ProjectFilesView
+        jobId={jobId}
+        data={data}
+        mode={mode}
+        t={t}
+        onFilesMutated={() => setReloadKey((k) => k + 1)}
+      />
+    </>
   );
 }
 
@@ -447,15 +542,48 @@ const styles = `
     background: #fff;
     border-radius: 8px;
     box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
-    max-width: min(900px, 100%);
-    width: 100%;
-    max-height: min(85vh, 900px);
+    width: min(90vw, 1400px);
+    max-width: 90vw;
+    height: min(90vh, 900px);
+    max-height: 90vh;
     display: flex;
     flex-direction: column;
     padding: 1rem;
     gap: 0.75rem;
   }
   .pf-modal__title { margin: 0; font-size: 1rem; }
+  .pf-panel-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .pf-jobdir { margin: 0; font-size: 0.8125rem; color: #475569; flex: 1; min-width: 12rem; }
+  .pf-jobdir__label { font-weight: 600; margin-right: 0.35rem; }
+  .pf-jobdir__path { word-break: break-all; font-size: 0.75rem; color: #334155; }
+  .pf-refresh-files {
+    padding: 0.35rem 0.75rem;
+    border-radius: 4px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    flex-shrink: 0;
+  }
+  .pf-refresh-files:hover:not(:disabled) { background: #f8fafc; }
+  .pf-refresh-files:disabled { opacity: 0.55; cursor: not-allowed; }
+  .pf-refresh-hint { font-size: 0.75rem; color: #64748b; }
+  .pf-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .pf-jobdir-spacer { flex: 1; min-width: 0; }
   .pf-textarea {
     flex: 1;
     min-height: 240px;

@@ -74,6 +74,7 @@ const messages: Record<Locale, Record<string, string>> = {
     saving: 'Saving…',
     saveFailed: 'Save failed',
     loadEditorFailed: 'Could not load file',
+    doubleClickToEdit: 'Double-click to edit',
   },
   ru: {
     appTitle: 'XtractManager',
@@ -140,6 +141,7 @@ const messages: Record<Locale, Record<string, string>> = {
     saving: 'Сохранение…',
     saveFailed: 'Не удалось сохранить',
     loadEditorFailed: 'Не удалось загрузить файл',
+    doubleClickToEdit: 'Двойной щелчок — открыть редактор',
   },
   es: {
     appTitle: 'XtractManager',
@@ -206,6 +208,7 @@ const messages: Record<Locale, Record<string, string>> = {
     saving: 'Guardando…',
     saveFailed: 'Error al guardar',
     loadEditorFailed: 'No se pudo cargar el archivo',
+    doubleClickToEdit: 'Doble clic para editar',
   },
 };
 

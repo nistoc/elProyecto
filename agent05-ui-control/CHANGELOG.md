@@ -4,6 +4,7 @@ All notable changes to XtractManager (agent05-ui-control) are documented here.
 
 ## [Unreleased]
 
+- Frontend (Transcriber / паритет): на вкладке с полным списком файлов (`ProjectFilesPanel` mode `full`) показывается **путь к папке задания** (`jobDir` из `GET .../files`), кнопка **«Обновить»** для повторной загрузки списка без смены job, заголовки секций **чанков / JSON чанков** с количеством или диапазоном индексов `[n–m]`, **двойной щелчок** по строке текстового файла открывает тот же редактор, что и «Править»; модалка редактора ~**90vw × 90vh**.
 - Backend/UI (шаг 8 плана): поле **JobSnapshot.files** больше не заполняется; плоский сканер корня **JobDirectoryFileScanner** удалён. Список файлов только через **GET /api/jobs/{id}/files**. README: диаграмма потока данных (mermaid).
 - Backend: **PUT /api/jobs/{id}/files/content?path=** — сохранение существующего текстового файла в каталоге задания (UTF-8, лимит 50 MB); общая валидация пути с GET. Frontend: кнопка «Править» / модальное окно для `kind === text`.
 - Backend: пайплайн передаёт в agent06 **OutputFilePath** — относительный путь `{jobId}/transcript_fixed.md` (корень = `Agent06:WorkspaceRoot` или при пустом значении — `Jobs:WorkspacePath`), чтобы refined-транскрипт появлялся в папке задания при совпадении workspace с agent06. Конфиг `Agent06:WorkspaceRoot`, свойство `IJobWorkspace.WorkspaceRootPath`.
