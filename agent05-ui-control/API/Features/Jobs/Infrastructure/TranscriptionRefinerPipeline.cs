@@ -4,6 +4,7 @@ using Grpc.Core;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using XtractManager.Features.Jobs.Application;
+using XtractManager.Infrastructure;
 
 namespace XtractManager.Features.Jobs.Infrastructure;
 
@@ -131,7 +132,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                         : new List<int>();
                 }
 
-                if (update.ChunkVirtualModel != null)
+                if (update.ChunkVirtualModel is { Count: > 0 })
                     s.Chunks.ChunkVirtualModel = update.ChunkVirtualModel;
                 if (update.State == "Completed")
                 { s.Phase = "awaiting_refiner"; s.MdOutputPath = update.MdOutputPath; }
@@ -142,7 +143,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             var evtPhase = update.State == "Completed"
                 ? "awaiting_refiner"
                 : (update.State is "Failed" or "Cancelled" ? "idle" : "transcriber");
-            Broadcast(jobId, "status", JsonSerializer.Serialize(new { status = MapState(update.State), phase = evtPhase, progress_percent = update.ProgressPercent }));
+            Broadcast(jobId, "status", JsonSerializer.Serialize(new { status = MapState(update.State), phase = evtPhase, progress_percent = update.ProgressPercent }, ApiJson.CamelCase));
             if (update.State is "Completed" or "Failed" or "Cancelled")
                 break;
         }
@@ -186,7 +187,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         }
 
         await UpdateAndBroadcastAsync(jobId, s => s.Phase = "refiner");
-        Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = "refiner" }));
+        Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = "refiner" }, ApiJson.CamelCase));
 
         var outputRelForRefiner = TryGetRefinerOutputRelativePath(jobId, jobDir);
         if (outputRelForRefiner != null)
@@ -235,7 +236,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                 else if (update.State == "Failed" || update.State == "Cancelled")
                 { s.Phase = "awaiting_refiner"; s.Status = update.State == "Failed" ? "failed" : "done"; }
             });
-            Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = update.State == "Completed" ? "completed" : snap?.Phase, status = update.State == "Completed" ? "done" : snap?.Status, progress_percent = update.ProgressPercent }));
+            Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = update.State == "Completed" ? "completed" : snap?.Phase, status = update.State == "Completed" ? "done" : snap?.Status, progress_percent = update.ProgressPercent }, ApiJson.CamelCase));
             if (update.State is "Completed" or "Failed" or "Cancelled")
                 break;
         }
@@ -322,6 +323,6 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         var snap = await _store.GetAsync(jobId);
         if (snap == null) return "{}";
         snap.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(jobId);
-        return JsonSerializer.Serialize(snap);
+        return JsonSerializer.Serialize(snap, ApiJson.CamelCase);
     }
 }

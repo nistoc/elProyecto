@@ -23,6 +23,12 @@ public sealed class TranscriptionClientOptions
     public double? Temperature { get; set; }
     public string? ResponseFormat { get; set; }
     public string? ChunkingStrategy { get; set; }
+    /// <summary>Optional. For structured logs (chunk index in parallel transcription).</summary>
+    public int? ChunkIndex { get; set; }
+    /// <summary>Optional. Agent04 job id for logs.</summary>
+    public string? AgentJobId { get; set; }
+    /// <summary>Optional. Configured <c>parallel_transcription_workers</c> for logs.</summary>
+    public int? ParallelWorkersConfigured { get; set; }
 }
 
 public sealed class TranscriptionClientResult

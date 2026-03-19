@@ -40,6 +40,11 @@ Proto: `Agent04/Proto/transcription.proto`.
 
 > **RENTGEN / узлы:** ранее дерево узлов отдавалось по HTTP (`GET .../nodes`). Внешнего HTTP больше нет; для списка заданий используйте **QueryJobs**. При необходимости дерева узлов — расширение `.proto` или отдельный read-сервис (см. `docs/RENTGEN_IMPLEMENTATION.md`). Аудит чанков, под-чанков и связи с RENTGEN — **`docs/CHUNKS_AND_RENTGEN.md`**.
 
+## Parallel transcription & HTTP logs
+
+- **`parallel_transcription_workers`** in the job config caps how many chunks are transcribed **at the same time** (clamped to **1–64**; default in repo sample **6**). Values **> 32** log a warning (higher risk of **429** / rate limits). Manifest/cache writes stay serialized per job so the cache file is not corrupted under concurrency.
+- **Logs:** `OpenAITranscriptionClient` emits structured lines for each HTTP call: `AgentJobId`, `ChunkIndex`, `ParallelWorkersConfigured`, process-wide **`InFlight`** count, duration, and on failure **HTTP status** with **Category** `auth` (401/403), `rate_limit` (429), `client_error`, `server_error`, plus a truncated response body (no API key / `Authorization`).
+
 ## Monitoring
 
 - **Polling:** gRPC `GetJobStatus` — state, progress, phase, `md_output_path` / `json_output_path` when completed.

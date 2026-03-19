@@ -60,6 +60,8 @@ export function useJob(initialJobId: string | null): {
   setJobId: (id: string | null) => void;
   setActiveStep: (step: StepId) => void;
   setFile: (f: File | null) => void;
+  /** Increments when job snapshot updates over SSE; pass to ProjectFilesPanel as filesRefreshKey. */
+  jobSnapshotRevision: number;
   refreshList: () => Promise<void>;
   handleSelectJob: (id: string) => void;
   handleStart: (tags?: string[]) => Promise<void>;
@@ -81,6 +83,8 @@ export function useJob(initialJobId: string | null): {
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Bumps on each SSE snapshot so ProjectFilesPanel refetches /api/jobs/:id/files (disk artifacts). */
+  const [jobSnapshotRevision, setJobSnapshotRevision] = useState(0);
   const logBuffer = useLogBuffer();
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
@@ -88,6 +92,7 @@ export function useJob(initialJobId: string | null): {
     setJobIdState(id);
     setJob(null);
     setError(null);
+    setJobSnapshotRevision(0);
   }, []);
 
   const setActiveStep = useCallback((step: StepId) => {
@@ -120,7 +125,10 @@ export function useJob(initialJobId: string | null): {
     const ac = new AbortController();
     (async () => {
       const snap = await fetchJob(jobId);
-      if (!cancelled && snap) setJob(snap);
+      if (!cancelled && snap) {
+        setJob(snap);
+        setJobSnapshotRevision((r) => r + 1);
+      }
     })();
     const close = subscribeToJob(
       jobId,
@@ -128,6 +136,7 @@ export function useJob(initialJobId: string | null): {
         if (cancelled) return;
         if (ev.type === 'snapshot' && ev.payload) {
           setJob(ev.payload as JobSnapshot);
+          setJobSnapshotRevision((r) => r + 1);
           return;
         }
         if (
@@ -199,6 +208,7 @@ export function useJob(initialJobId: string | null): {
     setJob(null);
     setFile(null);
     setError(null);
+    setJobSnapshotRevision(0);
     setActiveStepState('upload');
     localStorage.removeItem(ACTIVE_STEP_KEY);
   }, [setJobId]);
@@ -240,6 +250,7 @@ export function useJob(initialJobId: string | null): {
     setJobId,
     setActiveStep,
     setFile,
+    jobSnapshotRevision,
     refreshList,
     handleSelectJob,
     handleStart,

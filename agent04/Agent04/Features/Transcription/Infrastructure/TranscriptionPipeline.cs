@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Threading;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
 using Microsoft.Extensions.Logging;
@@ -173,42 +174,130 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         var progress = new ChunkProgress(chunkInfos.Count, config.Get<string>("progress_time_format") ?? "HH:MM:SS.M");
         var totalChunks = chunkInfos.Count;
         var cancellation = _cancellationFactory.Get(jobId ?? "_pipeline", artifactRoot);
+        var parallelConfigured = config.Get<int?>("parallel_transcription_workers") ?? 4;
+        var parallel = Math.Clamp(parallelConfigured, 1, 64);
+        if (parallel != parallelConfigured)
+            _logger?.LogWarning("parallel_transcription_workers={Raw} clamped to {Clamped}", parallelConfigured, parallel);
+        if (parallel > 32)
+            _logger?.LogWarning("parallel_transcription_workers={W} is high; expect more 429/rate-limit risk", parallel);
 
-        for (var i = 0; i < chunkInfos.Count; i++)
+        using var manifestGate = new SemaphoreSlim(1, 1);
+        var stepLock = new object();
+
+        for (var batchStart = 0; batchStart < totalChunks; batchStart += parallel)
         {
-            if (cancellation.IsCancelled(i))
+            var batchEnd = Math.Min(batchStart + parallel, totalChunks);
+            var indices = new List<int>();
+            for (var i = batchStart; i < batchEnd; i++)
             {
-                progress.MarkCancelled(i);
-                continue;
+                if (cancellation.IsCancelled(i))
+                {
+                    progress.MarkCancelled(i);
+                    progress.Update();
+                    continue;
+                }
+                indices.Add(i);
             }
-            StepStart(transcribeParent, "chunk-" + i, "chunk");
-            progress.MarkStarted(i);
-            progress.Update();
-            var pct = totalChunks > 0 ? 10 + (70 * (i + 1) / totalChunks) : 80;
-            UpdateProgress(JobState.Running, pct, $"Transcribing chunk {i + 1}/{totalChunks}", totalChunks, i + 1, null, null, null);
 
-            try
+            if (indices.Count == 0)
+                continue;
+
+            if (batchStart == 0)
+                _logger?.LogInformation(
+                    "Transcription chunk batch: count={Count} parallel={Parallel} firstIndex={First}",
+                    indices.Count, parallel, indices[0]);
+
+            async Task<(int Idx, TranscriptionResult? Result, Exception? Error)> RunChunkAsync(int idx)
             {
-                var result = await ProcessChunkAsync(config, chunkInfos[i], i, chunkInfos.Count, manifest, manifestPath, baseName, cancellationToken);
-                results.Add((i, result));
-                progress.MarkCompleted(i);
-                StepComplete(transcribeParent, "chunk-" + i, JobState.Completed);
+                lock (stepLock)
+                {
+                    StepStart(transcribeParent, "chunk-" + idx, "chunk");
+                    progress.MarkStarted(idx);
+                    progress.Update();
+                }
+
+                try
+                {
+                    var result = await ProcessChunkAsync(
+                        config,
+                        chunkInfos[idx],
+                        idx,
+                        totalChunks,
+                        manifest,
+                        manifestPath,
+                        baseName,
+                        jobId,
+                        parallel,
+                        manifestGate,
+                        cancellationToken);
+                    return (idx, result, null);
+                }
+                catch (Exception ex)
+                {
+                    lock (stepLock)
+                    {
+                        StepComplete(transcribeParent, "chunk-" + idx, JobState.Failed, ex.Message);
+                        progress.MarkCompleted(idx);
+                        progress.Update();
+                    }
+
+                    _logger?.LogWarning(ex, "Chunk {Index} failed", idx + 1);
+                    return (idx, null, ex);
+                }
+            }
+
+            var outcomes = await Task.WhenAll(indices.Select(RunChunkAsync));
+            var failure = Array.Find(outcomes, o => o.Error != null);
+            if (failure.Error != null)
+            {
+                foreach (var o in outcomes.Where(x => x.Error == null))
+                {
+                    lock (stepLock)
+                    {
+                        StepComplete(
+                            transcribeParent,
+                            "chunk-" + o.Idx,
+                            JobState.Failed,
+                            "Aborted: another chunk in the same parallel batch failed");
+                        progress.MarkCompleted(o.Idx);
+                        progress.Update();
+                    }
+                }
+
+                throw failure.Error;
+            }
+
+            foreach (var o in outcomes.OrderBy(x => x.Idx))
+            {
+                var idx = o.Idx;
+                var result = o.Result!;
+                lock (stepLock)
+                {
+                    results.Add((idx, result));
+                    progress.MarkCompleted(idx);
+                    StepComplete(transcribeParent, "chunk-" + idx, JobState.Completed);
+                    progress.Update();
+                    var processedCount = results.Count;
+                    var pct = totalChunks > 0 ? 10 + (70 * processedCount / totalChunks) : 80;
+                    UpdateProgress(
+                        JobState.Running,
+                        pct,
+                        $"Transcribing chunk {processedCount}/{totalChunks}",
+                        totalChunks,
+                        processedCount,
+                        null,
+                        null,
+                        null);
+                }
 
                 if (config.Get<bool?>("save_per_chunk_json") == true)
                 {
                     var perChunkRel = config.Get<string>("per_chunk_json_dir") ?? "chunks_json";
                     var perChunkDirFull = Path.Combine(artifactRoot, perChunkRel);
-                    _output.SavePerChunkJson(Path.GetFileName(chunkInfos[i].Path), result.RawResponse, perChunkDirFull);
+                    _output.SavePerChunkJson(Path.GetFileName(chunkInfos[idx].Path), result.RawResponse, perChunkDirFull);
                 }
 
                 _output.AppendSegmentsToMarkdown(mdPath, result.Segments, result.Offset, result.EmitGuard);
-            }
-            catch (Exception ex)
-            {
-                StepComplete(transcribeParent, "chunk-" + i, JobState.Failed, ex.Message);
-                _logger?.LogWarning(ex, "Chunk {Index} failed", i + 1);
-                progress.MarkCompleted(i);
-                throw;
             }
         }
 
@@ -295,12 +384,33 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         TranscriptionManifest manifest,
         string manifestPath,
         string baseName,
+        string? agentJobId,
+        int parallelWorkersConfigured,
+        SemaphoreSlim? manifestGate,
         CancellationToken ct)
     {
         var chunkBasename = Path.GetFileName(chunkInfo.Path);
+        if (index == 0)
+            _logger?.LogInformation(
+                "ProcessChunkAsync first chunk index=0/{Total} file={File} parallelWorkers={Workers}",
+                total,
+                chunkBasename,
+                parallelWorkersConfigured);
+
         var fingerprint = await _cache.GetFileFingerprintAsync(chunkInfo.Path, ct);
 
-        var rawResponse = _cache.GetCachedResponse(manifest, chunkBasename, fingerprint);
+        object? rawResponse;
+        if (manifestGate != null)
+            await manifestGate.WaitAsync(ct);
+        try
+        {
+            rawResponse = _cache.GetCachedResponse(manifest, chunkBasename, fingerprint);
+        }
+        finally
+        {
+            manifestGate?.Release();
+        }
+
         if (rawResponse == null)
         {
             var options = new TranscriptionClientOptions
@@ -309,15 +419,27 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 Prompt = config.Get<string>("prompt"),
                 Temperature = config.Temperature,
                 ResponseFormat = config.Get<string>("response_format"),
-                ChunkingStrategy = config.Get<string>("chunking_strategy")
+                ChunkingStrategy = config.Get<string>("chunking_strategy"),
+                ChunkIndex = index,
+                AgentJobId = agentJobId,
+                ParallelWorkersConfigured = parallelWorkersConfigured
             };
             var result = await _client.TranscribeAsync(chunkInfo.Path, options, ct);
             rawResponse = result.RawResponse;
-            await _cache.CacheResponseAsync(manifestPath, manifest, chunkBasename, fingerprint, rawResponse, ct);
+            if (manifestGate != null)
+                await manifestGate.WaitAsync(ct);
+            try
+            {
+                await _cache.CacheResponseAsync(manifestPath, manifest, chunkBasename, fingerprint, rawResponse, ct);
+            }
+            finally
+            {
+                manifestGate?.Release();
+            }
         }
         else
         {
-            _logger?.LogInformation("[CACHE] Using cached response for chunk");
+            _logger?.LogInformation("[CACHE] Using cached response for chunk {Index}", index);
         }
 
         var rawDict = ToDictionary(rawResponse);

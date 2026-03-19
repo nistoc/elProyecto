@@ -31,6 +31,7 @@ function AppContent() {
     handleStart,
     handleReset,
     handleDeleteJob,
+    jobSnapshotRevision,
     logsPaused,
     bufferedCount,
     toggleLogsPause,
@@ -157,6 +158,7 @@ function AppContent() {
                           mode="full"
                           t={t}
                           chunkIndexFilter={chunkFileFilter}
+                          filesRefreshKey={jobSnapshotRevision}
                         />
                       </>
                     )}

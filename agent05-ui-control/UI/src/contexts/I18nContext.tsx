@@ -100,6 +100,8 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkVmTimerNote:
       'Elapsed time uses StartedAt / CompletedAt from Agent04; refreshing the page does not reset it.',
     chunkVmWaitingVm: 'Waiting for chunk virtual model from Agent04…',
+    chunkVmSkeletonNote:
+      'Placeholder rows until Agent04 streams chunk_virtual_model (RENTGEN is not pushed to the UI separately).',
     chunkVmNoStarted: '—',
     chunkStatePending: 'Pending',
     chunkStateRunning: 'Running',
@@ -199,6 +201,8 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkVmTimerNote:
       'Время по StartedAt / CompletedAt из Agent04; обновление страницы не сбрасывает отсчёт.',
     chunkVmWaitingVm: 'Ожидание виртуальной модели чанков от Agent04…',
+    chunkVmSkeletonNote:
+      'Строки-заглушки, пока Agent04 не пришлёт chunk_virtual_model (RENTGEN в UI отдельно не пушится).',
     chunkVmNoStarted: '—',
     chunkStatePending: 'Ожидание',
     chunkStateRunning: 'Идёт',
@@ -298,6 +302,8 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkVmTimerNote:
       'El tiempo usa StartedAt / CompletedAt de Agent04; al recargar la página no se reinicia.',
     chunkVmWaitingVm: 'Esperando el modelo virtual de fragmentos desde Agent04…',
+    chunkVmSkeletonNote:
+      'Filas provisionales hasta que Agent04 envíe chunk_virtual_model (RENTGEN no llega aparte al UI).',
     chunkVmNoStarted: '—',
     chunkStatePending: 'Pendiente',
     chunkStateRunning: 'En curso',

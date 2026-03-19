@@ -1,4 +1,8 @@
+using System.Diagnostics;
+using System.Net;
+using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Threading;
 using System.Text.Json;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
@@ -13,6 +17,7 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
     private readonly string _model;
     private readonly IReadOnlyList<string> _fallbackModels;
     private readonly ILogger<OpenAITranscriptionClient>? _logger;
+    private int _transcriptionHttpInFlight;
 
     public OpenAITranscriptionClient(
         HttpClient httpClient,
@@ -49,7 +54,7 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
                         if (attempt > 0)
                             _logger?.LogInformation("Retry attempt {Attempt}/3 for model {Model}", attempt + 1, model);
 
-                        var raw = await SendRequestAsync(audioPath, model, language, prompt, temperature, responseFormat, chunkingStrategy, cancellationToken);
+                        var raw = await SendRequestAsync(audioPath, model, language, prompt, temperature, responseFormat, chunkingStrategy, options, cancellationToken);
                         var dict = RawToDictionary(raw);
                         var segments = ParseSegments(dict);
                         return new TranscriptionClientResult { RawResponse = dict, Segments = segments };
@@ -81,7 +86,16 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
         throw new InvalidOperationException("Transcription failed for all models", lastErr);
     }
 
-    private async Task<JsonElement> SendRequestAsync(string audioPath, string model, string? language, string? prompt, double? temperature, string? responseFormat, string? chunkingStrategy, CancellationToken cancellationToken)
+    private async Task<JsonElement> SendRequestAsync(
+        string audioPath,
+        string model,
+        string? language,
+        string? prompt,
+        double? temperature,
+        string? responseFormat,
+        string? chunkingStrategy,
+        TranscriptionClientOptions logContext,
+        CancellationToken cancellationToken)
     {
         using var content = new MultipartFormDataContent();
         await using var fileStream = File.OpenRead(audioPath);
@@ -101,12 +115,103 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
         request.Content = content;
 
-        var response = await _httpClient.SendAsync(request, cancellationToken);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"{(int)response.StatusCode}: {body}");
+        var sw = Stopwatch.StartNew();
+        var inFlight = Interlocked.Increment(ref _transcriptionHttpInFlight);
+        try
+        {
+            _logger?.LogInformation(
+                "OpenAI transcription HTTP start AgentJobId={JobId} ChunkIndex={Chunk} Model={Model} ParallelWorkersConfigured={Workers} InFlight={InFlight} File={File} Bytes={Bytes}",
+                logContext.AgentJobId ?? "(none)",
+                logContext.ChunkIndex,
+                model,
+                logContext.ParallelWorkersConfigured,
+                inFlight,
+                fileName,
+                fileStream.Length);
 
-        return JsonDocument.Parse(body).RootElement.Clone();
+            var response = await _httpClient.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            sw.Stop();
+            if (!response.IsSuccessStatusCode)
+            {
+                var category = ClassifyStatus(response.StatusCode);
+                var reason = string.IsNullOrWhiteSpace(response.ReasonPhrase) ? "" : response.ReasonPhrase.Trim();
+                var detail = string.IsNullOrEmpty(reason)
+                    ? TruncateForLog(body, 400)
+                    : $"{reason} | {TruncateForLog(body, 360)}";
+                _logger?.LogWarning(
+                    "OpenAI transcription HTTP failed AgentJobId={JobId} ChunkIndex={Chunk} Status={Status} Category={Category} DurationMs={Ms} InFlight={Flight} Detail={Detail}",
+                    logContext.AgentJobId ?? "(none)",
+                    logContext.ChunkIndex,
+                    (int)response.StatusCode,
+                    category,
+                    sw.ElapsedMilliseconds,
+                    inFlight,
+                    detail);
+                throw new HttpRequestException($"{(int)response.StatusCode}: {body}");
+            }
+
+            _logger?.LogInformation(
+                "OpenAI transcription HTTP OK AgentJobId={JobId} ChunkIndex={Chunk} Status={Status} DurationMs={Ms} InFlightAfter={Flight}",
+                logContext.AgentJobId ?? "(none)",
+                logContext.ChunkIndex,
+                (int)response.StatusCode,
+                sw.ElapsedMilliseconds,
+                inFlight);
+            return JsonDocument.Parse(body).RootElement.Clone();
+        }
+        catch (OperationCanceledException)
+        {
+            sw.Stop();
+            if (cancellationToken.IsCancellationRequested)
+                _logger?.LogInformation(
+                    "OpenAI transcription HTTP cancelled (token) AgentJobId={JobId} ChunkIndex={Chunk} DurationMs={Ms}",
+                    logContext.AgentJobId ?? "(none)",
+                    logContext.ChunkIndex,
+                    sw.ElapsedMilliseconds);
+            else
+                _logger?.LogWarning(
+                    "OpenAI transcription HTTP timeout AgentJobId={JobId} ChunkIndex={Chunk} DurationMs={Ms} Category=timeout",
+                    logContext.AgentJobId ?? "(none)",
+                    logContext.ChunkIndex,
+                    sw.ElapsedMilliseconds);
+            throw;
+        }
+        catch (HttpRequestException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            _logger?.LogWarning(ex,
+                "OpenAI transcription HTTP error AgentJobId={JobId} ChunkIndex={Chunk} DurationMs={Ms} Category=network",
+                logContext.AgentJobId ?? "(none)",
+                logContext.ChunkIndex,
+                sw.ElapsedMilliseconds);
+            throw;
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _transcriptionHttpInFlight);
+        }
+    }
+
+    private static string ClassifyStatus(HttpStatusCode code) => code switch
+    {
+        HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => "auth",
+        HttpStatusCode.TooManyRequests => "rate_limit",
+        _ when (int)code >= 500 => "server_error",
+        _ when (int)code >= 400 => "client_error",
+        _ => "other"
+    };
+
+    private static string TruncateForLog(string? text, int maxLen)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        var t = text.Replace("\r", " ").Replace("\n", " ");
+        if (t.Length <= maxLen) return t;
+        return t[..maxLen] + "…";
     }
 
     private static List<(string? language, string? prompt, double? temperature, string? responseFormat, string? chunkingStrategy)> BuildParamVariations(TranscriptionClientOptions options, string model)

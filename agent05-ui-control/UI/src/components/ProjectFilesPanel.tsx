@@ -397,6 +397,8 @@ interface ProjectFilesPanelProps {
   mode: ProjectFilesMode;
   t: (key: string) => string;
   chunkIndexFilter?: number | null;
+  /** When this changes (e.g. SSE job snapshot), refetch GET .../files so new disk artifacts appear without switching tabs. */
+  filesRefreshKey?: number;
 }
 
 export function ProjectFilesPanel({
@@ -404,6 +406,7 @@ export function ProjectFilesPanel({
   mode,
   t,
   chunkIndexFilter = null,
+  filesRefreshKey = 0,
 }: ProjectFilesPanelProps) {
   const [data, setData] = useState<JobProjectFiles | null>(null);
   const [jobDir, setJobDir] = useState<string | null>(null);
@@ -455,7 +458,7 @@ export function ProjectFilesPanel({
     return () => {
       cancelled = true;
     };
-  }, [jobId, reloadKey, t]);
+  }, [jobId, reloadKey, filesRefreshKey, t]);
 
   const showFullSpinner = loading && !data && !err;
 

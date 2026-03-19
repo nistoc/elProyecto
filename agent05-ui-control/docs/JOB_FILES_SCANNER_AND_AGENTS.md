@@ -43,13 +43,18 @@
 
 Пайплайн agent05 передаёт в gRPC **`job_directory_relative`** (= id задания) и **`output_file_path`** `transcript_fixed.md`, когда выход в координатах папки job; для старых версий Agent06 без поля — по-прежнему возможен путь `{jobId}/transcript_fixed.md` от корня workspace. В типичном деплое **`Jobs:WorkspacePath`** и **`Agent06:WorkspaceRoot`** должны указывать на **один и тот же** каталог `runtime` (проверка при старте API — см. README).
 
-## 4. Сводка расхождений UI и диска
+## 4. UI: SSE, список файлов и RENTGEN
+
+- **Снимок задания (SSE `snapshot`)** несёт `chunks.total`, `chunkVirtualModel` и прочие поля `JobSnapshot`, но **не заменяет** ответ **`GET /api/jobs/{id}/files`**. Список файлов на диске подтягивается отдельным HTTP-запросом; после сплита чанков панель файлов обновляется при новом snapshot (счётчик ревизии в UI) или вручную (**«Обновить»** / смена шага).
+- **RENTGEN** в Agent04 — это внутренняя виртуальная модель узлов (`INodeModel`); Xtract **не подписан** на отдельные события RENTGEN. То, что видит UI по чанкам, приходит в **`chunk_virtual_model`** внутри gRPC-статуса и далее в JSON snapshot.
+
+## 5. Сводка расхождений UI и диска
 
 - Секция **Split chunks** в UI будет **пустой** для «чистого» прогона **только Agent04 + Agent06** через XtractManager, пока никто не создаёт `split_chunks/chunk_*`.
 - Индекс чанка в UI берётся из **имени файла** в `chunks/` (первое число), а не из внутреннего состояния gRPC; при нетипичных именах без цифр `index` может быть `null`.
 - Корневые **любые** `.json` (в т.ч. `openai_response.json`) относятся к **`transcripts`**, не к `chunkJson` (тот только для `chunks_json/`).
 
-## 5. Связанные документы
+## 6. Связанные документы
 
 - [CHUNKS_AND_RENTGEN.md](../../agent04/docs/CHUNKS_AND_RENTGEN.md) — чанки, отмена, RENTGEN, отсутствие операторского split в Agent04.
 - [PARITY_MINIMUM_READINESS.md](./PARITY_MINIMUM_READINESS.md) — чеклист критериев готовности плана паритета.

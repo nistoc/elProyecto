@@ -167,7 +167,37 @@ export function ChunkControlPanel({
       )}
 
       {showVmPlaceholder && (
-        <p className="chunk-vm__waiting">{t('chunkVmWaitingVm')}</p>
+        <div className="chunk-vm">
+          <h5 className="chunk-vm__title">{t('chunkVmListTitle')}</h5>
+          <p className="chunk-vm__note">{t('chunkVmSkeletonNote')}</p>
+          <div className="chunk-vm__table-wrap">
+            <table className="chunk-vm__table">
+              <thead>
+                <tr>
+                  <th scope="col">{t('chunkVmColChunk')}</th>
+                  <th scope="col">{t('chunkVmColElapsed')}</th>
+                  <th scope="col">{t('chunkVmColState')}</th>
+                  <th scope="col" className="chunk-vm__th-cancel">
+                    <span className="visually-hidden">{t('chunkCancelChunk')}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: total }, (_, i) => (
+                  <tr key={i}>
+                    <td className="chunk-vm__num">#{i}</td>
+                    <td className="chunk-vm__time">{t('chunkVmNoStarted')}</td>
+                    <td>{labelForChunkState('Pending', t)}</td>
+                    <td className="chunk-vm__cancel">
+                      <span className="chunk-vm__x-placeholder" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="chunk-vm__waiting">{t('chunkVmWaitingVm')}</p>
+        </div>
       )}
 
       <div className="chunk-panel__row">

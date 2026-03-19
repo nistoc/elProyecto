@@ -4,6 +4,7 @@ using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
 using XtractManager.Features.Jobs.Application;
 using XtractManager.Features.Jobs.Infrastructure;
+using XtractManager.Infrastructure;
 
 namespace XtractManager.Controllers;
 
@@ -340,7 +341,7 @@ public class JobsController : ControllerBase
         Response.ContentType = "text/event-stream";
         Response.Headers.CacheControl = "no-cache";
         await Response.StartAsync(ct);
-        var snapshotJson = JsonSerializer.Serialize(new { type = "snapshot", payload = job });
+        var snapshotJson = JsonSerializer.Serialize(new { type = "snapshot", payload = job }, ApiJson.CamelCase);
         await Response.WriteAsync($"data: {snapshotJson}\n\n", ct);
         await Response.Body.FlushAsync(ct);
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
