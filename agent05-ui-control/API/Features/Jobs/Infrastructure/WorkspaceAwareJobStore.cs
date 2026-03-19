@@ -96,9 +96,11 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
                 continue;
             if (!string.IsNullOrEmpty(filter.To) && string.CompareOrdinal(createdAt, filter.To) > 0)
                 continue;
+            var archiveDir = _workspace.GetJobDirectoryPath(jobId);
+            var listDisplayName = GetOriginalFilenameFromDir(archiveDir) ?? jobId;
             archiveItems.Add(new Application.JobListItem(
                 jobId,
-                "—",
+                listDisplayName,
                 "completed",
                 "idle",
                 createdAt,
