@@ -67,6 +67,14 @@ All notable changes to the Agent04 project are documented here.
 
 ## [Unreleased]
 
+### Removed
+
+- **HTTP REST / OpenAPI:** `TranscriptionController`, `MapControllers`, `AddOpenApi`, `UseHttpsRedirection`, rate limiting (`AddRateLimiter` / `UseRateLimiter`), корневой `GET /`. Внешний контракт — **только gRPC** на **http://localhost:5032** (h2c). Удалён пакет `Microsoft.AspNetCore.OpenApi`; REST-only DTO `Features/Transcription/Application/SubmitJobRequest.cs`. Из `appsettings.json` убрана секция `RateLimit`.
+
+### Changed
+
+- **Один порт:** `launchSettings` указывает **5032**; Kestrel слушает только его с `HttpProtocols.Http2`. Потребители (например **agent05**) должны задавать `Agent04:GrpcAddress` = `http://localhost:5032`.
+
 ### Added
 
 - **XRay attributes:** `[XRayNode(Ensure|Start|Complete)]` mark pipeline methods that update the virtual model (RENTGEN). Methods `EnterStep`, `CompleteStep`, `EnsureAndStartJobRoot`, etc. are decorated; explicit `INodeModel` calls remain, attributes document and reserve for future interceptor.

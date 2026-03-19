@@ -37,7 +37,7 @@ set ASPNETCORE_ENVIRONMENT=Development   # CMD
 dotnet run
 ```
 
-В `appsettings.Development.json` по умолчанию: Agent04 gRPC — http://localhost:5032, Agent06 — http://localhost:5033. Адреса можно изменить там же; для Agent04 REST/OpenAPI настройте порты в launchSettings самого agent04.
+В `appsettings.Development.json` по умолчанию: Agent04 gRPC — http://localhost:5032, Agent06 — http://localhost:5033. Адреса можно изменить там же. У **Agent04** публичный API только **gRPC** на этом порту (h2c).
 
 ### UI
 
@@ -57,6 +57,14 @@ npm run build
 
 Артефакты — в `UI/dist/`.
 
+### Вкладки Transcriber / Refiner / Result
+
+- **Transcriber** — статус/фаза, логи (SSE), полный список файлов проекта (`jobDir`, обновление списка).
+- **Refiner** — те же **логи** (тот же буфер, что и у задания; отдельный поток только под рефайнер или фильтр по фазе **не реализованы**), блок как на **Result**: метаданные (Job ID, файл, статус, фаза, путь к папке), быстрые ссылки на ключевые файлы, список транскриптов с редактором. Подсказки по фазе (`awaiting_refiner` / `refiner` / `completed`) над логами.
+- **Result** — **логи** (тот же буфер SSE, что на Transcriber/Refiner), затем **ResultSection**: метаданные, быстрые ссылки в браузере на `transcript.md`, `transcript_fixed.md`, нумерованные **`transcript_fixed_*.md`** (например `transcript_fixed_1.md`), `response.json`, список транскриптов с редактором.
+
+Опционально из плана паритета со старым UI **не делаются** без доработки API: превью текста рефайнинга из логов (`RefiningTextPreview`), кнопки повторного запуска / пропуска рефайнера.
+
 ## Конфигурация API
 
 Файл: `API/appsettings.json` (и при необходимости `appsettings.Development.json`).
@@ -64,7 +72,7 @@ npm run build
 | Секция       | Ключ           | Описание                                              |
 |-------------|----------------|--------------------------------------------------------|
 | Kestrel     | Endpoints:Http | URL API (по умолчанию http://localhost:5010)          |
-| Agent04     | GrpcAddress   | Адрес gRPC agent04 (транскрипция). Должен указывать на порт h2c, напр. http://localhost:5032 (не REST 5034). |
+| Agent04     | GrpcAddress   | Адрес **gRPC** agent04 (транскрипция), h2c: **http://localhost:5032**. REST у agent04 нет. |
 | Agent04     | ConfigPath    | Путь к конфигу agent04 (например config/default.json) |
 | Agent04     | WorkspaceRoot | Рабочий каталог agent04 (пустой — подставляется Jobs:WorkspacePath) |
 | Agent06     | GrpcAddress   | Адрес gRPC agent06 (refiner)                          |
@@ -78,7 +86,7 @@ npm run build
 При работе по `http://` (без HTTPS) gRPC использует HTTP/2 «prior knowledge» (h2c). Чтобы избежать ошибки `HTTP_1_1_REQUIRED` (0xd):
 
 - **agent05**: в `Program.cs` включён `AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true)` — клиент подключается по h2c к agent04 и agent06.
-- **agent04**: на Windows без TLS Kestrel по умолчанию не включает HTTP/2. В Agent04 в `Program.cs` настроен отдельный порт **5032** только для gRPC (h2c): `ConfigureKestrel` с `AllowAlternateSchemes = true` и `ListenLocalhost(5032, HttpProtocols.Http2)`. REST и OpenAPI слушают на порту **5034** (applicationUrl в launchSettings). Адрес `Agent04:GrpcAddress` в agent05 должен указывать на **http://localhost:5032**.
+- **agent04**: на Windows без TLS Kestrel по умолчанию не включает HTTP/2. В Agent04 в `Program.cs` настроен порт **5032** только для gRPC (h2c): `ConfigureKestrel` с `AllowAlternateSchemes = true` и `ListenLocalhost(5032, HttpProtocols.Http2)`. Адрес `Agent04:GrpcAddress` в agent05 — **http://localhost:5032**.
 
 ## Endpoints
 

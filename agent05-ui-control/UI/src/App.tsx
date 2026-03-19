@@ -133,32 +133,31 @@ function AppContent() {
 
             {activeStep === 'refiner' && (
               <div className="step-panel">
-                {job ? (
+                {job && jobId ? (
                   <>
-                    <p className="step-panel__meta">
-                      {t('phase')}: {job.phase}
-                    </p>
                     {job.phase === 'awaiting_refiner' && (
-                      <p>{t('refinerAwaitingHint')}</p>
+                      <p className="step-panel__hint">{t('refinerAwaitingHint')}</p>
                     )}
                     {job.phase === 'refiner' && (
-                      <p>{t('refinerRunning')}</p>
+                      <p className="step-panel__hint">{t('refinerRunning')}</p>
                     )}
                     {job.phase === 'completed' && (
-                      <p>{t('refinerCompleted')}</p>
+                      <p className="step-panel__hint">{t('refinerCompleted')}</p>
                     )}
-                    {jobId && (
-                      <>
-                        <h4 className="step-panel__files-heading">
-                          {t('sectionTranscripts')}
-                        </h4>
-                        <ProjectFilesPanel
-                          jobId={jobId}
-                          mode="transcripts"
-                          t={t}
-                        />
-                      </>
-                    )}
+                    <LogsSection
+                      title={t('logs')}
+                      logs={job.logs ?? []}
+                      paused={logsPaused}
+                      bufferedCount={bufferedCount}
+                      onTogglePause={toggleLogsPause}
+                      onClearLogs={clearLogsForStep}
+                    />
+                    <ResultSection
+                      jobId={jobId}
+                      job={job}
+                      t={t}
+                      variant="refiner"
+                    />
                   </>
                 ) : (
                   <p className="step-panel__empty">{t('selectJob')}</p>
@@ -167,7 +166,19 @@ function AppContent() {
             )}
 
             {activeStep === 'result' && jobId && (
-              <ResultSection jobId={jobId} job={job} t={t} />
+              <div className="step-panel">
+                {job && (
+                  <LogsSection
+                    title={t('logs')}
+                    logs={job.logs ?? []}
+                    paused={logsPaused}
+                    bufferedCount={bufferedCount}
+                    onTogglePause={toggleLogsPause}
+                    onClearLogs={clearLogsForStep}
+                  />
+                )}
+                <ResultSection jobId={jobId} job={job} t={t} />
+              </div>
             )}
 
             {activeStep === 'result' && !jobId && (
@@ -205,6 +216,7 @@ function AppContent() {
         .step-panel__meta { margin: 0 0 0.5rem 0; font-size: 0.875rem; color: #64748b; }
         .step-panel__files-heading { margin: 1rem 0 0.35rem 0; font-size: 0.9rem; color: #334155; }
         .step-panel__empty { color: #94a3b8; margin: 0; }
+        .step-panel__hint { margin: 0 0 0.75rem 0; font-size: 0.875rem; color: #475569; }
       `}</style>
     </div>
   );

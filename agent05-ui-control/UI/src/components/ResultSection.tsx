@@ -3,17 +3,72 @@ import type { JobSnapshot, JobProjectFiles } from '../types';
 import { fetchJobFiles, jobProjectFileContentUrl } from '../api';
 import { ProjectFilesView } from './ProjectFilesPanel';
 
+export type ResultSectionVariant = 'result' | 'refiner';
+
 interface ResultSectionProps {
   jobId: string;
   job: JobSnapshot | null;
   t: (key: string) => string;
+  /** Refiner tab uses the same metadata, quick links, and transcript list as Result. */
+  variant?: ResultSectionVariant;
 }
 
 function findByName(files: { name: string; relativePath: string }[], name: string) {
   return files.find((f) => f.name === name);
 }
 
-export function ResultSection({ jobId, job, t }: ResultSectionProps) {
+/** Matches `transcript_fixed_1.md`, `transcript_fixed_12.md`, etc. (case-insensitive). */
+const TRANSCRIPT_FIXED_VARIANT_RE = /^transcript_fixed_(\d+)\.md$/i;
+
+function transcriptFixedVariantSortKey(name: string): number {
+  const m = name.match(TRANSCRIPT_FIXED_VARIANT_RE);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+function hasAnyTranscriptFixedOnDisk(
+  transcripts: { name: string; relativePath?: string }[] | undefined
+): boolean {
+  if (!transcripts?.length) return false;
+  if (transcripts.some((f) => f.name === 'transcript_fixed.md')) return true;
+  return transcripts.some((f) => TRANSCRIPT_FIXED_VARIANT_RE.test(f.name));
+}
+
+function buildKeyLinks(
+  transcripts: { name: string; relativePath: string }[],
+  t: (key: string) => string
+): { label: string; path: string }[] {
+  const entries: { label: string; path: string }[] = [];
+  const tr = findByName(transcripts, 'transcript.md');
+  if (tr) entries.push({ label: t('linkTranscript'), path: tr.relativePath });
+
+  const tf = findByName(transcripts, 'transcript_fixed.md');
+  if (tf) entries.push({ label: t('linkTranscriptFixed'), path: tf.relativePath });
+
+  const numbered = transcripts
+    .filter((f) => TRANSCRIPT_FIXED_VARIANT_RE.test(f.name))
+    .sort(
+      (a, b) =>
+        transcriptFixedVariantSortKey(a.name) - transcriptFixedVariantSortKey(b.name)
+    );
+  for (const f of numbered) {
+    const n = transcriptFixedVariantSortKey(f.name);
+    entries.push({
+      label: `${t('linkTranscriptFixed')} (#${n})`,
+      path: f.relativePath,
+    });
+  }
+
+  const rj = findByName(transcripts, 'response.json');
+  if (rj) entries.push({ label: t('linkResponseJson'), path: rj.relativePath });
+  return entries;
+}
+
+export function ResultSection({
+  jobId,
+  job,
+  t,
+  variant = 'result',
+}: ResultSectionProps) {
   const copyFilename = () => {
     if (job?.originalFilename) {
       navigator.clipboard.writeText(job.originalFilename);
@@ -21,6 +76,9 @@ export function ResultSection({ jobId, job, t }: ResultSectionProps) {
   };
 
   const [projectFiles, setProjectFiles] = useState<JobProjectFiles | null>(null);
+  const [jobDirFromFilesApi, setJobDirFromFilesApi] = useState<string | null>(
+    null
+  );
   const [filesErr, setFilesErr] = useState<string | null>(null);
   const [filesLoading, setFilesLoading] = useState(true);
   const [filesReloadKey, setFilesReloadKey] = useState(0);
@@ -37,11 +95,17 @@ export function ResultSection({ jobId, job, t }: ResultSectionProps) {
       .then((res) => {
         if (cancelled) return;
         setProjectFiles(res?.files ?? null);
+        setJobDirFromFilesApi(
+          res && typeof res.jobDir === 'string' && res.jobDir.length > 0
+            ? res.jobDir
+            : null
+        );
       })
       .catch((e) => {
         if (!cancelled) {
           setFilesErr(e instanceof Error ? e.message : t('failedToLoadFiles'));
           setProjectFiles(null);
+          setJobDirFromFilesApi(null);
         }
       })
       .finally(() => {
@@ -54,20 +118,17 @@ export function ResultSection({ jobId, job, t }: ResultSectionProps) {
 
   const keyLinks = useMemo(() => {
     if (!projectFiles) return [];
-    const transcripts = projectFiles.transcripts;
-    const entries: { label: string; path: string }[] = [];
-    const tr = findByName(transcripts, 'transcript.md');
-    if (tr) entries.push({ label: t('linkTranscript'), path: tr.relativePath });
-    const tf = findByName(transcripts, 'transcript_fixed.md');
-    if (tf) entries.push({ label: t('linkTranscriptFixed'), path: tf.relativePath });
-    const rj = findByName(transcripts, 'response.json');
-    if (rj) entries.push({ label: t('linkResponseJson'), path: rj.relativePath });
-    return entries;
+    return buildKeyLinks(projectFiles.transcripts, t);
   }, [projectFiles, t]);
+
+  const displayJobDir =
+    job?.jobDirectoryPath?.trim() || jobDirFromFilesApi || null;
 
   return (
     <div className="result-section">
-      <h3 className="result-section__title">{t('result')}</h3>
+      <h3 className="result-section__title">
+        {variant === 'refiner' ? t('refiner') : t('result')}
+      </h3>
       <dl className="result-section__meta">
         <dt>{t('jobId')}</dt>
         <dd>{jobId}</dd>
@@ -88,10 +149,10 @@ export function ResultSection({ jobId, job, t }: ResultSectionProps) {
         <dd>{job?.status ?? '—'}</dd>
         <dt>{t('phase')}</dt>
         <dd>{job?.phase ?? '—'}</dd>
-        {job?.jobDirectoryPath && (
+        {displayJobDir && (
           <>
             <dt>{t('jobDirectoryPath')}</dt>
-            <dd className="result-section__path">{job.jobDirectoryPath}</dd>
+            <dd className="result-section__path">{displayJobDir}</dd>
           </>
         )}
       </dl>
@@ -142,7 +203,8 @@ export function ResultSection({ jobId, job, t }: ResultSectionProps) {
               <strong>{t('linkTranscript')}:</strong> {t('inWorkspace')}
             </p>
           )}
-          {job.result.transcriptFixed && !findByName(projectFiles?.transcripts ?? [], 'transcript_fixed.md') && (
+          {job.result.transcriptFixed &&
+            !hasAnyTranscriptFixedOnDisk(projectFiles?.transcripts) && (
             <p>
               <strong>{t('linkTranscriptFixed')}:</strong> {t('inWorkspace')}
             </p>
