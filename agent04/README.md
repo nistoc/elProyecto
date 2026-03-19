@@ -34,10 +34,11 @@ Paths in requests are relative to the instance `workspace_root` (from config):
 - **TranscriptionService.GetJobStatus** — status by `job_id`.
 - **TranscriptionService.StreamJobStatus** — server stream of status updates until terminal state.
 - **TranscriptionService.QueryJobs** — list/filter jobs (semantic key, status, time range, limit/offset).
+- **TranscriptionService.ChunkCommand** — операторские действия по чанку (`action` + `chunk_index`); **Cancel** помечает чанк к пропуску (per-job cancel dir); **Skip / Retranscribe / Split** пока могут отвечать `not_implemented`. Метаданные команды пишутся в виртуальную модель узлов (RENTGEN), если зарегистрирован `INodeModel`.
 
 Proto: `Agent04/Proto/transcription.proto`.
 
-> **RENTGEN / узлы:** ранее дерево узлов отдавалось по HTTP (`GET .../nodes`). Внешнего HTTP больше нет; для списка заданий используйте **QueryJobs**. При необходимости дерева узлов — расширение `.proto` или отдельный read-сервис (см. `docs/RENTGEN_IMPLEMENTATION.md`).
+> **RENTGEN / узлы:** ранее дерево узлов отдавалось по HTTP (`GET .../nodes`). Внешнего HTTP больше нет; для списка заданий используйте **QueryJobs**. При необходимости дерева узлов — расширение `.proto` или отдельный read-сервис (см. `docs/RENTGEN_IMPLEMENTATION.md`). Аудит чанков, под-чанков и связи с RENTGEN — **`docs/CHUNKS_AND_RENTGEN.md`**.
 
 ## Monitoring
 
@@ -65,6 +66,7 @@ Optional: `$env:KNOWLEDGE_STORE_URL = "http://localhost:5173"`.
 - `Agent04/Services/` — gRPC service implementation
 - `Agent04/config/default.json` — default config
 - `docs/RENTGEN_IMPLEMENTATION.md` — virtual model requirements (for Knowledge Store fact)
+- `docs/CHUNKS_AND_RENTGEN.md` — чанки, pre_split vs операторский split, RENTGEN, связка с agent05
 
 ## Differences from agent01
 

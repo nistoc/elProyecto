@@ -157,14 +157,36 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                     throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
                 var cm = _cancellationFactory.Get(request.JobId, _workspaceRoot.RootPath);
                 cm.MarkCancelled(request.ChunkIndex);
+                RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "cancel");
                 return Task.FromResult(new ChunkCommandResponse { Ok = true, Message = "cancel_requested" });
             case ChunkCommandAction.Skip:
             case ChunkCommandAction.Retranscribe:
             case ChunkCommandAction.Split:
+                if (request.ChunkIndex < 0)
+                    throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
+                RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex,
+                    request.Action == ChunkCommandAction.Skip ? "skip" :
+                    request.Action == ChunkCommandAction.Retranscribe ? "retranscribe" : "split");
                 return Task.FromResult(new ChunkCommandResponse { Ok = false, Message = "not_implemented" });
             default:
                 return Task.FromResult(new ChunkCommandResponse { Ok = false, Message = "unknown_action" });
         }
+    }
+
+    /// <summary>
+    /// RENTGEN / virtual model: record operator chunk commands on the same node id the pipeline uses (<c>{jobId}:transcribe:chunk-{i}</c>).
+    /// </summary>
+    private void RecordChunkOperatorActionInNodeModel(string jobId, int chunkIndex, string action)
+    {
+        if (_nodeModel == null) return;
+        var transcribeParent = jobId + ":transcribe";
+        var chunkNodeId = transcribeParent + ":chunk-" + chunkIndex;
+        _nodeModel.EnsureNode(chunkNodeId, transcribeParent, jobId, "chunk",
+            new Dictionary<string, object?>
+            {
+                ["operator_action"] = action,
+                ["operator_action_at"] = DateTimeOffset.UtcNow.ToString("O")
+            });
     }
 
     private static JobStatusResponse ToResponse(JobStatus job)

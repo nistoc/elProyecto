@@ -4,6 +4,7 @@ All notable changes to the Agent04 project are documented here.
 
 ## [Unreleased]
 
+- **RENTGEN:** при обработке **`ChunkCommand`** (все действия с валидным `chunk_index`) вызывается **`EnsureNode`** для узла `{jobId}:transcribe:chunk-{i}` с метаданными `operator_action` и `operator_action_at` (если зарегистрирован `INodeModel`). Документ аудита: **`docs/CHUNKS_AND_RENTGEN.md`**.
 - **gRPC `ChunkCommand`:** отмена обработки чанка по индексу (`ChunkCommandAction.Cancel`) через фабрику **`ICancellationManagerFactory`** (каталог сигналов на задание). Действия **Skip / Retranscribe / Split** пока отвечают `ok=false`, `not_implemented`.
 
 ## [0.1.0] — 2025-03-10

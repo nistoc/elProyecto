@@ -4,6 +4,10 @@
 
 Внешний **HTTP REST** для заданий и узлов (`/api/transcription/jobs`, `/nodes`, `/query` и т.д.) **снят**: публичный контракт Agent04 — **только gRPC** (`TranscriptionService`, см. `Proto/transcription.proto`). Список и фильтрация заданий — через **`QueryJobs`**. Дерево узлов по HTTP больше не отдаётся; при необходимости — расширение proto или отдельный read API.
 
+### Чанки и операторские команды
+
+Иерархия узлов пайплайна (`job` → фаза `transcribe` → `chunk-{i}`) описана в **`CHUNKS_AND_RENTGEN.md`**. Вызовы **`ChunkCommand`** (cancel / и др.) дополняют узел чанка метаданными `operator_action` и `operator_action_at`, если в DI зарегистрирован **`INodeModel`**.
+
 ## Принципы
 
 - **Независимость фичи от ядра сервиса:** отдельный слайс / read-модель; фича не вызывает pipeline и не зависит от деталей транскрипции.

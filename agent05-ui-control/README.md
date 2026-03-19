@@ -6,7 +6,7 @@
 
 - **API/** — бекенд (.NET 9): решение `Api.slnx` (проекты Api, API.Tests). Сборка и запуск из `API/`.
 - **UI/** — фронтенд (React 18 + Vite, TypeScript). Сборка и запуск из `UI/`.
-- **docs/** — стандарты (API_STANDARDS.md, AUTH.md, FRONTEND_STANDARDS.md).
+- **docs/** — стандарты (API_STANDARDS.md, AUTH.md, FRONTEND_STANDARDS.md), паритет и сканер файлов (**JOB_FILES_SCANNER_AND_AGENTS.md**, **PARITY_MINIMUM_READINESS.md**).
 
 ## Запуск
 
@@ -121,6 +121,10 @@ npm run build
 
 Элемент списка — объект с полями вроде `name`, `relativePath`, `sizeBytes`, `kind` (`text` | `audio` | `other`), при необходимости `lineCount`, `durationSeconds`, `index`, `parentIndex`, `subIndex`, `hasTranscript`, `isTranscript`.
 
+#### Сканер vs Agent04 / Agent06 (§6 плана)
+
+Кратко: **Agent04** при типичном `default.json` заполняет `chunks/`, `chunks_json/`, `converted_wav/`, `intermediate_results/`, корневые транскрипты; **не** создаёт `split_chunks/chunk_*`. **Agent06** добавляет в основном **`transcript_fixed*.md`** в корень задания (категория `transcripts`). Подробные таблицы, паттерны имён и расхождения — **[docs/JOB_FILES_SCANNER_AND_AGENTS.md](docs/JOB_FILES_SCANNER_AND_AGENTS.md)**.
+
 **404**: каталог задания на диске отсутствует. Если задания нет и в хранилище — тело пустое; если задание есть в store, но папки нет — `{ "error": "job directory not found" }`.
 
 **Архивные задания**: если каталог `{id}` под `Jobs:WorkspacePath` есть, а записи в store уже нет, ответ **200** всё равно возвращается (удобно для папок, оставшихся после перезапуска).
@@ -174,9 +178,13 @@ cd agent05-ui-control/API
 dotnet test
 ```
 
+Среди прочего: **`ChunkActionsControllerTests`** — `POST /api/jobs/{id}/chunk-actions` с моком **`ITranscriptionServiceClient`**.
+
 ## Документация и план
 
 - **docs/API_STANDARDS.md** — стандарты бекенда.
 - **docs/FRONTEND_STANDARDS.md** — стандарты фронтенда.
 - **docs/AUTH.md** — закладка под авторизацию.
+- **docs/JOB_FILES_SCANNER_AND_AGENTS.md** — каталоги и паттерны `JobProjectFilesScanner` (наследие agent-browser) и что реально пишут Agent04 / Agent06.
+- **docs/PARITY_MINIMUM_READINESS.md** — чеклист **критерия готовности (минимум)** по плану паритета UI; все обязательные пункты закрыты, отказы явно помечены.
 - План разработки и спецификация UI — в общем плане сервиса (agent05, этапы 1–9 и п. 4a).
