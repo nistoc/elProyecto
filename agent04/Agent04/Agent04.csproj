@@ -20,4 +20,8 @@
     <Protobuf Include="Proto\transcription.proto" GrpcServices="Server" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="config\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

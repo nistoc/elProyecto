@@ -1,6 +1,31 @@
 import { useEffect, useState } from 'react';
 import { postJobChunkAction, type ChunkActionName } from '../api';
-import type { JobSnapshot } from '../types';
+import type { ChunkVirtualModelEntry, JobSnapshot } from '../types';
+
+function formatMmSs(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
+function elapsedSeconds(
+  row: ChunkVirtualModelEntry,
+  nowMs: number
+): number | null {
+  if (!row.startedAt) return null;
+  const start = Date.parse(row.startedAt);
+  if (Number.isNaN(start)) return null;
+  const end = row.completedAt ? Date.parse(row.completedAt) : nowMs;
+  if (Number.isNaN(end)) return null;
+  return (end - start) / 1000;
+}
+
+function labelForChunkState(state: string, t: (key: string) => string): string {
+  const key = `chunkState${state}`;
+  const v = t(key);
+  return v === key ? state : v;
+}
 
 export interface ChunkControlPanelProps {
   jobId: string;
@@ -19,9 +44,11 @@ export function ChunkControlPanel({
   onFileFilterChunkChange,
 }: ChunkControlPanelProps) {
   const total = job.chunks?.total ?? 0;
+  const vm = job.chunks?.chunkVirtualModel;
   const [chunkIndex, setChunkIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   const canOperate =
     job.phase === 'transcriber' &&
@@ -29,6 +56,14 @@ export function ChunkControlPanel({
     total > 0 &&
     chunkIndex >= 0 &&
     chunkIndex < total;
+
+  const hasRunningVm = vm?.some((r) => r.state === 'Running') ?? false;
+
+  useEffect(() => {
+    if (!hasRunningVm) return;
+    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [hasRunningVm]);
 
   useEffect(() => {
     if (total <= 0) return;
@@ -46,11 +81,12 @@ export function ChunkControlPanel({
     onFileFilterChunkChange(chunkIndex);
   }, [chunkIndex, fileFilterChunkIndex, onFileFilterChunkChange]);
 
-  const runAction = async (action: ChunkActionName) => {
+  const runAction = async (action: ChunkActionName, index?: number) => {
+    const idx = index ?? chunkIndex;
     setMessage(null);
     setBusy(true);
     try {
-      const res = await postJobChunkAction(jobId, action, chunkIndex);
+      const res = await postJobChunkAction(jobId, action, idx);
       setMessage(
         res.ok
           ? res.message || t('chunkActionOk')
@@ -67,10 +103,73 @@ export function ChunkControlPanel({
     return null;
   }
 
+  const showVmTable = vm && vm.length > 0;
+  const showVmPlaceholder = !showVmTable && total > 0;
+
   return (
     <section className="chunk-panel" aria-label={t('chunkOperatorTitle')}>
       <h4 className="chunk-panel__title">{t('chunkOperatorTitle')}</h4>
       <p className="chunk-panel__hint">{t('chunkOperatorHint')}</p>
+
+      {showVmTable && (
+        <div className="chunk-vm">
+          <h5 className="chunk-vm__title">{t('chunkVmListTitle')}</h5>
+          <p className="chunk-vm__note">{t('chunkVmTimerNote')}</p>
+          <div className="chunk-vm__table-wrap">
+            <table className="chunk-vm__table">
+              <thead>
+                <tr>
+                  <th scope="col">{t('chunkVmColChunk')}</th>
+                  <th scope="col">{t('chunkVmColElapsed')}</th>
+                  <th scope="col">{t('chunkVmColState')}</th>
+                  <th scope="col" className="chunk-vm__th-cancel">
+                    <span className="visually-hidden">{t('chunkCancelChunk')}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {vm!.map((row) => {
+                  const sec = elapsedSeconds(row, nowTick);
+                  const elapsed =
+                    sec === null ? t('chunkVmNoStarted') : formatMmSs(sec);
+                  return (
+                    <tr key={row.index}>
+                      <td className="chunk-vm__num">#{row.index}</td>
+                      <td className="chunk-vm__time" title={row.startedAt ?? ''}>
+                        {elapsed}
+                      </td>
+                      <td>{labelForChunkState(row.state, t)}</td>
+                      <td className="chunk-vm__cancel">
+                        {row.state === 'Running' ? (
+                          <button
+                            type="button"
+                            className="chunk-vm__x"
+                            disabled={!canOperate || busy}
+                            aria-label={t('chunkVmCancelAria').replace(
+                              '{n}',
+                              String(row.index)
+                            )}
+                            onClick={() => runAction('cancel', row.index)}
+                          >
+                            ×
+                          </button>
+                        ) : (
+                          <span className="chunk-vm__x-placeholder" />
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {showVmPlaceholder && (
+        <p className="chunk-vm__waiting">{t('chunkVmWaitingVm')}</p>
+      )}
+
       <div className="chunk-panel__row">
         <label className="chunk-panel__label">
           {t('chunkIndexLabel')}
@@ -147,6 +246,17 @@ export function ChunkControlPanel({
       </div>
       {message && <p className="chunk-panel__message">{message}</p>}
       <style>{`
+        .visually-hidden {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          padding: 0;
+          margin: -1px;
+          overflow: hidden;
+          clip: rect(0, 0, 0, 0);
+          white-space: nowrap;
+          border: 0;
+        }
         .chunk-panel {
           margin: 1rem 0;
           padding: 0.75rem 1rem;
@@ -164,6 +274,85 @@ export function ChunkControlPanel({
           margin: 0 0 0.75rem 0;
           font-size: 0.8125rem;
           color: var(--color-text-secondary);
+        }
+        .chunk-vm {
+          margin-bottom: 1rem;
+          padding-bottom: 0.75rem;
+          border-bottom: 1px solid var(--color-border);
+        }
+        .chunk-vm__title {
+          margin: 0 0 0.25rem 0;
+          font-size: 0.85rem;
+          color: var(--color-heading);
+        }
+        .chunk-vm__note {
+          margin: 0 0 0.5rem 0;
+          font-size: 0.75rem;
+          color: var(--color-text-secondary);
+          line-height: 1.35;
+        }
+        .chunk-vm__waiting {
+          margin: 0 0 0.75rem 0;
+          font-size: 0.8125rem;
+          color: var(--color-info);
+          font-style: italic;
+        }
+        .chunk-vm__table-wrap {
+          overflow-x: auto;
+        }
+        .chunk-vm__table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 0.8125rem;
+        }
+        .chunk-vm__table th,
+        .chunk-vm__table td {
+          padding: 0.35rem 0.5rem;
+          text-align: left;
+          border-bottom: 1px solid var(--color-border);
+        }
+        .chunk-vm__table th {
+          color: var(--color-label);
+          font-weight: 600;
+        }
+        .chunk-vm__th-cancel {
+          width: 2.5rem;
+        }
+        .chunk-vm__num {
+          font-variant-numeric: tabular-nums;
+          font-weight: 600;
+          color: var(--color-heading);
+        }
+        .chunk-vm__time {
+          font-variant-numeric: tabular-nums;
+          font-family: ui-monospace, monospace;
+        }
+        .chunk-vm__cancel {
+          text-align: center;
+          vertical-align: middle;
+        }
+        .chunk-vm__x {
+          width: 1.75rem;
+          height: 1.75rem;
+          padding: 0;
+          line-height: 1.65rem;
+          font-size: 1.25rem;
+          border-radius: 4px;
+          border: 1px solid var(--color-border-strong);
+          background: var(--color-surface);
+          color: var(--color-danger, #c62828);
+          cursor: pointer;
+        }
+        .chunk-vm__x:hover:not(:disabled) {
+          background: var(--color-surface-hover);
+        }
+        .chunk-vm__x:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+        }
+        .chunk-vm__x-placeholder {
+          display: inline-block;
+          width: 1.75rem;
         }
         .chunk-panel__row {
           display: flex;

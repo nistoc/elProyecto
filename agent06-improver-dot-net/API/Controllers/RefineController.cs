@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using TranslationImprover.Application;
 using TranslationImprover.Features.Refine.Application;
 using TranslationImprover.Features.Refine.Domain;
+using TranslationImprover.Features.Refine.Infrastructure;
 using TranslationImprover.Features.RefineJobQuery.Application;
 
 namespace TranslationImprover.Controllers;
@@ -44,6 +45,15 @@ public class RefineController : ControllerBase
         CancellationToken cancellationToken)
     {
         var root = _workspaceRoot.RootPath;
+        string artifactRoot;
+        try
+        {
+            artifactRoot = RefineWorkspacePaths.ResolveEffectiveArtifactRoot(root, request?.JobDirectoryRelative);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ProblemDetailsFor(400, "Bad Request", ex.Message));
+        }
 
         if (string.IsNullOrEmpty(request?.InputFilePath) && string.IsNullOrEmpty(request?.InputContent))
             return BadRequest(ProblemDetailsFor(400, "Bad Request", "Either input_file_path or input_content must be set"));
@@ -54,7 +64,7 @@ public class RefineController : ControllerBase
             if (Path.IsPathRooted(raw))
                 return BadRequest(ProblemDetailsFor(400, "Bad Request", "input_file_path must be relative to workspace_root; absolute paths are not allowed", new Dictionary<string, object?> { ["inputFilePath"] = raw }));
             var rel = raw.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var full = Path.Combine(root, rel);
+            var full = Path.Combine(artifactRoot, rel);
             if (!System.IO.File.Exists(full))
                 return BadRequest(ProblemDetailsFor(400, "Bad Request", "Input file not found", new Dictionary<string, object?> { ["inputFilePath"] = rel }));
         }
@@ -85,12 +95,13 @@ public class RefineController : ControllerBase
             SaveIntermediate = request.SaveIntermediate,
             IntermediateDir = string.IsNullOrEmpty(request.IntermediateDir) ? null : request.IntermediateDir.Trim(),
             CallbackUrl = callbackUrl,
-            Tags = request.Tags
+            Tags = request.Tags,
+            JobDirectoryRelative = string.IsNullOrWhiteSpace(request.JobDirectoryRelative) ? null : request.JobDirectoryRelative.Trim()
         };
 
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _cancellation.Register(jobId, cts);
-        _ = _pipeline.RunAsync(jobId, req, root, cts.Token);
+        _ = _pipeline.RunAsync(jobId, req, root, artifactRoot, cts.Token);
 
         return AcceptedAtAction(nameof(Get), new { id = jobId }, new { jobId });
     }

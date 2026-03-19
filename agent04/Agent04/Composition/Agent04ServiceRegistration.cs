@@ -52,6 +52,7 @@ public static class Agent04ServiceRegistration
         services.AddSingleton<INodeQuery>(sp => sp.GetRequiredService<InMemoryNodeStore>());
 
         services.AddSingleton<ICancellationManagerFactory, PerJobCancellationManagerFactory>();
+        services.AddSingleton<IJobArtifactRootRegistry, JobArtifactRootRegistry>();
 
         services.AddSingleton<ITranscriptionOutputWriter>(sp =>
         {

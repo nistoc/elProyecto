@@ -1,5 +1,7 @@
 using Agent04.Proto;
+using Grpc.Core;
 using Grpc.Net.Client;
+using Microsoft.Extensions.Logging;
 
 namespace XtractManager.Features.Jobs.Infrastructure;
 
@@ -28,9 +30,22 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         if (tags != null)
             request.Tags.AddRange(tags);
 
-        var response = await client.SubmitJobAsync(request, cancellationToken: ct);
-        _logger.LogInformation("Agent04 SubmitJob returned job_id={JobId}", response.JobId);
-        return new Application.SubmitJobResult(response.JobId);
+        _logger.LogInformation(
+            "Agent04 SubmitJob → {Address}: ConfigPath={Config}, InputFilePath={Input}, TagCount={Tags}",
+            _address, configPath, inputFilePath, tags?.Count ?? 0);
+        try
+        {
+            var response = await client.SubmitJobAsync(request, cancellationToken: ct);
+            _logger.LogInformation("Agent04 SubmitJob OK: agent04_job_id={JobId}", response.JobId);
+            return new Application.SubmitJobResult(response.JobId);
+        }
+        catch (RpcException ex)
+        {
+            _logger.LogError(
+                "Agent04 SubmitJob RPC failed: StatusCode={Code}, Detail={Detail}, Address={Address}, ConfigPath={Config}, InputFilePath={Input}",
+                ex.StatusCode, ex.Status.Detail, _address, configPath, inputFilePath);
+            throw;
+        }
     }
 
     public async IAsyncEnumerable<Application.JobStatusUpdate> StreamJobStatusAsync(string jobId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
@@ -42,6 +57,18 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         while (await stream.ResponseStream.MoveNext(ct))
         {
             var update = stream.ResponseStream.Current;
+            IReadOnlyList<Application.ChunkVirtualModelEntry>? vm = null;
+            if (update.ChunkVirtualModel.Count > 0)
+            {
+                vm = update.ChunkVirtualModel.Select(e => new Application.ChunkVirtualModelEntry
+                {
+                    Index = e.ChunkIndex,
+                    StartedAt = string.IsNullOrEmpty(e.StartedAt) ? null : e.StartedAt,
+                    CompletedAt = string.IsNullOrEmpty(e.CompletedAt) ? null : e.CompletedAt,
+                    State = string.IsNullOrEmpty(e.State) ? "Pending" : e.State
+                }).ToList();
+            }
+
             yield return new Application.JobStatusUpdate(
                 update.JobId,
                 update.State,
@@ -51,8 +78,8 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
                 update.ProcessedChunks,
                 update.MdOutputPath,
                 update.JsonOutputPath,
-                update.ErrorMessage
-            );
+                update.ErrorMessage,
+                vm);
         }
     }
 
@@ -60,13 +87,20 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         string agent04JobId,
         Application.TranscriptionChunkAction action,
         int chunkIndex,
+        string? jobDirectoryRelative,
         CancellationToken ct = default)
     {
         using var channel = GrpcChannel.ForAddress(_address);
         var client = new TranscriptionService.TranscriptionServiceClient(channel);
         var protoAction = (ChunkCommandAction)(int)action;
         var response = await client.ChunkCommandAsync(
-            new ChunkCommandRequest { JobId = agent04JobId, Action = protoAction, ChunkIndex = chunkIndex },
+            new ChunkCommandRequest
+            {
+                JobId = agent04JobId,
+                Action = protoAction,
+                ChunkIndex = chunkIndex,
+                JobDirectoryRelative = jobDirectoryRelative ?? ""
+            },
             cancellationToken: ct);
         return new Application.ChunkCommandResult(response.Ok, response.Message ?? "");
     }

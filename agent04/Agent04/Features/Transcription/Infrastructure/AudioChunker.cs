@@ -38,6 +38,7 @@ public sealed class AudioChunker : IAudioChunker
         var stride = Math.Max(1.0, segmentTimeSeconds - overlap);
         var baseNoExt = Path.GetFileNameWithoutExtension(sourcePath);
         var pattern = namingPattern.Replace("{base}", baseNoExt);
+        pattern = AudioChunkNaming.AlignOutputExtensionWithSource(pattern, sourcePath);
         var outPattern = Path.Combine(workdir, Path.GetFileName(pattern));
         var estCount = (int)Math.Ceiling(Math.Max(1.0, dur) / stride);
         var pad = Math.Max(3, (int)Math.Ceiling(Math.Log10(Math.Max(1, estCount + 1))));

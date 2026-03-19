@@ -13,7 +13,8 @@ public record RefineJobInput(
     string? OutputFilePath,
     int BatchSize = 5,
     int ContextLines = 2,
-    IReadOnlyList<string>? Tags = null);
+    IReadOnlyList<string>? Tags = null,
+    string? JobDirectoryRelative = null);
 
 public record SubmitRefineJobResult(string JobId);
 

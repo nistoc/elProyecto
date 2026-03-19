@@ -277,7 +277,7 @@ public class JobsController : ControllerBase
 
         try
         {
-            var result = await _transcription.ChunkCommandAsync(job.Agent04JobId!, action.Value, body.ChunkIndex, ct);
+            var result = await _transcription.ChunkCommandAsync(job.Agent04JobId!, action.Value, body.ChunkIndex, id, ct);
             return Ok(new ChunkActionResponse(result.Ok, result.Message));
         }
         catch (RpcException ex)

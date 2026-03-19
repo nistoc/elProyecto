@@ -33,7 +33,7 @@ public sealed class RefinePipeline : IRefinePipeline
         _logger = logger;
     }
 
-    public async Task RunAsync(string jobId, RefineJobRequest request, string workspaceRoot, CancellationToken cancellationToken = default)
+    public async Task RunAsync(string jobId, RefineJobRequest request, string workspaceRoot, string artifactRoot, CancellationToken cancellationToken = default)
     {
         IReadOnlyList<string> contentLines;
         IReadOnlyList<string> headerLines;
@@ -46,7 +46,7 @@ public sealed class RefinePipeline : IRefinePipeline
         }
         else
         {
-            var inputPath = Path.Combine(workspaceRoot, request.InputFilePath!.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            var inputPath = Path.Combine(artifactRoot, request.InputFilePath!.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             var allLines = (await File.ReadAllLinesAsync(inputPath, Encoding.UTF8, cancellationToken)).Select(l => l + "\n").ToList();
             TranscriptParser.ParseStructure(allLines, out headerLines, out contentLines, out footerLines);
         }
@@ -73,7 +73,7 @@ public sealed class RefinePipeline : IRefinePipeline
 
         var promptTemplate = await _promptLoader.LoadAsync(request.PromptFile, workspaceRoot, cancellationToken);
         var intermediateDir = request.SaveIntermediate && !string.IsNullOrEmpty(request.IntermediateDir)
-            ? Path.Combine(workspaceRoot, request.IntermediateDir.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+            ? Path.Combine(artifactRoot, request.IntermediateDir.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
             : null;
         if (intermediateDir != null)
             Directory.CreateDirectory(intermediateDir);
@@ -132,7 +132,7 @@ public sealed class RefinePipeline : IRefinePipeline
             if (!string.IsNullOrEmpty(request.OutputFilePath))
             {
                 var rel = request.OutputFilePath.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                outputPathFull = Path.Combine(workspaceRoot, rel);
+                outputPathFull = Path.Combine(artifactRoot, rel);
                 Directory.CreateDirectory(Path.GetDirectoryName(outputPathFull)!);
                 await File.WriteAllLinesAsync(outputPathFull, fullContent.Select(l => l.TrimEnd('\n')), Encoding.UTF8, cancellationToken);
             }

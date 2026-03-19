@@ -19,4 +19,6 @@ public sealed class RefineJobRequest
     public string? IntermediateDir { get; set; }
     public string? CallbackUrl { get; set; }
     public IReadOnlyList<string>? Tags { get; set; }
+    /// <summary>Optional. Single segment under workspace (Xtract job folder). When set, file I/O uses this directory; prompt paths still use workspace root.</summary>
+    public string? JobDirectoryRelative { get; set; }
 }

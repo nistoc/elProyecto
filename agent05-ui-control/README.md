@@ -78,10 +78,17 @@ npm run build
 | Agent04     | ConfigPath    | Путь к конфигу agent04 (например config/default.json) |
 | Agent04     | WorkspaceRoot | Рабочий каталог agent04 (пустой — подставляется Jobs:WorkspacePath) |
 | Agent06     | GrpcAddress   | Адрес gRPC agent06 (refiner)                          |
-| Agent06     | WorkspaceRoot | Корень workspace **agent06** (тот же смысл, что `WorkspaceRoot` в appsettings agent06). Нужен, чтобы путь `output_file_path` в gRPC совпадал с диском: пайплайн передаёт относительный путь `{jobId}/transcript_fixed.md`. Пустая строка или отсутствие ключа — используется тот же каталог, что и **Jobs:WorkspacePath** (оба сервиса должны видеть один и тот же `runtime`). Если у agent06 другой корень — задайте здесь **абсолютный** путь к тому же каталогу, что и задания, либо путь, относительно Content Root API. |
+| Agent06     | WorkspaceRoot | Корень workspace **agent06** (как `WorkspaceRoot` в appsettings agent06). Пайплайн передаёт **`job_directory_relative`** (= id задания) и **`output_file_path`** `transcript_fixed.md`, чтобы результат лежал в папке job. Пустая строка или отсутствие ключа — используется тот же каталог, что и **Jobs:WorkspacePath**. |
 | Jobs        | WorkspacePath | Каталог для рабочих данных заданий (аудио, артефакты). Абсолютный путь или относительный от Content Root. По умолчанию `./runtime`. Логи приложения — в корень запущенного проекта. |
+| Xtract      | RequireAgent06WorkspaceMatchesJobs | Если **true**, при старте API сравниваются полные пути **Jobs:WorkspacePath** и **Agent06:WorkspaceRoot** (когда оба заданы); при расхождении приложение **не стартует**. По умолчанию **false** — только предупреждение в логе. |
 
 При старте в лог выводится фактический путь: `Job workspace base path (Jobs:WorkspacePath): ...`. Оба внешних сервиса вызываются только по gRPC; REST для agent06 не используется.
+
+### Контракт workspace (Agent04 / Xtract / Agent06)
+
+- Раскладка: **`{workspace}/{jobId}/`** — аудио и все артефакты транскрипции Agent04; refiner читает/пишет в ту же папку при совпадающем корне и поле **`job_directory_relative`** на gRPC.
+- **ChunkCommand:** Xtract всегда передаёт **`job_directory_relative`**, чтобы отмена чанков попадала в `.agent04_chunk_cancel/...` внутри папки задания (и дублирует смысл in-process registry в Agent04).
+- Если **намеренно** разные корни у заданий Xtract и у Agent06, одного **`job_directory_relative`** недостаточно: пути в каждом gRPC должны быть относительно **`WorkspaceRoot`** того сервиса, который их обрабатывает.
 
 ### gRPC по HTTP (без TLS)
 

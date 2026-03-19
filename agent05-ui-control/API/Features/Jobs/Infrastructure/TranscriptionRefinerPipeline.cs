@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Grpc.Core;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using XtractManager.Features.Jobs.Application;
@@ -60,7 +61,9 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         }
         if (!File.Exists(audioFullPath))
         {
-            _logger.LogWarning("Job {JobId}: audio file not found at {Path}", jobId, audioFullPath);
+            _logger.LogError(
+                "Job {JobId}: cannot start transcription — audio file missing. Tried {Path} (workspaceRoot={Root}, originalFilename={Orig})",
+                jobId, audioFullPath, workspaceRoot, snap.OriginalFilename ?? "");
             await UpdateAndBroadcastAsync(jobId, s => { s.Status = "failed"; s.Phase = "idle"; });
             return;
         }
@@ -69,15 +72,28 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         await UpdateAndBroadcastAsync(jobId, s => { s.Status = "running"; s.Phase = "transcriber"; });
         Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
 
+        _logger.LogInformation(
+            "Job {JobId}: submitting transcription — ConfigPath={Config}, workspaceRoot={Root}, audioOnDisk={Audio}, inputFilePath(rel)={InputRel}",
+            jobId, configPath, workspaceRoot, audioFullPath, inputFilePath);
+
         string? transcriptionJobId = null;
         try
         {
             var submitResult = await _transcription.SubmitJobAsync(configPath, inputFilePath, snap.Tags?.ToList(), ct);
             transcriptionJobId = submitResult.JobId;
         }
+        catch (RpcException ex)
+        {
+            _logger.LogError(ex,
+                "Job {JobId}: Agent04 SubmitJob failed — RPC {Code}: {Detail}",
+                jobId, ex.StatusCode, ex.Status.Detail);
+            await UpdateAndBroadcastAsync(jobId, s => { s.Status = "failed"; s.Phase = "idle"; });
+            Broadcast(jobId, "done", null);
+            return;
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Job {JobId}: Agent04 SubmitJob failed", jobId);
+            _logger.LogError(ex, "Job {JobId}: Agent04 SubmitJob failed — {Message}", jobId, ex.Message);
             await UpdateAndBroadcastAsync(jobId, s => { s.Status = "failed"; s.Phase = "idle"; });
             Broadcast(jobId, "done", null);
             return;
@@ -88,6 +104,10 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
 
         await foreach (var update in _transcription.StreamJobStatusAsync(transcriptionJobId, ct))
         {
+            if (update.State == "Failed")
+                _logger.LogWarning(
+                    "Job {JobId}: Agent04 job {Agent04JobId} reported Failed — ErrorMessage={Error}, Phase={Phase}, Progress={Pct}%",
+                    jobId, transcriptionJobId, update.ErrorMessage ?? "(empty)", update.CurrentPhase ?? "", update.ProgressPercent);
             _logger.LogDebug("Job {JobId}: Agent04 status update State={State}, MdOutputPath={Md}, TotalChunks={Total}, Processed={Processed}",
                 jobId, update.State, update.MdOutputPath ?? "null", update.TotalChunks, update.ProcessedChunks);
             await UpdateAndBroadcastAsync(jobId, s =>
@@ -110,6 +130,9 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                         ? new List<int> { pc }
                         : new List<int>();
                 }
+
+                if (update.ChunkVirtualModel != null)
+                    s.Chunks.ChunkVirtualModel = update.ChunkVirtualModel;
                 if (update.State == "Completed")
                 { s.Phase = "awaiting_refiner"; s.MdOutputPath = update.MdOutputPath; }
                 else if (update.State == "Failed" || update.State == "Cancelled")
@@ -167,19 +190,32 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
 
         var outputRelForRefiner = TryGetRefinerOutputRelativePath(jobId, jobDir);
         if (outputRelForRefiner != null)
-            _logger.LogInformation("Job {JobId}: Agent06 OutputFilePath (relative to refiner workspace)={Path}", jobId, outputRelForRefiner);
+            _logger.LogInformation("Job {JobId}: Agent06 output under job dir (legacy rel was {LegacyRel})", jobId, outputRelForRefiner);
 
         Application.SubmitRefineJobResult? refinerResult = null;
         var tagsList = snap?.Tags?.ToList();
         try
         {
-            refinerResult = await _refiner.SubmitRefineJobAsync(new RefineJobInput(
-                InputFilePath: null,
-                InputContent: transcriptContent ?? "",
-                OutputFilePath: outputRelForRefiner,
-                BatchSize: 5,
-                ContextLines: 2,
-                Tags: tagsList), ct);
+            // Per-job artifact root on Agent06: same physical file as legacy "{jobId}/transcript_fixed.md" under shared workspace.
+            var refineInput = outputRelForRefiner != null
+                ? new RefineJobInput(
+                    InputFilePath: null,
+                    InputContent: transcriptContent ?? "",
+                    OutputFilePath: "transcript_fixed.md",
+                    BatchSize: 5,
+                    ContextLines: 2,
+                    Tags: tagsList,
+                    JobDirectoryRelative: jobId)
+                : new RefineJobInput(
+                    InputFilePath: null,
+                    InputContent: transcriptContent ?? "",
+                    OutputFilePath: null,
+                    BatchSize: 5,
+                    ContextLines: 2,
+                    Tags: tagsList,
+                    JobDirectoryRelative: null);
+
+            refinerResult = await _refiner.SubmitRefineJobAsync(refineInput, ct);
         }
         catch (Exception ex)
         {

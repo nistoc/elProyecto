@@ -30,9 +30,9 @@
 | `converted` | Да (если `convert_to_wav: true`) | **`converted_wav/`** (`wav_output_dir`). |
 | `splitChunks` | **Нет** | Иерархия **`split_chunks/chunk_N/...`** в текущем пайплайне Agent04 **не создаётся**; это сценарий старого UI/другого оркестратора. См. также [`agent04/docs/CHUNKS_AND_RENTGEN.md`](../../agent04/docs/CHUNKS_AND_RENTGEN.md). |
 
-Кэш транскрипции: каталог **`cache/`** (из конфига) в workspace — сканер **не выделяет** отдельной категорией; файлы там не попадают в секции UI, если лежат только под `cache/`.
+Кэш транскрипции: каталог **`cache/`** (из конфига) **внутри папки задания** (рядом с аудио), если так настроен пайплайн — сканер **не выделяет** отдельной категорией; файлы там не попадают в секции UI, если лежат только под `cache/`.
 
-Сигналы отмены чанков: per-job каталог (например `.agent04_chunk_cancel/<jobId>/`), не путать с устаревшим глобальным `cancel_signals` в конфиге — см. документацию Agent04.
+Сигналы отмены чанков: каталог **`.agent04_chunk_cancel/<внутренний job id Agent04>`** под **корнем артефактов задания** (та же папка, что и входной аудиофайл). Пока процесс Agent04 жив, база отмены также резолвится по **in-process registry** `agent04JobId → artifactRoot`. После рестарта без registry клиент обязан передать в gRPC **`job_directory_relative`** (= сегмент пути к папке задания под общим workspace, у Xtract — id задания). Не путать с устаревшим глобальным `cancel_signals` в конфиге.
 
 ## 3. Что добавляет **Agent06** (refiner)
 
@@ -41,7 +41,7 @@
 | `transcripts` | Да | При совпадении **workspace** с каталогом заданий: **`transcript_fixed.md`** и при необходимости нумерованные варианты (`transcript_fixed_1.md`, …) — попадают под правило «имя содержит transcript» / `.md`. |
 | Остальные | Обычно нет | Refiner не наполняет `chunks/`, `split_chunks/` и т.д. |
 
-Пайплайн agent05 передаёт в gRPC относительный путь вида `{jobId}/transcript_fixed.md`; корень должен совпадать с `Jobs:WorkspacePath` или с `Agent06:WorkspaceRoot` (см. README основного сервиса).
+Пайплайн agent05 передаёт в gRPC **`job_directory_relative`** (= id задания) и **`output_file_path`** `transcript_fixed.md`, когда выход в координатах папки job; для старых версий Agent06 без поля — по-прежнему возможен путь `{jobId}/transcript_fixed.md` от корня workspace. В типичном деплое **`Jobs:WorkspacePath`** и **`Agent06:WorkspaceRoot`** должны указывать на **один и тот же** каталог `runtime` (проверка при старте API — см. README).
 
 ## 4. Сводка расхождений UI и диска
 

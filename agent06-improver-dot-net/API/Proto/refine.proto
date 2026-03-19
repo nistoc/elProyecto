@@ -28,6 +28,8 @@ message SubmitRefineJobRequest {
   string intermediate_dir = 12;
   string callback_url = 13;
   repeated string tags = 14;   // For semantic key query (one of these = semanticKey filter)
+  /// Optional. Single segment under workspace_root (Xtract job folder). When set, input/output/intermediate paths resolve under workspace_root/job_directory_relative.
+  string job_directory_relative = 15;
 }
 
 message SubmitRefineJobResponse {

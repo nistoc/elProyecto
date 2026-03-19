@@ -24,7 +24,8 @@ public sealed class RefinerGrpcClient : Application.IRefinerServiceClient
             InputContent = input.InputContent ?? "",
             OutputFilePath = input.OutputFilePath ?? "",
             BatchSize = input.BatchSize,
-            ContextLines = input.ContextLines
+            ContextLines = input.ContextLines,
+            JobDirectoryRelative = input.JobDirectoryRelative ?? ""
         };
         if (input.Tags != null)
             request.Tags.AddRange(input.Tags);

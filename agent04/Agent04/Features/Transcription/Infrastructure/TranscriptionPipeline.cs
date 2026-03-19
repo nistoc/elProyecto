@@ -101,7 +101,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
     {
         if (!File.Exists(inputFilePath))
             throw new FileNotFoundException("Audio file not found", inputFilePath);
-        var root = Path.GetFullPath(workspaceRoot);
+        var workspaceNorm = Path.GetFullPath(workspaceRoot);
+        var artifactRoot = TranscriptionPaths.ResolveArtifactRoot(workspaceNorm, inputFilePath);
 
         void UpdateProgress(JobState state, int percent, string? phase, int? totalChunks = null, int? processedChunks = null, string? mdPath = null, string? jsonPath = null, string? error = null)
         {
@@ -140,25 +141,25 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         try
         {
-        var workingPath = await ConvertToWavIfNeededAsync(config, inputFilePath, root, cancellationToken);
+        var workingPath = await ConvertToWavIfNeededAsync(config, inputFilePath, artifactRoot, cancellationToken);
         var baseName = Path.GetFileNameWithoutExtension(Path.GetFileName(inputFilePath));
         var mdRel = ResolveOutputPattern(config.MdOutputPath, baseName, jobId);
         var jsonRel = ResolveOutputPattern(config.RawJsonOutputPath, baseName, jobId);
-        var mdPath = Path.Combine(root, mdRel);
-        var jsonPath = Path.Combine(root, jsonRel);
+        var mdPath = Path.Combine(artifactRoot, mdRel);
+        var jsonPath = Path.Combine(artifactRoot, jsonRel);
         EnsureDirectoryFor(mdPath);
         EnsureDirectoryFor(jsonPath);
 
         _output.InitializeMarkdown(mdPath);
         _output.ResetSpeakerMap();
 
-        var cacheDirFull = Path.Combine(root, config.CacheDir);
+        var cacheDirFull = Path.Combine(artifactRoot, config.CacheDir);
         EnsureDirectoryFor(cacheDirFull);
         var manifestPath = Path.Combine(cacheDirFull, baseName + ".manifest.json");
         var manifest = await _cache.LoadManifestAsync(manifestPath, cancellationToken);
 
         StepStart(jobId ?? "", "chunking", "phase");
-        var splitWorkdirFull = Path.Combine(root, config.SplitWorkdir);
+        var splitWorkdirFull = Path.Combine(artifactRoot, config.SplitWorkdir);
         var chunkInfos = await PrepareChunksAsync(config, workingPath, splitWorkdirFull, cancellationToken);
         StepComplete(jobId ?? "", "chunking", JobState.Completed);
         _logger?.LogInformation("Processing {Count} chunk(s)", chunkInfos.Count);
@@ -171,7 +172,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         var results = new List<(int Index, TranscriptionResult Result)>();
         var progress = new ChunkProgress(chunkInfos.Count, config.Get<string>("progress_time_format") ?? "HH:MM:SS.M");
         var totalChunks = chunkInfos.Count;
-        var cancellation = _cancellationFactory.Get(jobId ?? "_pipeline", root);
+        var cancellation = _cancellationFactory.Get(jobId ?? "_pipeline", artifactRoot);
 
         for (var i = 0; i < chunkInfos.Count; i++)
         {
@@ -196,7 +197,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 if (config.Get<bool?>("save_per_chunk_json") == true)
                 {
                     var perChunkRel = config.Get<string>("per_chunk_json_dir") ?? "chunks_json";
-                    var perChunkDirFull = Path.Combine(root, perChunkRel);
+                    var perChunkDirFull = Path.Combine(artifactRoot, perChunkRel);
                     _output.SavePerChunkJson(Path.GetFileName(chunkInfos[i].Path), result.RawResponse, perChunkDirFull);
                 }
 

@@ -2,6 +2,7 @@ using Grpc.Core;
 using TranslationImprover.Application;
 using TranslationImprover.Features.Refine.Application;
 using TranslationImprover.Features.Refine.Domain;
+using TranslationImprover.Features.Refine.Infrastructure;
 using TranslationImprover.Proto;
 
 namespace TranslationImprover.Services;
@@ -21,9 +22,19 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
         _workspaceRoot = workspaceRoot;
     }
 
-    public override async Task<SubmitRefineJobResponse> SubmitRefineJob(SubmitRefineJobRequest request, ServerCallContext context)
+    public override Task<SubmitRefineJobResponse> SubmitRefineJob(SubmitRefineJobRequest request, ServerCallContext context)
     {
         var root = _workspaceRoot.RootPath;
+        string artifactRoot;
+        try
+        {
+            artifactRoot = RefineWorkspacePaths.ResolveEffectiveArtifactRoot(root,
+                string.IsNullOrWhiteSpace(request.JobDirectoryRelative) ? null : request.JobDirectoryRelative.Trim());
+        }
+        catch (ArgumentException ex)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+        }
 
         if (string.IsNullOrEmpty(request.InputFilePath) && string.IsNullOrEmpty(request.InputContent))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Either input_file_path or input_content must be set"));
@@ -34,7 +45,7 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
             if (Path.IsPathRooted(raw))
                 throw new RpcException(new Status(StatusCode.InvalidArgument, "input_file_path must be relative to workspace_root; absolute paths are not allowed"));
             var rel = raw.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var full = Path.Combine(root, rel);
+            var full = Path.Combine(artifactRoot, rel);
             if (!File.Exists(full))
                 throw new RpcException(new Status(StatusCode.InvalidArgument, "Input file not found"));
         }
@@ -61,7 +72,8 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
             SaveIntermediate = request.SaveIntermediate,
             IntermediateDir = string.IsNullOrEmpty(request.IntermediateDir) ? null : request.IntermediateDir.Trim(),
             CallbackUrl = string.IsNullOrEmpty(request.CallbackUrl) ? null : request.CallbackUrl.Trim(),
-            Tags = request.Tags?.Count > 0 ? request.Tags.ToList() : null
+            Tags = request.Tags?.Count > 0 ? request.Tags.ToList() : null,
+            JobDirectoryRelative = string.IsNullOrWhiteSpace(request.JobDirectoryRelative) ? null : request.JobDirectoryRelative.Trim()
         };
 
         var tags = request.Tags?.Count > 0 ? request.Tags.ToList() : null;
@@ -69,8 +81,8 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
         var jobId = _store.Create(tags, callbackUrl);
         var cts = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
         _cancellation.Register(jobId, cts);
-        _ = _pipeline.RunAsync(jobId, req, root, cts.Token);
-        return new SubmitRefineJobResponse { JobId = jobId };
+        _ = _pipeline.RunAsync(jobId, req, root, artifactRoot, cts.Token);
+        return Task.FromResult(new SubmitRefineJobResponse { JobId = jobId });
     }
 
     public override Task<RefineStatusResponse> GetRefineStatus(GetRefineStatusRequest request, ServerCallContext context)

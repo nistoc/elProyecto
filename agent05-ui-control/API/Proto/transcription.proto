@@ -27,6 +27,13 @@ message GetJobStatusRequest {
   string job_id = 1;
 }
 
+message ChunkVirtualModelEntry {
+  int32 chunk_index = 1;
+  string started_at = 2;
+  string completed_at = 3;
+  string state = 4;
+}
+
 message JobStatusResponse {
   string job_id = 1;
   string state = 2;
@@ -41,6 +48,7 @@ message JobStatusResponse {
   string md_output_path = 9;
   string json_output_path = 10;
   string error_message = 11;
+  repeated ChunkVirtualModelEntry chunk_virtual_model = 14;
 }
 
 message QueryJobsRequest {
@@ -71,6 +79,7 @@ message JobStatusUpdate {
   string md_output_path = 6;
   string json_output_path = 7;
   string error_message = 8;
+  repeated ChunkVirtualModelEntry chunk_virtual_model = 11;
 }
 
 enum ChunkCommandAction {
@@ -85,6 +94,7 @@ message ChunkCommandRequest {
   string job_id = 1;
   ChunkCommandAction action = 2;
   int32 chunk_index = 3;
+  string job_directory_relative = 4;
 }
 
 message ChunkCommandResponse {

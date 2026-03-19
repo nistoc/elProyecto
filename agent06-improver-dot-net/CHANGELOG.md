@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Per-job artifact root (refine):** **`SubmitRefineJobRequest.job_directory_relative`** — один сегмент под **`workspace_root`**; ввод/вывод и промежуточные файлы разрешаются от **`effectiveArtifactRoot`** = `workspace_root/job_directory_relative` при непустом поле; **`FilePromptLoader`** по-прежнему от глобального **`workspace_root`**. Тесты: **`RefineWorkspacePathsTests`**.
 - Initial repository structure: solution TranslationImprover.slnx, project TranslationImprover.Instance (net9.0), API.Tests, nuget.config (nuget.org only).
 - Workspace root: Application/WorkspaceRoot.cs, validation in Program.cs (WorkspaceRoot or workspace_root from config), GET / and GET /health.
 - Ninject composition root (TranslationImproverModule), AddControllers, AddGrpc, AddOpenApi.

@@ -9,7 +9,8 @@ public interface ITranscriptionPipeline
 {
     /// <summary>
     /// Process one audio file. Returns (mdOutputPath, jsonOutputPath).
-    /// workspaceRoot: base path for resolving relative paths from config; required.
+    /// workspaceRoot: trust boundary; input must exist under this directory. Artifact paths from config (chunks, cache, transcript, etc.)
+    /// are resolved under the input file's directory (per-job isolation). Chunk cancel signals use the same directory via the registry / ChunkCommand.
     /// When jobId and statusStore are provided, updates progress for monitoring.
     /// When jobId and nodeModel are provided, records node hierarchy for virtual model.
     /// </summary>

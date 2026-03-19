@@ -25,6 +25,14 @@ export interface SplitJob {
   error?: string;
 }
 
+/** Agent04 virtual model row (ISO timestamps); survives page refresh. */
+export interface ChunkVirtualModelEntry {
+  index: number;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  state: string;
+}
+
 export interface ChunkState {
   total: number;
   active: number[];
@@ -33,6 +41,7 @@ export interface ChunkState {
   failed: number[];
   skipped?: number[];
   splitJobs?: Record<number, SplitJob>;
+  chunkVirtualModel?: ChunkVirtualModelEntry[] | null;
 }
 
 export interface JobResult {

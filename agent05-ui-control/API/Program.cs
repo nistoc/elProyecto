@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using XtractManager.Features.Jobs.Application;
 using XtractManager.Features.Jobs.Infrastructure;
+using XtractManager.Infrastructure;
 
 // gRPC over plain http (no TLS) requires HTTP/2 "prior knowledge" (h2c); enable it so GrpcChannel can connect to Agent04/Agent06.
 AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
@@ -26,6 +27,11 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+WorkspaceParityChecker.ValidateAtStartup(
+    app.Configuration,
+    app.Services.GetRequiredService<IHostEnvironment>(),
+    app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("XtractManager.Workspace"));
 
 if (app.Environment.IsDevelopment())
 {

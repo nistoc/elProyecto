@@ -31,7 +31,7 @@ internal sealed class StubJobWorkspace : IJobWorkspace
 
 internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient
 {
-    public List<(string Agent04JobId, TranscriptionChunkAction Action, int ChunkIndex)> ChunkCalls { get; } = new();
+    public List<(string Agent04JobId, TranscriptionChunkAction Action, int ChunkIndex, string? JobDirectoryRelative)> ChunkCalls { get; } = new();
 
     public ChunkCommandResult? NextChunkResult { get; set; } = new(true, "cancel_requested");
 
@@ -39,9 +39,10 @@ internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient
         string agent04JobId,
         TranscriptionChunkAction action,
         int chunkIndex,
+        string? jobDirectoryRelative = null,
         CancellationToken ct = default)
     {
-        ChunkCalls.Add((agent04JobId, action, chunkIndex));
+        ChunkCalls.Add((agent04JobId, action, chunkIndex, jobDirectoryRelative));
         return Task.FromResult(NextChunkResult ?? new ChunkCommandResult(false, "unset"));
     }
 
@@ -103,6 +104,7 @@ public class ChunkActionsControllerTests
         Assert.Equal("a04-xyz", grpc.ChunkCalls[0].Agent04JobId);
         Assert.Equal(TranscriptionChunkAction.Cancel, grpc.ChunkCalls[0].Action);
         Assert.Equal(2, grpc.ChunkCalls[0].ChunkIndex);
+        Assert.Equal(jobId, grpc.ChunkCalls[0].JobDirectoryRelative);
     }
 
     [Fact]

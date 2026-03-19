@@ -83,6 +83,16 @@ public class ChunkState
     public IReadOnlyList<int> Failed { get; set; } = Array.Empty<int>();
     public IReadOnlyList<int>? Skipped { get; set; }
     public IReadOnlyDictionary<int, SplitJob>? SplitJobs { get; set; }
+    /// <summary>Per-chunk virtual model from Agent04 (ISO8601 timestamps); survives page refresh.</summary>
+    public IReadOnlyList<ChunkVirtualModelEntry>? ChunkVirtualModel { get; set; }
+}
+
+public sealed class ChunkVirtualModelEntry
+{
+    public int Index { get; set; }
+    public string? StartedAt { get; set; }
+    public string? CompletedAt { get; set; }
+    public string State { get; set; } = "Pending";
 }
 
 public class SplitJob
