@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
 using XtractManager.Features.Jobs.Application;
 using XtractManager.Features.Jobs.Infrastructure;
@@ -14,14 +15,22 @@ public class JobsController : ControllerBase
     private readonly IJobWorkspace _workspace;
     private readonly IPipeline _pipeline;
     private readonly IBroadcaster _broadcaster;
+    private readonly ITranscriptionServiceClient _transcription;
     private readonly ILogger<JobsController> _logger;
 
-    public JobsController(IJobStore store, IJobWorkspace workspace, IPipeline pipeline, IBroadcaster broadcaster, ILogger<JobsController> logger)
+    public JobsController(
+        IJobStore store,
+        IJobWorkspace workspace,
+        IPipeline pipeline,
+        IBroadcaster broadcaster,
+        ITranscriptionServiceClient transcription,
+        ILogger<JobsController> logger)
     {
         _store = store;
         _workspace = workspace;
         _pipeline = pipeline;
         _broadcaster = broadcaster;
+        _transcription = transcription;
         _logger = logger;
     }
 
@@ -242,6 +251,58 @@ public class JobsController : ControllerBase
         };
     }
 
+    /// <summary>Forward chunk operator action to Agent04 (cancel implemented; skip/retranscribe/split may return not_implemented).</summary>
+    [HttpPost("{id}/chunk-actions")]
+    public async Task<ActionResult<ChunkActionResponse>> PostChunkAction(
+        string id,
+        [FromBody] ChunkActionRequest? body,
+        CancellationToken ct = default)
+    {
+        if (body == null || string.IsNullOrWhiteSpace(body.Action))
+            return BadRequest(new { error = "action is required (cancel | skip | retranscribe | split)" });
+        if (body.ChunkIndex < 0)
+            return BadRequest(new { error = "chunkIndex must be >= 0" });
+
+        var job = await _store.GetAsync(id, ct);
+        if (job == null)
+            return NotFound();
+        if (job.Phase != "transcriber" || job.Status != "running")
+            return Conflict(new { error = "chunk actions are only allowed while phase=transcriber and status=running" });
+        if (string.IsNullOrWhiteSpace(job.Agent04JobId))
+            return Conflict(new { error = "Agent04 job id not available yet; wait for transcription to start" });
+
+        var action = ParseChunkAction(body.Action.Trim());
+        if (action == null)
+            return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "skip", "retranscribe", "split" } });
+
+        try
+        {
+            var result = await _transcription.ChunkCommandAsync(job.Agent04JobId!, action.Value, body.ChunkIndex, ct);
+            return Ok(new ChunkActionResponse(result.Ok, result.Message));
+        }
+        catch (RpcException ex)
+        {
+            _logger.LogWarning(ex, "ChunkCommand gRPC failed for job {JobId}", id);
+            return ex.StatusCode switch
+            {
+                Grpc.Core.StatusCode.InvalidArgument => BadRequest(new { error = ex.Status.Detail }),
+                Grpc.Core.StatusCode.NotFound => NotFound(new { error = ex.Status.Detail }),
+                Grpc.Core.StatusCode.FailedPrecondition => Conflict(new { error = ex.Status.Detail }),
+                _ => StatusCode(502, new { error = ex.Status.Detail })
+            };
+        }
+    }
+
+    private static TranscriptionChunkAction? ParseChunkAction(string a) =>
+        a.ToLowerInvariant() switch
+        {
+            "cancel" => TranscriptionChunkAction.Cancel,
+            "skip" => TranscriptionChunkAction.Skip,
+            "retranscribe" => TranscriptionChunkAction.Retranscribe,
+            "split" => TranscriptionChunkAction.Split,
+            _ => null
+        };
+
     [HttpGet("{id}")]
     public async Task<ActionResult<JobSnapshot>> Get(string id, CancellationToken ct = default)
     {
@@ -308,3 +369,7 @@ public class JobsController : ControllerBase
 }
 
 public record CreateJobResponse(string JobId);
+
+public record ChunkActionRequest(string Action, int ChunkIndex);
+
+public record ChunkActionResponse(bool Ok, string Message);

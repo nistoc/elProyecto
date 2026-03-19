@@ -12,4 +12,7 @@ public sealed class StubTranscriptionServiceClient : Application.ITranscriptionS
         await Task.CompletedTask;
         yield break;
     }
+
+    public Task<Application.ChunkCommandResult> ChunkCommandAsync(string agent04JobId, Application.TranscriptionChunkAction action, int chunkIndex, CancellationToken ct = default) =>
+        Task.FromResult(new Application.ChunkCommandResult(false, "stub_transcription_client"));
 }

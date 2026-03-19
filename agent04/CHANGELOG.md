@@ -2,6 +2,10 @@
 
 All notable changes to the Agent04 project are documented here.
 
+## [Unreleased]
+
+- **gRPC `ChunkCommand`:** отмена обработки чанка по индексу (`ChunkCommandAction.Cancel`) через фабрику **`ICancellationManagerFactory`** (каталог сигналов на задание). Действия **Skip / Retranscribe / Split** пока отвечают `ok=false`, `not_implemented`.
+
 ## [0.1.0] — 2025-03-10
 
 ### Added

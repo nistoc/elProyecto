@@ -9,6 +9,7 @@ service TranscriptionService {
   rpc GetJobStatus(GetJobStatusRequest) returns (JobStatusResponse);
   rpc StreamJobStatus(StreamJobStatusRequest) returns (stream JobStatusUpdate);
   rpc QueryJobs(QueryJobsRequest) returns (QueryJobsResponse);
+  rpc ChunkCommand(ChunkCommandRequest) returns (ChunkCommandResponse);
 }
 
 message SubmitJobRequest {
@@ -70,4 +71,23 @@ message JobStatusUpdate {
   string md_output_path = 6;
   string json_output_path = 7;
   string error_message = 8;
+}
+
+enum ChunkCommandAction {
+  CHUNK_COMMAND_ACTION_UNSPECIFIED = 0;
+  CHUNK_COMMAND_ACTION_CANCEL = 1;
+  CHUNK_COMMAND_ACTION_SKIP = 2;
+  CHUNK_COMMAND_ACTION_RETRANSCRIBE = 3;
+  CHUNK_COMMAND_ACTION_SPLIT = 4;
+}
+
+message ChunkCommandRequest {
+  string job_id = 1;
+  ChunkCommandAction action = 2;
+  int32 chunk_index = 3;
+}
+
+message ChunkCommandResponse {
+  bool ok = 1;
+  string message = 2;
 }

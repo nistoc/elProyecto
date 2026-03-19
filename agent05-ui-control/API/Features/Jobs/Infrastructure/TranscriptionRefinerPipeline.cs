@@ -77,19 +77,43 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             return;
         }
 
+        await UpdateAndBroadcastAsync(jobId, s => { s.Agent04JobId = transcriptionJobId; });
+        Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
+
         await foreach (var update in _transcription.StreamJobStatusAsync(transcriptionJobId, ct))
         {
             _logger.LogDebug("Job {JobId}: Agent04 status update State={State}, MdOutputPath={Md}, TotalChunks={Total}, Processed={Processed}",
                 jobId, update.State, update.MdOutputPath ?? "null", update.TotalChunks, update.ProcessedChunks);
             await UpdateAndBroadcastAsync(jobId, s =>
             {
+                s.Agent04JobId = transcriptionJobId;
                 s.Status = MapState(update.State);
+                s.Chunks ??= new ChunkState();
+                if (update.TotalChunks > 0)
+                    s.Chunks.Total = update.TotalChunks;
+                var tc = update.TotalChunks;
+                var pc = update.ProcessedChunks;
+                if (tc > 0 && pc >= 0)
+                {
+                    var completed = new List<int>();
+                    var n = Math.Min(pc, tc);
+                    for (var i = 0; i < n; i++)
+                        completed.Add(i);
+                    s.Chunks.Completed = completed;
+                    s.Chunks.Active = update.State == "Running" && pc < tc
+                        ? new List<int> { pc }
+                        : new List<int>();
+                }
                 if (update.State == "Completed")
                 { s.Phase = "awaiting_refiner"; s.MdOutputPath = update.MdOutputPath; }
                 else if (update.State == "Failed" || update.State == "Cancelled")
                     s.Phase = "idle";
             });
-            Broadcast(jobId, "status", JsonSerializer.Serialize(new { status = MapState(update.State), phase = update.State == "Completed" ? "awaiting_refiner" : snap.Phase, progress_percent = update.ProgressPercent }));
+            Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
+            var evtPhase = update.State == "Completed"
+                ? "awaiting_refiner"
+                : (update.State is "Failed" or "Cancelled" ? "idle" : "transcriber");
+            Broadcast(jobId, "status", JsonSerializer.Serialize(new { status = MapState(update.State), phase = evtPhase, progress_percent = update.ProgressPercent }));
             if (update.State is "Completed" or "Failed" or "Cancelled")
                 break;
         }

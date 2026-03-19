@@ -59,7 +59,7 @@ npm run build
 
 ### Вкладки Transcriber / Refiner / Result
 
-- **Transcriber** — статус/фаза, логи (SSE), полный список файлов проекта (`jobDir`, обновление списка).
+- **Transcriber** — статус/фаза, логи (SSE), **панель управления чанками** (запросы к Agent04: отмена чанка и пр.; опционально фильтр списка файлов по индексу чанка), полный список файлов проекта (`jobDir`, обновление списка).
 - **Refiner** — те же **логи** (тот же буфер, что и у задания; отдельный поток только под рефайнер или фильтр по фазе **не реализованы**), блок как на **Result**: метаданные (Job ID, файл, статус, фаза, путь к папке), быстрые ссылки на ключевые файлы, список транскриптов с редактором. Подсказки по фазе (`awaiting_refiner` / `refiner` / `completed`) над логами.
 - **Result** — **логи** (тот же буфер SSE, что на Transcriber/Refiner), затем **ResultSection**: метаданные, быстрые ссылки в браузере на `transcript.md`, `transcript_fixed.md`, нумерованные **`transcript_fixed_*.md`** (например `transcript_fixed_1.md`), `response.json`, список транскриптов с редактором.
 
@@ -94,7 +94,8 @@ npm run build
 |--------|-------------------------|----------|
 | GET    | /health                 | Проверка состояния (JSON: status, service) |
 | GET    | /api/jobs               | Список заданий. Query: semanticKey, status, from, to, limit, offset. Ответ: `{ "jobs": JobListItem[] }`. |
-| GET    | /api/jobs/{id}          | Снепшот задания (JobSnapshot). 404 если нет. Поле `files` в JSON больше не заполняется — список файлов: **GET /api/jobs/{id}/files**. |
+| GET    | /api/jobs/{id}          | Снепшот задания (JobSnapshot). 404 если нет. Поле `files` в JSON больше не заполняется — список файлов: **GET /api/jobs/{id}/files**. Во время транскрипции могут быть **`agent04JobId`**, **`chunks`** (`total`, `completed`, `active`, …). |
+| POST   | /api/jobs/{id}/chunk-actions | Операторские действия по чанку → gRPC Agent04 `ChunkCommand`. Тело JSON: **`action`**: `cancel` \| `skip` \| `retranscribe` \| `split`, **`chunkIndex`**: неотрицательный индекс (0-based). Допустимо только при **`phase`** = `transcriber` и **`status`** = `running`. Ответ 200: `{ "ok": bool, "message": string }`. Ошибки gRPC: 400 / 404 / 409 / 502. |
 | POST   | /api/jobs               | Создать задание. Form: file (обязательно), tags (опционально, строка через запятую). Ответ: 202, `{ "jobId": string }`. Пайплайн запускается в фоне (agent04 → agent06). Лимит тела запроса 512 MB. |
 | DELETE | /api/jobs/{id}          | Удалить задание. 204 при успехе, 404 если нет. |
 | GET    | /api/jobs/{id}/stream   | SSE: первый ответ — snapshot (type: "snapshot", payload: JobSnapshot), далее события type: "status" | "done". При "done" стрим завершается. |

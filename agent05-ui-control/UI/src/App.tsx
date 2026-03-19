@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { I18nProvider, useI18n } from './contexts/I18nContext';
 import { useJob, type StepId } from './hooks/useJob';
 import { StepCard } from './components/StepCard';
@@ -7,6 +7,7 @@ import { JobsList } from './components/JobsList';
 import { LogsSection } from './components/LogsSection';
 import { ResultSection } from './components/ResultSection';
 import { ProjectFilesPanel } from './components/ProjectFilesPanel';
+import { ChunkControlPanel } from './components/ChunkControlPanel';
 
 function AppContent() {
   const { t, locale, setLocale } = useI18n();
@@ -33,6 +34,19 @@ function AppContent() {
     toggleLogsPause,
     clearLogsForStep,
   } = useJob(initialJobId);
+
+  const [chunkFileFilter, setChunkFileFilter] = useState<number | null>(null);
+  const onChunkFileFilterChange = useCallback((v: number | null) => {
+    setChunkFileFilter(v);
+  }, []);
+
+  useEffect(() => {
+    if (activeStep !== 'transcriber') setChunkFileFilter(null);
+  }, [activeStep]);
+
+  useEffect(() => {
+    setChunkFileFilter(null);
+  }, [jobId]);
 
   const steps: { id: StepId; title: string }[] = [
     { id: 'upload', title: t('upload') },
@@ -116,10 +130,22 @@ function AppContent() {
                     />
                     {jobId && (
                       <>
+                        <ChunkControlPanel
+                          jobId={jobId}
+                          job={job}
+                          t={t}
+                          fileFilterChunkIndex={chunkFileFilter}
+                          onFileFilterChunkChange={onChunkFileFilterChange}
+                        />
                         <h4 className="step-panel__files-heading">
                           {t('projectFiles')}
                         </h4>
-                        <ProjectFilesPanel jobId={jobId} mode="full" t={t} />
+                        <ProjectFilesPanel
+                          jobId={jobId}
+                          mode="full"
+                          t={t}
+                          chunkIndexFilter={chunkFileFilter}
+                        />
                       </>
                     )}
                   </>

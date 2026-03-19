@@ -69,7 +69,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
     private readonly ITranscriptionClient _client;
     private readonly ITranscriptionOutputWriter _output;
     private readonly ITranscriptionMerger _merger;
-    private readonly ICancellationManager _cancellation;
+    private readonly ICancellationManagerFactory _cancellationFactory;
     private readonly ILogger<TranscriptionPipeline>? _logger;
 
     public TranscriptionPipeline(
@@ -78,7 +78,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         ITranscriptionClient client,
         ITranscriptionOutputWriter output,
         ITranscriptionMerger merger,
-        ICancellationManager cancellation,
+        ICancellationManagerFactory cancellationFactory,
         ILogger<TranscriptionPipeline>? logger = null)
     {
         _audioUtils = audioUtils;
@@ -86,7 +86,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         _client = client;
         _output = output;
         _merger = merger;
-        _cancellation = cancellation;
+        _cancellationFactory = cancellationFactory;
         _logger = logger;
     }
 
@@ -171,10 +171,11 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         var results = new List<(int Index, TranscriptionResult Result)>();
         var progress = new ChunkProgress(chunkInfos.Count, config.Get<string>("progress_time_format") ?? "HH:MM:SS.M");
         var totalChunks = chunkInfos.Count;
+        var cancellation = _cancellationFactory.Get(jobId ?? "_pipeline", root);
 
         for (var i = 0; i < chunkInfos.Count; i++)
         {
-            if (_cancellation.IsCancelled(i))
+            if (cancellation.IsCancelled(i))
             {
                 progress.MarkCancelled(i);
                 continue;

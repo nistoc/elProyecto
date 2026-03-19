@@ -51,12 +51,7 @@ public static class Agent04ServiceRegistration
         services.AddSingleton<INodeModel>(sp => sp.GetRequiredService<InMemoryNodeStore>());
         services.AddSingleton<INodeQuery>(sp => sp.GetRequiredService<InMemoryNodeStore>());
 
-        services.AddSingleton<ICancellationManager>(sp =>
-        {
-            var config = sp.GetRequiredService<IConfiguration>();
-            var cancelDir = config["cancel_dir"] ?? "cancel_signals";
-            return new CancellationManager(cancelDir);
-        });
+        services.AddSingleton<ICancellationManagerFactory, PerJobCancellationManagerFactory>();
 
         services.AddSingleton<ITranscriptionOutputWriter>(sp =>
         {

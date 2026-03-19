@@ -55,4 +55,19 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
             );
         }
     }
+
+    public async Task<Application.ChunkCommandResult> ChunkCommandAsync(
+        string agent04JobId,
+        Application.TranscriptionChunkAction action,
+        int chunkIndex,
+        CancellationToken ct = default)
+    {
+        using var channel = GrpcChannel.ForAddress(_address);
+        var client = new TranscriptionService.TranscriptionServiceClient(channel);
+        var protoAction = (ChunkCommandAction)(int)action;
+        var response = await client.ChunkCommandAsync(
+            new ChunkCommandRequest { JobId = agent04JobId, Action = protoAction, ChunkIndex = chunkIndex },
+            cancellationToken: ct);
+        return new Application.ChunkCommandResult(response.Ok, response.Message ?? "");
+    }
 }

@@ -130,6 +130,49 @@ export async function deleteJob(id: string): Promise<void> {
   await del(`/api/jobs/${id}`);
 }
 
+export type ChunkActionName =
+  | 'cancel'
+  | 'skip'
+  | 'retranscribe'
+  | 'split';
+
+export interface ChunkActionResponseBody {
+  ok: boolean;
+  message: string;
+}
+
+/** POST /api/jobs/:id/chunk-actions — forwards to Agent04 (cancel supported). */
+export async function postJobChunkAction(
+  jobId: string,
+  action: ChunkActionName,
+  chunkIndex: number
+): Promise<ChunkActionResponseBody> {
+  const r = await fetch(
+    `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/chunk-actions`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, chunkIndex }),
+    }
+  );
+  const text = await r.text();
+  if (!r.ok) {
+    let msg = text || `HTTP ${r.status}`;
+    try {
+      const j = JSON.parse(text) as { error?: string };
+      if (j?.error) msg = j.error;
+    } catch {
+      /* keep msg */
+    }
+    throw new Error(msg);
+  }
+  try {
+    return JSON.parse(text) as ChunkActionResponseBody;
+  } catch {
+    throw new Error('Invalid chunk-action response');
+  }
+}
+
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY_MS = 2000;
 

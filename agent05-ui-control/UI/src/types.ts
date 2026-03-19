@@ -57,6 +57,8 @@ export interface JobSnapshot {
   mdOutputPath?: string | null;
   /** Full path to the job directory (where files are stored). For debugging and display. */
   jobDirectoryPath?: string | null;
+  /** Agent04 gRPC job id (set while transcribing). Optional in API JSON. */
+  agent04JobId?: string | null;
   /** @deprecated Not populated by API. Use GET /api/jobs/:id/files (JobProjectFiles). */
   files?: JobFileInfo[] | null;
 }

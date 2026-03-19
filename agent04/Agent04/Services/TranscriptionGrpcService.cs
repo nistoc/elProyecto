@@ -12,15 +12,24 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
     private readonly ITranscriptionPipeline _pipeline;
     private readonly IJobStatusStore _store;
     private readonly WorkspaceRoot _workspaceRoot;
+    private readonly ICancellationManagerFactory _cancellationFactory;
     private readonly INodeModel? _nodeModel;
     private readonly IHttpClientFactory? _httpClientFactory;
     private readonly IOutboundJobNotifier? _outboundNotifier;
 
-    public TranscriptionGrpcService(ITranscriptionPipeline pipeline, IJobStatusStore store, WorkspaceRoot workspaceRoot, INodeModel? nodeModel = null, IHttpClientFactory? httpClientFactory = null, IOutboundJobNotifier? outboundNotifier = null)
+    public TranscriptionGrpcService(
+        ITranscriptionPipeline pipeline,
+        IJobStatusStore store,
+        WorkspaceRoot workspaceRoot,
+        ICancellationManagerFactory cancellationFactory,
+        INodeModel? nodeModel = null,
+        IHttpClientFactory? httpClientFactory = null,
+        IOutboundJobNotifier? outboundNotifier = null)
     {
         _pipeline = pipeline;
         _store = store;
         _workspaceRoot = workspaceRoot;
+        _cancellationFactory = cancellationFactory;
         _nodeModel = nodeModel;
         _httpClientFactory = httpClientFactory;
         _outboundNotifier = outboundNotifier;
@@ -126,6 +135,35 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                     return;
             }
             await Task.Delay(500, context.CancellationToken);
+        }
+    }
+
+    public override Task<ChunkCommandResponse> ChunkCommand(ChunkCommandRequest request, ServerCallContext context)
+    {
+        if (string.IsNullOrWhiteSpace(request.JobId))
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "job_id is required"));
+
+        var job = _store.Get(request.JobId);
+        if (job == null)
+            throw new RpcException(new Status(StatusCode.NotFound, "Job not found"));
+
+        if (job.State != JobState.Running)
+            throw new RpcException(new Status(StatusCode.FailedPrecondition, $"Job is not running (state={job.State})"));
+
+        switch (request.Action)
+        {
+            case ChunkCommandAction.Cancel:
+                if (request.ChunkIndex < 0)
+                    throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
+                var cm = _cancellationFactory.Get(request.JobId, _workspaceRoot.RootPath);
+                cm.MarkCancelled(request.ChunkIndex);
+                return Task.FromResult(new ChunkCommandResponse { Ok = true, Message = "cancel_requested" });
+            case ChunkCommandAction.Skip:
+            case ChunkCommandAction.Retranscribe:
+            case ChunkCommandAction.Split:
+                return Task.FromResult(new ChunkCommandResponse { Ok = false, Message = "not_implemented" });
+            default:
+                return Task.FromResult(new ChunkCommandResponse { Ok = false, Message = "unknown_action" });
         }
     }
 
