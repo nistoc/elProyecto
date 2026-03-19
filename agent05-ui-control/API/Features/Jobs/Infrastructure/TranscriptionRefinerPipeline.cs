@@ -49,9 +49,15 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             workspaceRoot = jobsPath;
         var ext = Path.GetExtension(snap.OriginalFilename ?? "");
         if (string.IsNullOrEmpty(ext)) ext = ".bin";
-        var audioFileName = "audio" + ext;
         var jobDir = _workspace.GetJobDirectoryPath(jobId);
+        var audioFileName = JobWorkspace.SanitizeUploadedFileName(snap.OriginalFilename);
         var audioFullPath = Path.Combine(jobDir, audioFileName);
+        if (!File.Exists(audioFullPath))
+        {
+            var legacyPath = Path.Combine(jobDir, "audio" + ext);
+            if (File.Exists(legacyPath))
+                audioFullPath = legacyPath;
+        }
         if (!File.Exists(audioFullPath))
         {
             _logger.LogWarning("Job {JobId}: audio file not found at {Path}", jobId, audioFullPath);

@@ -40,8 +40,8 @@ public class JobCreateTests
         var jobId = "test-job-1";
         await workspace.EnsureJobDirectoryAsync(jobId);
         var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("fake audio content"));
-        var savedName = await workspace.SaveUploadedFileAsync(jobId, ms, "audio.m4a");
-        Assert.Equal("audio.m4a", savedName);
+        var savedName = await workspace.SaveUploadedFileAsync(jobId, ms, "My Interview.m4a");
+        Assert.Equal("My Interview.m4a", savedName);
         var path = Path.Combine(workspace.GetJobDirectoryPath(jobId), savedName);
         Assert.True(File.Exists(path));
         try { Directory.Delete(temp, true); } catch { }
