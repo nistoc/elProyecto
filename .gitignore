@@ -211,10 +211,9 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-
-.runtime/
-.chunks/
-.chunks_json/
+runtime
+сhunks
+chunks_json
 
 # .NET build artifacts
 *.bak
