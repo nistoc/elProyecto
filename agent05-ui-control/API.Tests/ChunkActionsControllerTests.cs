@@ -31,7 +31,7 @@ internal sealed class StubJobWorkspace : IJobWorkspace
 
 internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient
 {
-    public List<(string Agent04JobId, TranscriptionChunkAction Action, int ChunkIndex, string? JobDirectoryRelative)> ChunkCalls { get; } = new();
+    public List<(string Agent04JobId, TranscriptionChunkAction Action, int ChunkIndex, string? JobDirectoryRelative, int SplitParts)> ChunkCalls { get; } = new();
 
     public ChunkCommandResult? NextChunkResult { get; set; } = new(true, "cancel_requested");
 
@@ -40,9 +40,10 @@ internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient
         TranscriptionChunkAction action,
         int chunkIndex,
         string? jobDirectoryRelative = null,
+        int splitParts = 0,
         CancellationToken ct = default)
     {
-        ChunkCalls.Add((agent04JobId, action, chunkIndex, jobDirectoryRelative));
+        ChunkCalls.Add((agent04JobId, action, chunkIndex, jobDirectoryRelative, splitParts));
         return Task.FromResult(NextChunkResult ?? new ChunkCommandResult(false, "unset"));
     }
 
@@ -94,7 +95,7 @@ public class ChunkActionsControllerTests
 
         var result = await controller.PostChunkAction(
             jobId,
-            new ChunkActionRequest("cancel", 2),
+            new ChunkActionRequest { Action = "cancel", ChunkIndex = 2 },
             CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -129,7 +130,7 @@ public class ChunkActionsControllerTests
 
         var result = await controller.PostChunkAction(
             id,
-            new ChunkActionRequest("cancel", 0),
+            new ChunkActionRequest { Action = "cancel", ChunkIndex = 0 },
             CancellationToken.None);
 
         Assert.IsType<ConflictObjectResult>(result.Result);
@@ -158,7 +159,7 @@ public class ChunkActionsControllerTests
 
         var result = await controller.PostChunkAction(
             id,
-            new ChunkActionRequest("cancel", 0),
+            new ChunkActionRequest { Action = "cancel", ChunkIndex = 0 },
             CancellationToken.None);
 
         Assert.IsType<ConflictObjectResult>(result.Result);
@@ -184,7 +185,7 @@ public class ChunkActionsControllerTests
 
         var result = await controller.PostChunkAction(
             jobId,
-            new ChunkActionRequest("skip", 1),
+            new ChunkActionRequest { Action = "skip", ChunkIndex = 1 },
             CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -211,11 +212,62 @@ public class ChunkActionsControllerTests
 
         var result = await controller.PostChunkAction(
             jobId,
-            new ChunkActionRequest("nope", 0),
+            new ChunkActionRequest { Action = "nope", ChunkIndex = 0 },
             CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(result.Result);
         Assert.Empty(grpc.ChunkCalls);
+    }
+
+    [Fact]
+    public async Task PostChunkAction_split_without_split_parts_bad_request()
+    {
+        var store = new InMemoryJobStore();
+        var jobId = await CreateRunningTranscriberJobAsync(store);
+        var grpc = new RecordingTranscriptionClient();
+        var controller = new JobsController(
+            store,
+            new StubJobWorkspace(),
+            MockPipeline.Instance,
+            MockBroadcaster.Instance,
+            grpc,
+            NullLogger<JobsController>.Instance);
+
+        var result = await controller.PostChunkAction(
+            jobId,
+            new ChunkActionRequest { Action = "split", ChunkIndex = 0 },
+            CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Empty(grpc.ChunkCalls);
+    }
+
+    [Fact]
+    public async Task PostChunkAction_split_forwards_split_parts_to_client()
+    {
+        var store = new InMemoryJobStore();
+        var jobId = await CreateRunningTranscriberJobAsync(store);
+        var grpc = new RecordingTranscriptionClient { NextChunkResult = new ChunkCommandResult(true, "split_ok") };
+        var controller = new JobsController(
+            store,
+            new StubJobWorkspace(),
+            MockPipeline.Instance,
+            MockBroadcaster.Instance,
+            grpc,
+            NullLogger<JobsController>.Instance);
+
+        var result = await controller.PostChunkAction(
+            jobId,
+            new ChunkActionRequest { Action = "split", ChunkIndex = 1, SplitParts = 3 },
+            CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var body = Assert.IsType<ChunkActionResponse>(ok.Value);
+        Assert.True(body.Ok);
+        Assert.Single(grpc.ChunkCalls);
+        Assert.Equal(TranscriptionChunkAction.Split, grpc.ChunkCalls[0].Action);
+        Assert.Equal(3, grpc.ChunkCalls[0].SplitParts);
+        Assert.Equal(1, grpc.ChunkCalls[0].ChunkIndex);
     }
 
     private static class MockPipeline

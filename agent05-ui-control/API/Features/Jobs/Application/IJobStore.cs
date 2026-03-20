@@ -44,6 +44,9 @@ public class JobSnapshot
     /// <summary>Agent04 transcription job id (gRPC SubmitJob). Used for chunk commands.</summary>
     public string? Agent04JobId { get; set; }
 
+    /// <summary>Last Agent04 error text from gRPC status stream (Failed/Cancelled) or local submit failure.</summary>
+    public string? TranscriptionError { get; set; }
+
     /// <summary>Path to transcript.md from agent04 (relative to agent04 workspace).</summary>
     public string? MdOutputPath { get; set; }
     /// <summary>Full path to the job directory (workspace folder for this job). Used for debugging and UI to show where files are looked for.</summary>
@@ -93,6 +96,8 @@ public sealed class ChunkVirtualModelEntry
     public string? StartedAt { get; set; }
     public string? CompletedAt { get; set; }
     public string State { get; set; } = "Pending";
+    /// <summary>Agent04 step error (optional); from proto chunk_virtual_model.error_message.</summary>
+    public string? ErrorMessage { get; set; }
 }
 
 public class SplitJob

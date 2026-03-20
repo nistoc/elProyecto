@@ -158,8 +158,11 @@ export function useJob(initialJobId: string | null): {
         }
         if (ev.type === 'done') {
           unsubscribeRef.current?.();
-          fetchJob(jobId).then((s) => !cancelled && s && setJob(s));
-          setActiveStepState('result');
+          fetchJob(jobId).then((s) => {
+            if (cancelled || !s) return;
+            setJob(s);
+            if (s.status !== 'failed') setActiveStepState('result');
+          });
         }
       },
       { signal: ac.signal }

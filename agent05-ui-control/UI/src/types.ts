@@ -31,6 +31,7 @@ export interface ChunkVirtualModelEntry {
   startedAt?: string | null;
   completedAt?: string | null;
   state: string;
+  errorMessage?: string | null;
 }
 
 export interface ChunkState {
@@ -68,6 +69,8 @@ export interface JobSnapshot {
   jobDirectoryPath?: string | null;
   /** Agent04 gRPC job id (set while transcribing). Optional in API JSON. */
   agent04JobId?: string | null;
+  /** Last Agent04 / transcription failure message (from gRPC or submit). */
+  transcriptionError?: string | null;
   /** @deprecated Not populated by API. Use GET /api/jobs/:id/files (JobProjectFiles). */
   files?: JobFileInfo[] | null;
 }

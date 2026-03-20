@@ -36,6 +36,7 @@ message ChunkVirtualModelEntry {
   string started_at = 2;   // ISO8601, empty if not started
   string completed_at = 3; // ISO8601, empty if not completed
   string state = 4;        // Pending, Running, Completed, Failed, Cancelled
+  string error_message = 5; // optional; set when state is Failed (truncated server-side if needed)
 }
 
 message JobStatusResponse {
@@ -100,6 +101,8 @@ message ChunkCommandRequest {
   int32 chunk_index = 3;
   /// Optional. Single path segment under workspace_root (Xtract job folder name). Required after Agent04 restart if in-process registry is cold.
   string job_directory_relative = 4;
+  /// For SPLIT: number of sub-chunks (>= 2). Ignored if 0 or unset.
+  int32 split_parts = 5;
 }
 
 message ChunkCommandResponse {

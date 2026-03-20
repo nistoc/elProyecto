@@ -207,6 +207,9 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                     "Transcription chunk batch: count={Count} parallel={Parallel} firstIndex={First}",
                     indices.Count, parallel, indices[0]);
 
+            if (batchStart == 0 && jobId != null && statusStore != null)
+                UpdateProgress(JobState.Running, 8, "Transcribing", totalChunks, 0, null, null, null);
+
             async Task<(int Idx, TranscriptionResult? Result, Exception? Error)> RunChunkAsync(int idx)
             {
                 lock (stepLock)
@@ -263,6 +266,12 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             var failure = Array.Find(outcomes, o => o.Error != null && o.Error is not OperationCanceledException);
             if (failure.Error != null)
             {
+                _logger?.LogWarning(
+                    "Batch transcription failed: fatalChunkIndex0={Idx0} fatalChunkDisplay1={Idx1} errorType={ErrType} message={ErrMsg}",
+                    failure.Idx,
+                    failure.Idx + 1,
+                    failure.Error.GetType().Name,
+                    failure.Error.Message);
                 foreach (var o in outcomes.Where(x => x.Error == null))
                 {
                     lock (stepLock)
@@ -335,7 +344,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         {
             if (jobId != null && nodeModel != null)
                 CompleteJobFailed(nodeModel, jobId, ex.Message);
-            UpdateProgress(JobState.Failed, 0, null, null, null, null, null, ex.Message);
+            UpdateProgress(JobState.Failed, 0, "Failed", null, null, null, null, ex.Message);
             throw;
         }
     }

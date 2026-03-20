@@ -59,6 +59,13 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
                         var segments = ParseSegments(dict);
                         return new TranscriptionClientResult { RawResponse = dict, Segments = segments };
                     }
+                    catch (Exception ex) when (cancellationToken.IsCancellationRequested && ex is OperationCanceledException)
+                    {
+                        _logger?.LogInformation(ex,
+                            "Transcription cancelled (job/chunk token) on model {Model}; skipping remaining models and variations",
+                            model);
+                        throw;
+                    }
                     catch (Exception ex)
                     {
                         lastErr = ex;
@@ -73,7 +80,9 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
                                 continue;
                             }
                         }
-                        _logger?.LogWarning(ex, "Non-retryable error on model {Model}", model);
+
+                        if (!ShouldSuppressNonRetryableWarning(ex))
+                            _logger?.LogWarning(ex, "Non-retryable error on model {Model}", model);
                         break;
                     }
                 }
@@ -117,10 +126,12 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
 
         var sw = Stopwatch.StartNew();
         var inFlight = Interlocked.Increment(ref _transcriptionHttpInFlight);
+        var httpAttemptId = Guid.NewGuid();
         try
         {
             _logger?.LogInformation(
-                "OpenAI transcription HTTP start AgentJobId={JobId} ChunkIndex={Chunk} Model={Model} ParallelWorkersConfigured={Workers} InFlight={InFlight} File={File} Bytes={Bytes}",
+                "OpenAI transcription HTTP start HttpAttemptId={AttemptId} AgentJobId={JobId} ChunkIndex={Chunk} Model={Model} ParallelWorkersConfigured={Workers} InFlight={InFlight} File={File} Bytes={Bytes}",
+                httpAttemptId,
                 logContext.AgentJobId ?? "(none)",
                 logContext.ChunkIndex,
                 model,
@@ -140,7 +151,8 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
                     ? TruncateForLog(body, 400)
                     : $"{reason} | {TruncateForLog(body, 360)}";
                 _logger?.LogWarning(
-                    "OpenAI transcription HTTP failed AgentJobId={JobId} ChunkIndex={Chunk} Status={Status} Category={Category} DurationMs={Ms} InFlight={Flight} Detail={Detail}",
+                    "OpenAI transcription HTTP failed HttpAttemptId={AttemptId} AgentJobId={JobId} ChunkIndex={Chunk} Status={Status} Category={Category} DurationMs={Ms} InFlight={Flight} Detail={Detail}",
+                    httpAttemptId,
                     logContext.AgentJobId ?? "(none)",
                     logContext.ChunkIndex,
                     (int)response.StatusCode,
@@ -152,7 +164,8 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
             }
 
             _logger?.LogInformation(
-                "OpenAI transcription HTTP OK AgentJobId={JobId} ChunkIndex={Chunk} Status={Status} DurationMs={Ms} InFlightAfter={Flight}",
+                "OpenAI transcription HTTP OK HttpAttemptId={AttemptId} AgentJobId={JobId} ChunkIndex={Chunk} Status={Status} DurationMs={Ms} InFlightAfter={Flight}",
+                httpAttemptId,
                 logContext.AgentJobId ?? "(none)",
                 logContext.ChunkIndex,
                 (int)response.StatusCode,
@@ -165,13 +178,15 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
             sw.Stop();
             if (cancellationToken.IsCancellationRequested)
                 _logger?.LogInformation(
-                    "OpenAI transcription HTTP cancelled (token) AgentJobId={JobId} ChunkIndex={Chunk} DurationMs={Ms}",
+                    "OpenAI transcription HTTP cancelled (token) HttpAttemptId={AttemptId} AgentJobId={JobId} ChunkIndex={Chunk} DurationMs={Ms}",
+                    httpAttemptId,
                     logContext.AgentJobId ?? "(none)",
                     logContext.ChunkIndex,
                     sw.ElapsedMilliseconds);
             else
                 _logger?.LogWarning(
-                    "OpenAI transcription HTTP timeout AgentJobId={JobId} ChunkIndex={Chunk} DurationMs={Ms} Category=timeout",
+                    "OpenAI transcription HTTP timeout HttpAttemptId={AttemptId} AgentJobId={JobId} ChunkIndex={Chunk} DurationMs={Ms} Category=timeout Reason=http_client_timeout",
+                    httpAttemptId,
                     logContext.AgentJobId ?? "(none)",
                     logContext.ChunkIndex,
                     sw.ElapsedMilliseconds);
@@ -185,7 +200,8 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
         {
             sw.Stop();
             _logger?.LogWarning(ex,
-                "OpenAI transcription HTTP error AgentJobId={JobId} ChunkIndex={Chunk} DurationMs={Ms} Category=network",
+                "OpenAI transcription HTTP error HttpAttemptId={AttemptId} AgentJobId={JobId} ChunkIndex={Chunk} DurationMs={Ms} Category=network",
+                httpAttemptId,
                 logContext.AgentJobId ?? "(none)",
                 logContext.ChunkIndex,
                 sw.ElapsedMilliseconds);
@@ -195,6 +211,19 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
         {
             Interlocked.Decrement(ref _transcriptionHttpInFlight);
         }
+    }
+
+    private static bool ShouldSuppressNonRetryableWarning(Exception ex)
+    {
+        if (ex is not OperationCanceledException) return false;
+        for (var e = ex; e != null; e = e.InnerException)
+        {
+            if (e is TimeoutException) return true;
+            if (e.Message.Contains("HttpClient.Timeout", StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
     private static string ClassifyStatus(HttpStatusCode code) => code switch

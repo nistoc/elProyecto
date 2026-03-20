@@ -59,6 +59,11 @@ export function ChunkControlPanel({
 
   const hasRunningVm = vm?.some((r) => r.state === 'Running') ?? false;
 
+  const readOnly =
+    job.status === 'failed' && (vm?.length ?? 0) > 0;
+  const showPanel =
+    (job.phase === 'transcriber' && job.status === 'running') || readOnly;
+
   useEffect(() => {
     if (!hasRunningVm) return;
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);
@@ -71,22 +76,30 @@ export function ChunkControlPanel({
   }, [total]);
 
   useEffect(() => {
-    if (job.phase !== 'transcriber' || job.status !== 'running') {
-      onFileFilterChunkChange(null);
-    }
-  }, [job.phase, job.status, onFileFilterChunkChange]);
+    const running = job.phase === 'transcriber' && job.status === 'running';
+    if (!running && !readOnly) onFileFilterChunkChange(null);
+  }, [job.phase, job.status, readOnly, onFileFilterChunkChange]);
 
   useEffect(() => {
     if (fileFilterChunkIndex === null) return;
     onFileFilterChunkChange(chunkIndex);
   }, [chunkIndex, fileFilterChunkIndex, onFileFilterChunkChange]);
 
-  const runAction = async (action: ChunkActionName, index?: number) => {
+  const runAction = async (
+    action: ChunkActionName,
+    index?: number,
+    splitParts?: number
+  ) => {
     const idx = index ?? chunkIndex;
     setMessage(null);
     setBusy(true);
     try {
-      const res = await postJobChunkAction(jobId, action, idx);
+      const res = await postJobChunkAction(
+        jobId,
+        action,
+        idx,
+        splitParts
+      );
       setMessage(
         res.ok
           ? res.message || t('chunkActionOk')
@@ -99,17 +112,34 @@ export function ChunkControlPanel({
     }
   };
 
-  if (job.phase !== 'transcriber' || job.status !== 'running') {
+  const runSplit = async () => {
+    const idx = chunkIndex;
+    const raw = window.prompt(t('chunkSplitPartsPrompt'), '2');
+    if (raw == null) return;
+    const n = parseInt(raw, 10);
+    if (Number.isNaN(n) || n < 2) {
+      setMessage(t('chunkSplitPartsInvalid'));
+      return;
+    }
+    await runAction('split', idx, n);
+  };
+
+  if (!showPanel) {
     return null;
   }
 
   const showVmTable = vm && vm.length > 0;
-  const showVmPlaceholder = !showVmTable && total > 0;
+  const showVmPlaceholder = !readOnly && !showVmTable && total > 0;
 
   return (
     <section className="chunk-panel" aria-label={t('chunkOperatorTitle')}>
       <h4 className="chunk-panel__title">{t('chunkOperatorTitle')}</h4>
       <p className="chunk-panel__hint">{t('chunkOperatorHint')}</p>
+      {readOnly && (
+        <p className="chunk-panel__readonly" role="status">
+          {t('chunkPanelReadOnlyAfterFailure')}
+        </p>
+      )}
 
       {showVmTable && (
         <div className="chunk-vm">
@@ -122,6 +152,7 @@ export function ChunkControlPanel({
                   <th scope="col">{t('chunkVmColChunk')}</th>
                   <th scope="col">{t('chunkVmColElapsed')}</th>
                   <th scope="col">{t('chunkVmColState')}</th>
+                  <th scope="col">{t('chunkVmColError')}</th>
                   <th scope="col" className="chunk-vm__th-cancel">
                     <span className="visually-hidden">{t('chunkCancelChunk')}</span>
                   </th>
@@ -139,8 +170,16 @@ export function ChunkControlPanel({
                         {elapsed}
                       </td>
                       <td>{labelForChunkState(row.state, t)}</td>
+                      <td
+                        className="chunk-vm__err"
+                        title={row.errorMessage ?? undefined}
+                      >
+                        {row.errorMessage?.trim()
+                          ? row.errorMessage
+                          : t('chunkVmNoStarted')}
+                      </td>
                       <td className="chunk-vm__cancel">
-                        {row.state === 'Running' ? (
+                        {!readOnly && row.state === 'Running' ? (
                           <button
                             type="button"
                             className="chunk-vm__x"
@@ -177,6 +216,7 @@ export function ChunkControlPanel({
                   <th scope="col">{t('chunkVmColChunk')}</th>
                   <th scope="col">{t('chunkVmColElapsed')}</th>
                   <th scope="col">{t('chunkVmColState')}</th>
+                  <th scope="col">{t('chunkVmColError')}</th>
                   <th scope="col" className="chunk-vm__th-cancel">
                     <span className="visually-hidden">{t('chunkCancelChunk')}</span>
                   </th>
@@ -188,6 +228,7 @@ export function ChunkControlPanel({
                     <td className="chunk-vm__num">#{i}</td>
                     <td className="chunk-vm__time">{t('chunkVmNoStarted')}</td>
                     <td>{labelForChunkState('Pending', t)}</td>
+                    <td>{t('chunkVmNoStarted')}</td>
                     <td className="chunk-vm__cancel">
                       <span className="chunk-vm__x-placeholder" />
                     </td>
@@ -208,7 +249,7 @@ export function ChunkControlPanel({
             min={0}
             max={total > 0 ? total - 1 : undefined}
             value={chunkIndex}
-            disabled={total <= 0}
+            disabled={total <= 0 || readOnly}
             onChange={(e) => {
               const v = parseInt(e.target.value, 10);
               if (Number.isNaN(v)) return;
@@ -234,7 +275,7 @@ export function ChunkControlPanel({
               if (e.target.checked) onFileFilterChunkChange(chunkIndex);
               else onFileFilterChunkChange(null);
             }}
-            disabled={total <= 0}
+            disabled={total <= 0 || readOnly}
           />
           {t('chunkFilterProjectFiles')}
         </label>
@@ -244,36 +285,39 @@ export function ChunkControlPanel({
           {t('chunkFilterActive')}: #{fileFilterChunkIndex}
         </p>
       )}
-      <div className="chunk-panel__actions">
-        <button
-          type="button"
-          disabled={!canOperate || busy}
-          onClick={() => runAction('cancel')}
-        >
-          {t('chunkCancelChunk')}
-        </button>
-        <button
-          type="button"
-          disabled={!canOperate || busy}
-          onClick={() => runAction('skip')}
-        >
-          {t('chunkSkip')}
-        </button>
-        <button
-          type="button"
-          disabled={!canOperate || busy}
-          onClick={() => runAction('retranscribe')}
-        >
-          {t('chunkRetranscribe')}
-        </button>
-        <button
-          type="button"
-          disabled={!canOperate || busy}
-          onClick={() => runAction('split')}
-        >
-          {t('chunkSplit')}
-        </button>
-      </div>
+      {!readOnly && (
+        <div className="chunk-panel__actions">
+          <button
+            type="button"
+            disabled={!canOperate || busy}
+            onClick={() => runAction('cancel')}
+          >
+            {t('chunkCancelChunk')}
+          </button>
+          <button
+            type="button"
+            disabled={!canOperate || busy}
+            onClick={() => runAction('skip')}
+          >
+            {t('chunkSkip')}
+          </button>
+          <button
+            type="button"
+            disabled={!canOperate || busy}
+            onClick={() => runAction('retranscribe')}
+          >
+            {t('chunkRetranscribe')}
+          </button>
+          <button
+            type="button"
+            disabled={!canOperate || busy}
+            title={t('chunkSplitTitle')}
+            onClick={() => void runSplit()}
+          >
+            {t('chunkSplit')}
+          </button>
+        </div>
+      )}
       {message && <p className="chunk-panel__message">{message}</p>}
       <style>{`
         .visually-hidden {
@@ -303,6 +347,23 @@ export function ChunkControlPanel({
         .chunk-panel__hint {
           margin: 0 0 0.75rem 0;
           font-size: 0.8125rem;
+          color: var(--color-text-secondary);
+        }
+        .chunk-panel__readonly {
+          margin: 0 0 0.75rem 0;
+          padding: 0.5rem 0.65rem;
+          font-size: 0.8125rem;
+          border-radius: 6px;
+          border: 1px solid var(--color-border-strong);
+          background: var(--color-surface);
+          color: var(--color-label);
+        }
+        .chunk-vm__err {
+          max-width: 14rem;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 0.75rem;
           color: var(--color-text-secondary);
         }
         .chunk-vm {

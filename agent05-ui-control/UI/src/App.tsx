@@ -133,6 +133,19 @@ function AppContent() {
                     <p className="step-panel__meta">
                       {t('status')}: {job.status} · {t('phase')}: {job.phase}
                     </p>
+                    {job.transcriptionError?.trim() && (
+                      <div
+                        className="step-panel__transcription-error"
+                        role="alert"
+                      >
+                        <strong className="step-panel__transcription-error-title">
+                          {t('transcriptionErrorTitle')}
+                        </strong>
+                        <p className="step-panel__transcription-error-body">
+                          {job.transcriptionError}
+                        </p>
+                      </div>
+                    )}
                     <LogsSection
                       title={t('logs')}
                       logs={job.logs ?? []}
@@ -270,6 +283,27 @@ function AppContent() {
         .step-panel__files-heading { margin: 1rem 0 0.35rem 0; font-size: 0.9rem; color: var(--color-heading); }
         .step-panel__empty { color: var(--color-text-muted); margin: 0; }
         .step-panel__hint { margin: 0 0 0.75rem 0; font-size: 0.875rem; color: var(--color-label); }
+        .step-panel__transcription-error {
+          margin: 0 0 1rem 0;
+          padding: 0.65rem 0.85rem;
+          border-radius: 8px;
+          border: 1px solid var(--color-danger, #c62828);
+          background: color-mix(in srgb, var(--color-danger, #c62828) 12%, var(--color-surface));
+          color: var(--color-text);
+        }
+        .step-panel__transcription-error-title {
+          display: block;
+          font-size: 0.875rem;
+          margin-bottom: 0.35rem;
+          color: var(--color-danger, #b71c1c);
+        }
+        .step-panel__transcription-error-body {
+          margin: 0;
+          font-size: 0.8125rem;
+          line-height: 1.45;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
       `}</style>
     </div>
   );

@@ -9,6 +9,7 @@ service TranscriptionService {
   rpc GetJobStatus(GetJobStatusRequest) returns (JobStatusResponse);
   rpc StreamJobStatus(StreamJobStatusRequest) returns (stream JobStatusUpdate);
   rpc QueryJobs(QueryJobsRequest) returns (QueryJobsResponse);
+  /// Chunk-level operator actions (cancel is implemented; others may return ok=false).
   rpc ChunkCommand(ChunkCommandRequest) returns (ChunkCommandResponse);
 }
 
@@ -32,6 +33,7 @@ message ChunkVirtualModelEntry {
   string started_at = 2;
   string completed_at = 3;
   string state = 4;
+  string error_message = 5;
 }
 
 message JobStatusResponse {
@@ -95,6 +97,7 @@ message ChunkCommandRequest {
   ChunkCommandAction action = 2;
   int32 chunk_index = 3;
   string job_directory_relative = 4;
+  int32 split_parts = 5;
 }
 
 message ChunkCommandResponse {

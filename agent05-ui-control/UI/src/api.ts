@@ -145,14 +145,17 @@ export interface ChunkActionResponseBody {
 export async function postJobChunkAction(
   jobId: string,
   action: ChunkActionName,
-  chunkIndex: number
+  chunkIndex: number,
+  splitParts?: number
 ): Promise<ChunkActionResponseBody> {
+  const body: Record<string, unknown> = { action, chunkIndex };
+  if (splitParts != null && splitParts >= 2) body.splitParts = splitParts;
   const r = await fetch(
     `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/chunk-actions`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, chunkIndex }),
+      body: JSON.stringify(body),
     }
   );
   const text = await r.text();

@@ -65,12 +65,22 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             _logger.LogError(
                 "Job {JobId}: cannot start transcription — audio file missing. Tried {Path} (workspaceRoot={Root}, originalFilename={Orig})",
                 jobId, audioFullPath, workspaceRoot, snap.OriginalFilename ?? "");
-            await UpdateAndBroadcastAsync(jobId, s => { s.Status = "failed"; s.Phase = "idle"; });
+            await UpdateAndBroadcastAsync(jobId, s =>
+            {
+                s.Status = "failed";
+                s.Phase = "idle";
+                s.TranscriptionError = "Audio file missing for transcription.";
+            });
             return;
         }
         var inputFilePath = Path.GetRelativePath(workspaceRoot, audioFullPath).Replace('\\', '/');
 
-        await UpdateAndBroadcastAsync(jobId, s => { s.Status = "running"; s.Phase = "transcriber"; });
+        await UpdateAndBroadcastAsync(jobId, s =>
+        {
+            s.Status = "running";
+            s.Phase = "transcriber";
+            s.TranscriptionError = null;
+        });
         Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
 
         _logger.LogInformation(
@@ -88,14 +98,24 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             _logger.LogError(ex,
                 "Job {JobId}: Agent04 SubmitJob failed — RPC {Code}: {Detail}",
                 jobId, ex.StatusCode, ex.Status.Detail);
-            await UpdateAndBroadcastAsync(jobId, s => { s.Status = "failed"; s.Phase = "idle"; });
+            await UpdateAndBroadcastAsync(jobId, s =>
+            {
+                s.Status = "failed";
+                s.Phase = "idle";
+                s.TranscriptionError = $"Agent04 SubmitJob RPC failed: {ex.StatusCode} {ex.Status.Detail}";
+            });
             Broadcast(jobId, "done", null);
             return;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Job {JobId}: Agent04 SubmitJob failed — {Message}", jobId, ex.Message);
-            await UpdateAndBroadcastAsync(jobId, s => { s.Status = "failed"; s.Phase = "idle"; });
+            await UpdateAndBroadcastAsync(jobId, s =>
+            {
+                s.Status = "failed";
+                s.Phase = "idle";
+                s.TranscriptionError = ex.Message;
+            });
             Broadcast(jobId, "done", null);
             return;
         }
@@ -107,8 +127,9 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         {
             if (update.State == "Failed")
                 _logger.LogWarning(
-                    "Job {JobId}: Agent04 job {Agent04JobId} reported Failed — ErrorMessage={Error}, Phase={Phase}, Progress={Pct}%",
-                    jobId, transcriptionJobId, update.ErrorMessage ?? "(empty)", update.CurrentPhase ?? "", update.ProgressPercent);
+                    "Job {JobId}: Agent04 job {Agent04JobId} reported Failed — ErrorMessage={Error}, Phase={Phase}, Progress={Pct}%, ProcessedChunks={Processed}, TotalChunks={Total}",
+                    jobId, transcriptionJobId, update.ErrorMessage ?? "(empty)", update.CurrentPhase ?? "", update.ProgressPercent,
+                    update.ProcessedChunks, update.TotalChunks);
             _logger.LogDebug("Job {JobId}: Agent04 status update State={State}, MdOutputPath={Md}, TotalChunks={Total}, Processed={Processed}",
                 jobId, update.State, update.MdOutputPath ?? "null", update.TotalChunks, update.ProcessedChunks);
             await UpdateAndBroadcastAsync(jobId, s =>
@@ -135,9 +156,18 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                 if (update.ChunkVirtualModel is { Count: > 0 })
                     s.Chunks.ChunkVirtualModel = update.ChunkVirtualModel;
                 if (update.State == "Completed")
-                { s.Phase = "awaiting_refiner"; s.MdOutputPath = update.MdOutputPath; }
+                {
+                    s.Phase = "awaiting_refiner";
+                    s.MdOutputPath = update.MdOutputPath;
+                    s.TranscriptionError = null;
+                }
                 else if (update.State == "Failed" || update.State == "Cancelled")
+                {
                     s.Phase = "idle";
+                    s.TranscriptionError = string.IsNullOrEmpty(update.ErrorMessage)
+                        ? (update.State == "Cancelled" ? "Transcription cancelled." : "Transcription failed.")
+                        : update.ErrorMessage;
+                }
             });
             Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
             var evtPhase = update.State == "Completed"

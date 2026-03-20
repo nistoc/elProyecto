@@ -22,4 +22,7 @@ public interface IAudioUtils
 
     /// <summary>Convert audio file to WAV (16kHz, mono, PCM). Returns path to WAV file.</summary>
     string ConvertToWav(string ffmpegPath, string inputPath, string? outputDir = null);
+
+    /// <summary>Extract a segment with stream copy (<c>-c copy</c>). Creates parent directory for <paramref name="outputPath"/>.</summary>
+    void ExtractAudioSegmentCopy(string ffmpegPath, string inputPath, double startSeconds, double durationSeconds, string outputPath);
 }

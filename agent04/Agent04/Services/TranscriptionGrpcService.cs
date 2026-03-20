@@ -1,3 +1,4 @@
+using System.Linq;
 using Agent04.Application;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
@@ -21,6 +22,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
     private readonly IConfiguration _configuration;
     private readonly IJobArtifactRootRegistry _artifactRootRegistry;
     private readonly ICancellationManagerFactory _cancellationFactory;
+    private readonly IAudioUtils _audioUtils;
     private readonly INodeModel? _nodeModel;
     private readonly INodeQuery? _nodeQuery;
     private readonly IHttpClientFactory? _httpClientFactory;
@@ -35,6 +37,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         IConfiguration configuration,
         IJobArtifactRootRegistry artifactRootRegistry,
         ICancellationManagerFactory cancellationFactory,
+        IAudioUtils audioUtils,
         INodeModel? nodeModel = null,
         INodeQuery? nodeQuery = null,
         IHttpClientFactory? httpClientFactory = null,
@@ -48,6 +51,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         _configuration = configuration;
         _artifactRootRegistry = artifactRootRegistry;
         _cancellationFactory = cancellationFactory;
+        _audioUtils = audioUtils;
         _nodeModel = nodeModel;
         _nodeQuery = nodeQuery;
         _httpClientFactory = httpClientFactory;
@@ -210,7 +214,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         }
     }
 
-    public override Task<ChunkCommandResponse> ChunkCommand(ChunkCommandRequest request, ServerCallContext context)
+    public override async Task<ChunkCommandResponse> ChunkCommand(ChunkCommandRequest request, ServerCallContext context)
     {
         if (string.IsNullOrWhiteSpace(request.JobId))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "job_id is required"));
@@ -231,19 +235,99 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 var cm = _cancellationFactory.Get(request.JobId, cancelBase);
                 cm.MarkCancelled(request.ChunkIndex);
                 RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "cancel");
-                return Task.FromResult(new ChunkCommandResponse { Ok = true, Message = "cancel_requested" });
+                return new ChunkCommandResponse { Ok = true, Message = "cancel_requested" };
             case ChunkCommandAction.Skip:
             case ChunkCommandAction.Retranscribe:
-            case ChunkCommandAction.Split:
                 if (request.ChunkIndex < 0)
                     throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
                 RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex,
-                    request.Action == ChunkCommandAction.Skip ? "skip" :
-                    request.Action == ChunkCommandAction.Retranscribe ? "retranscribe" : "split");
-                return Task.FromResult(new ChunkCommandResponse { Ok = false, Message = "not_implemented" });
+                    request.Action == ChunkCommandAction.Skip ? "skip" : "retranscribe");
+                return new ChunkCommandResponse { Ok = false, Message = "not_implemented" };
+            case ChunkCommandAction.Split:
+                if (request.ChunkIndex < 0)
+                    throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
+                RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "split");
+                return await ExecuteOperatorSplitAsync(request, context.CancellationToken).ConfigureAwait(false);
             default:
-                return Task.FromResult(new ChunkCommandResponse { Ok = false, Message = "unknown_action" });
+                return new ChunkCommandResponse { Ok = false, Message = "unknown_action" };
         }
+    }
+
+    private async Task<ChunkCommandResponse> ExecuteOperatorSplitAsync(ChunkCommandRequest request, CancellationToken ct)
+    {
+        var parts = request.SplitParts;
+        if (parts < 2)
+            return new ChunkCommandResponse { Ok = false, Message = "split_parts must be >= 2" };
+
+        string artifactRoot;
+        try
+        {
+            artifactRoot = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
+        }
+        catch (RpcException ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = ex.Status.Detail };
+        }
+
+        var chunksDir = Path.Combine(artifactRoot, "chunks");
+        if (!Directory.Exists(chunksDir))
+            return new ChunkCommandResponse { Ok = false, Message = "chunks directory not found under job workspace" };
+
+        static bool IsAudioChunk(string p)
+        {
+            var e = Path.GetExtension(p);
+            return e.Equals(".wav", StringComparison.OrdinalIgnoreCase)
+                   || e.Equals(".m4a", StringComparison.OrdinalIgnoreCase)
+                   || e.Equals(".mp3", StringComparison.OrdinalIgnoreCase)
+                   || e.Equals(".flac", StringComparison.OrdinalIgnoreCase)
+                   || e.Equals(".ogg", StringComparison.OrdinalIgnoreCase);
+        }
+
+        var files = Directory.GetFiles(chunksDir)
+            .Where(IsAudioChunk)
+            .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (request.ChunkIndex >= files.Count)
+            return new ChunkCommandResponse { Ok = false, Message = $"chunk_index {request.ChunkIndex} out of range (found {files.Count} chunk files)" };
+
+        var inputPath = files[request.ChunkIndex];
+        var ffmpeg = _audioUtils.WhichOr(_configuration["Agent04:FfmpegPath"], "ffmpeg") ?? "ffmpeg";
+        var ffprobe = _audioUtils.WhichOr(_configuration["Agent04:FfprobePath"], "ffprobe") ?? "ffprobe";
+
+        var (durSec, _) = _audioUtils.GetDurationAndSize(ffprobe, inputPath);
+        if (durSec <= 0)
+            return new ChunkCommandResponse { Ok = false, Message = "could not read audio duration (ffprobe)" };
+
+        var ext = Path.GetExtension(inputPath);
+        var baseName = Path.GetFileNameWithoutExtension(inputPath);
+        var outRoot = Path.Combine(artifactRoot, "split_chunks", $"chunk_{request.ChunkIndex}", "sub_chunks");
+        Directory.CreateDirectory(outRoot);
+
+        var seg = durSec / parts;
+        try
+        {
+            await Task.Run(() =>
+            {
+                for (var k = 0; k < parts; k++)
+                {
+                    var start = k * seg;
+                    var length = k == parts - 1 ? Math.Max(0.01, durSec - start) : seg;
+                    var outName = $"{baseName}_sub_{k}{ext}";
+                    var outPath = Path.Combine(outRoot, outName);
+                    _audioUtils.ExtractAudioSegmentCopy(ffmpeg, inputPath, start, length, outPath);
+                }
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Operator split failed for job {JobId} chunk {Chunk}", request.JobId, request.ChunkIndex);
+            return new ChunkCommandResponse { Ok = false, Message = ex.Message };
+        }
+
+        _logger.LogInformation("Operator split ok: job {JobId} chunk {Chunk} -> {Parts} parts under {Dir}",
+            request.JobId, request.ChunkIndex, parts, outRoot);
+        return new ChunkCommandResponse { Ok = true, Message = "split_ok" };
     }
 
     /// <summary>
@@ -355,18 +439,26 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 ChunkIndex = i,
                 StartedAt = node.StartedAt?.ToString("O") ?? "",
                 CompletedAt = node.CompletedAt?.ToString("O") ?? "",
-                State = node.Status.ToString()
+                State = node.Status.ToString(),
+                ErrorMessage = TruncateForChunkVm(node.ErrorMessage)
             });
         }
 
         return list;
     }
 
+    private static string TruncateForChunkVm(string? message, int maxLen = 400)
+    {
+        if (string.IsNullOrEmpty(message)) return "";
+        var t = message.Replace('\r', ' ').Replace('\n', ' ');
+        return t.Length <= maxLen ? t : t[..maxLen] + "…";
+    }
+
     private static string ChunkVirtualModelSignature(IReadOnlyList<ChunkVirtualModelEntry> entries)
     {
         if (entries.Count == 0)
             return "";
-        return string.Join("|", entries.Select(e => $"{e.ChunkIndex}:{e.StartedAt}:{e.CompletedAt}:{e.State}"));
+        return string.Join("|", entries.Select(e => $"{e.ChunkIndex}:{e.StartedAt}:{e.CompletedAt}:{e.State}:{e.ErrorMessage}"));
     }
 
     private async Task RunJobAsync(string jobId, TranscriptionConfig config, string inputPath, string workspaceRoot, CancellationToken cancellationToken)

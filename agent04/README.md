@@ -34,7 +34,7 @@ Paths in requests are relative to the instance `workspace_root` (from config):
 - **TranscriptionService.GetJobStatus** — status by `job_id`.
 - **TranscriptionService.StreamJobStatus** — server stream of status updates until terminal state.
 - **TranscriptionService.QueryJobs** — list/filter jobs (semantic key, status, time range, limit/offset).
-- **TranscriptionService.ChunkCommand** — операторские действия по чанку (`action` + `chunk_index`); **Cancel** помечает чанк к пропуску (per-job cancel dir); **Skip / Retranscribe / Split** пока могут отвечать `not_implemented`. Метаданные команды пишутся в виртуальную модель узлов (RENTGEN), если зарегистрирован `INodeModel`.
+- **TranscriptionService.ChunkCommand** — операторские действия по чанку (`action`, `chunk_index`, опционально **`split_parts`** для **Split**); **Cancel** помечает чанк к пропуску (per-job cancel dir) и отменяет in-flight HTTP через токен; **Skip / Retranscribe** могут отвечать `not_implemented`. **Split** при `split_parts >= 2` режет выбранный файл чанка (ffmpeg) в `split_chunks/chunk_{N}/sub_chunks/`. Метаданные команды пишутся в виртуальную модель узлов (RENTGEN), если зарегистрирован `INodeModel`.
 
 Proto: `Agent04/Proto/transcription.proto`.
 
@@ -44,7 +44,8 @@ Proto: `Agent04/Proto/transcription.proto`.
 
 - **`parallel_transcription_workers`** in the job config caps how many chunks are transcribed **at the same time** (clamped to **1–64**; default in repo sample **6**). Values **> 32** log a warning (higher risk of **429** / rate limits). Manifest/cache writes stay serialized per job so the cache file is not corrupted under concurrency.
 - **Chunk cancel (gRPC / UI ×):** while a chunk’s OpenAI request is in flight, the pipeline polls cancel flags and cancels the HTTP call via `CancellationToken` (cooperative abort). Cached chunks skip HTTP and are not affected.
-- **Logs:** `OpenAITranscriptionClient` emits structured lines for each HTTP call: `AgentJobId`, `ChunkIndex`, `ParallelWorkersConfigured`, process-wide **`InFlight`** count, duration, and on failure **HTTP status** with **Category** `auth` (401/403), `rate_limit` (429), `client_error`, `server_error`, plus a truncated response body (no API key / `Authorization`).
+- **HttpClient / «зависшие» запросы:** не пересоздавайте `HttpClient` ради «убить» один зависший вызов — используйте **отмену по токену** и **таймауты** (`HttpClient.Timeout`, дедлайн на токене). Отмена кооперативная: сокет на стороне провайдера может закрыться не мгновенно. Экземпляр клиента из DI держите долгоживущим; `Dispose` — при остановке приложения или смене скоупа, не после каждой ошибки.
+- **Logs:** `OpenAITranscriptionClient` emits structured lines for each HTTP call: `AgentJobId`, `ChunkIndex`, `HttpAttemptId`, `ParallelWorkersConfigured`, process-wide **`InFlight`** count, duration, and on failure **HTTP status** with **Category** `auth` (401/403), `rate_limit` (429), `client_error`, `server_error`, `timeout` (**Reason=http_client_timeout** where applicable), plus a truncated response body (no API key / `Authorization`). With **`parallel_transcription_workers` > 1**, log order across chunks is not start order — correlate by **`ChunkIndex`** / **`HttpAttemptId`**.
 
 ## Monitoring
 

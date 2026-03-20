@@ -65,7 +65,8 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
                     Index = e.ChunkIndex,
                     StartedAt = string.IsNullOrEmpty(e.StartedAt) ? null : e.StartedAt,
                     CompletedAt = string.IsNullOrEmpty(e.CompletedAt) ? null : e.CompletedAt,
-                    State = string.IsNullOrEmpty(e.State) ? "Pending" : e.State
+                    State = string.IsNullOrEmpty(e.State) ? "Pending" : e.State,
+                    ErrorMessage = string.IsNullOrEmpty(e.ErrorMessage) ? null : e.ErrorMessage
                 }).ToList();
             }
 
@@ -88,6 +89,7 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         Application.TranscriptionChunkAction action,
         int chunkIndex,
         string? jobDirectoryRelative,
+        int splitParts = 0,
         CancellationToken ct = default)
     {
         using var channel = GrpcChannel.ForAddress(_address);
@@ -99,7 +101,8 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
                 JobId = agent04JobId,
                 Action = protoAction,
                 ChunkIndex = chunkIndex,
-                JobDirectoryRelative = jobDirectoryRelative ?? ""
+                JobDirectoryRelative = jobDirectoryRelative ?? "",
+                SplitParts = splitParts
             },
             cancellationToken: ct);
         return new Application.ChunkCommandResult(response.Ok, response.Message ?? "");

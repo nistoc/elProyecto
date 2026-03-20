@@ -276,9 +276,13 @@ public class JobsController : ControllerBase
         if (action == null)
             return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "skip", "retranscribe", "split" } });
 
+        if (action == TranscriptionChunkAction.Split && (body.SplitParts is null || body.SplitParts < 2))
+            return BadRequest(new { error = "split requires splitParts >= 2" });
+
         try
         {
-            var result = await _transcription.ChunkCommandAsync(job.Agent04JobId!, action.Value, body.ChunkIndex, id, ct);
+            var splitParts = body.SplitParts ?? 0;
+            var result = await _transcription.ChunkCommandAsync(job.Agent04JobId!, action.Value, body.ChunkIndex, id, splitParts, ct);
             return Ok(new ChunkActionResponse(result.Ok, result.Message));
         }
         catch (RpcException ex)
@@ -371,6 +375,11 @@ public class JobsController : ControllerBase
 
 public record CreateJobResponse(string JobId);
 
-public record ChunkActionRequest(string Action, int ChunkIndex);
+public sealed class ChunkActionRequest
+{
+    public string Action { get; set; } = "";
+    public int ChunkIndex { get; set; }
+    public int? SplitParts { get; set; }
+}
 
 public record ChunkActionResponse(bool Ok, string Message);

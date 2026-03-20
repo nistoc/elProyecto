@@ -80,7 +80,7 @@ const messages: Record<Locale, Record<string, string>> = {
     themeSwitch: 'Color theme',
     chunkOperatorTitle: 'Chunk controls',
     chunkOperatorHint:
-      'Cancel requests Agent04 to skip the current chunk. Skip / Retranscribe / Split may return not_implemented until supported in Agent04.',
+      'Cancel stops the in-flight request for a running chunk. Skip / Retranscribe depend on Agent04. Split asks how many parts to write under split_chunks/.',
     chunkIndexLabel: 'Chunk index',
     chunkZeroBased: '0-based',
     chunkTotalUnknown: 'total unknown until first status',
@@ -109,6 +109,14 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStateFailed: 'Failed',
     chunkStateCancelled: 'Cancelled',
     chunkVmCancelAria: 'Cancel chunk {n}',
+    transcriptionErrorTitle: 'Transcription error',
+    chunkPanelReadOnlyAfterFailure:
+      'The job failed. This chunk table is read-only (last known state from Agent04).',
+    chunkVmColError: 'Detail',
+    chunkSplitPartsPrompt: 'Split into how many parts? (integer, minimum 2)',
+    chunkSplitPartsInvalid: 'Enter an integer ≥ 2.',
+    chunkSplitTitle:
+      'Split uses ffmpeg on the selected chunk file; sub-files appear under Split chunks after refresh.',
   },
   ru: {
     appTitle: 'XtractManager',
@@ -181,7 +189,7 @@ const messages: Record<Locale, Record<string, string>> = {
     themeSwitch: 'Тема оформления',
     chunkOperatorTitle: 'Управление чанками',
     chunkOperatorHint:
-      '«Отменить чанк» отправляет в Agent04 запрос пропустить указанный чанк. Skip / Retranscribe / Split могут вернуть not_implemented, пока не реализованы в Agent04.',
+      '«Отменить чанк» обрывает текущий HTTP-запрос для выполняющегося чанка. Skip / Retranscribe — по поддержке Agent04. Split спрашивает число частей и пишет в split_chunks/.',
     chunkIndexLabel: 'Индекс чанка',
     chunkZeroBased: 'с нуля',
     chunkTotalUnknown: 'число чанков станет известно после первого статуса',
@@ -210,6 +218,14 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStateFailed: 'Ошибка',
     chunkStateCancelled: 'Отменён',
     chunkVmCancelAria: 'Отменить чанк {n}',
+    transcriptionErrorTitle: 'Ошибка транскрипции',
+    chunkPanelReadOnlyAfterFailure:
+      'Задание завершилось с ошибкой. Таблица чанков только для просмотра (последнее состояние от Agent04).',
+    chunkVmColError: 'Деталь',
+    chunkSplitPartsPrompt: 'На сколько частей разбить? (целое число, минимум 2)',
+    chunkSplitPartsInvalid: 'Введите целое число ≥ 2.',
+    chunkSplitTitle:
+      'Разбиение через ffmpeg по выбранному файлу чанка; подфайлы — в «Разбиение чанков» после обновления.',
   },
   es: {
     appTitle: 'XtractManager',
@@ -282,7 +298,7 @@ const messages: Record<Locale, Record<string, string>> = {
     themeSwitch: 'Tema de color',
     chunkOperatorTitle: 'Control de fragmentos',
     chunkOperatorHint:
-      'Cancelar pide a Agent04 omitir el fragmento indicado. Omitir / Retranscribir / Dividir pueden devolver not_implemented hasta que Agent04 lo implemente.',
+      'Cancelar corta la solicitud en curso de un fragmento activo. Omitir / Retranscribir dependen de Agent04. Dividir pide cuántas partes y escribe en split_chunks/.',
     chunkIndexLabel: 'Índice del fragmento',
     chunkZeroBased: 'base 0',
     chunkTotalUnknown: 'total desconocido hasta el primer estado',
@@ -311,6 +327,15 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStateFailed: 'Fallido',
     chunkStateCancelled: 'Cancelado',
     chunkVmCancelAria: 'Cancelar fragmento {n}',
+    transcriptionErrorTitle: 'Error de transcripción',
+    chunkPanelReadOnlyAfterFailure:
+      'El trabajo falló. La tabla de fragmentos es solo lectura (último estado de Agent04).',
+    chunkVmColError: 'Detalle',
+    chunkSplitPartsPrompt:
+      '¿En cuántas partes dividir? (entero, mínimo 2)',
+    chunkSplitPartsInvalid: 'Introduzca un entero ≥ 2.',
+    chunkSplitTitle:
+      'Divide con ffmpeg el archivo del fragmento; los subarchivos aparecen en Subfragmentos al actualizar.',
   },
 };
 

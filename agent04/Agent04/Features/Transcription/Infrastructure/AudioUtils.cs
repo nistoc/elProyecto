@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using Agent04.Features.Transcription.Application;
 
 namespace Agent04.Features.Transcription.Infrastructure;
@@ -110,6 +111,23 @@ public sealed class AudioUtils : IAudioUtils
 
         RunFfmpeg(ffmpegPath, new[] { "-y", "-loglevel", "error", "-hide_banner", "-i", inputPath, "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", outputPath });
         return outputPath;
+    }
+
+    public void ExtractAudioSegmentCopy(string ffmpegPath, string inputPath, double startSeconds, double durationSeconds, string outputPath)
+    {
+        var dir = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+        var ss = startSeconds.ToString("G", CultureInfo.InvariantCulture);
+        var t = durationSeconds.ToString("G", CultureInfo.InvariantCulture);
+        RunFfmpeg(ffmpegPath, new[]
+        {
+            "-y", "-loglevel", "error", "-hide_banner",
+            "-ss", ss, "-i", inputPath,
+            "-t", t,
+            "-c", "copy",
+            outputPath
+        });
     }
 
     private static void RunFfmpeg(string ffmpegPath, string[] args)
