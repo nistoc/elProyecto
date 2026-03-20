@@ -43,6 +43,7 @@ Proto: `Agent04/Proto/transcription.proto`.
 ## Parallel transcription & HTTP logs
 
 - **`parallel_transcription_workers`** in the job config caps how many chunks are transcribed **at the same time** (clamped to **1–64**; default in repo sample **6**). Values **> 32** log a warning (higher risk of **429** / rate limits). Manifest/cache writes stay serialized per job so the cache file is not corrupted under concurrency.
+- **Chunk cancel (gRPC / UI ×):** while a chunk’s OpenAI request is in flight, the pipeline polls cancel flags and cancels the HTTP call via `CancellationToken` (cooperative abort). Cached chunks skip HTTP and are not affected.
 - **Logs:** `OpenAITranscriptionClient` emits structured lines for each HTTP call: `AgentJobId`, `ChunkIndex`, `ParallelWorkersConfigured`, process-wide **`InFlight`** count, duration, and on failure **HTTP status** with **Category** `auth` (401/403), `rate_limit` (429), `client_error`, `server_error`, plus a truncated response body (no API key / `Authorization`).
 
 ## Monitoring

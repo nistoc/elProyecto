@@ -24,4 +24,8 @@
     <None Include="config\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Agent04.Tests" />
+  </ItemGroup>
+
 </Project>

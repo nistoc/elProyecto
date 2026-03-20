@@ -59,12 +59,37 @@ public sealed class TranscriptionConfig
             return defaultValue;
         if (v is T t)
             return t;
-        if (typeof(T) == typeof(int) && v is double d)
-            return (T)(object)(int)d;
+
+        var underlying = Nullable.GetUnderlyingType(typeof(T));
+        if (underlying == typeof(int))
+        {
+            int? n = v switch
+            {
+                int i => i,
+                long l => checked((int)l),
+                double dv => (int)dv,
+                _ => default(int?)
+            };
+            if (n.HasValue)
+                return (T)(object)n;
+        }
+
+        if (typeof(T) == typeof(int) && v is double dbl)
+            return (T)(object)(int)dbl;
+        if (typeof(T) == typeof(int) && v is long l0)
+            return (T)(object)checked((int)l0);
         if (typeof(T) == typeof(float) && v is double d2)
             return (T)(object)(float)d2;
         if (typeof(T) == typeof(bool) && v is double d3)
             return (T)(object)(d3 != 0);
+        if (underlying == typeof(double) && v is int i1)
+            return (T)(object)(double?)i1;
+        if (underlying == typeof(double) && v is long l1)
+            return (T)(object)(double?)l1;
+        if (underlying == typeof(double) && v is double dRaw)
+            return (T)(object)(double?)dRaw;
+        if (underlying == typeof(bool) && v is bool b)
+            return (T)(object)(bool?)b;
         return defaultValue;
     }
 

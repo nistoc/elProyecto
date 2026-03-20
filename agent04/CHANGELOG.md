@@ -4,6 +4,8 @@ All notable changes to the Agent04 project are documented here.
 
 ## [Unreleased]
 
+- **`TranscriptionConfig.Get<T>`:** значения вроде **`parallel_transcription_workers`** и **`reencode_bitrate_kbps`** из JSON (числа как `double`) корректно читаются для **`int?`** / **`double?`**; раньше `Get<int?>` возвращал `null` → в пайплайне срабатывал fallback **4** вместо значения из `config/default.json`. Тест **`TranscriptionConfigDefaultJsonTests`** + копия **`default.json`** в выход тестов.
+- **Отмена чанка во время HTTP:** пока идёт **`TranscribeAsync`**, фоновый опрос **`ICancellationManager.IsCancelled`** отменяет связанный **`CancellationToken`**, чтобы оборвать запрос к API (кооперативно). Узел чанка завершается в **`Cancelled`**; отмена задания целиком (`CancellationToken` пайплайна) по-прежнему пробрасывается. Тест **`ChunkCancelWhileTranscribingTests`**.
 - **Параллельная транскрипция:** ключ **`parallel_transcription_workers`** ограничивает число чанков, обрабатываемых одновременно (по умолчанию в примере конфига **6**, clamp **1–64**, предупреждение при **> 32**). Запись кэша/манифеста сериализована **`SemaphoreSlim(1)`** на задание. Порядок слияния markdown/JSON по-прежнему по индексу чанка.
 - **Логи OpenAI HTTP:** старт/успех/ошибка с `AgentJobId`, `ChunkIndex`, `ParallelWorkersConfigured`, счётчиком **`InFlight`**, длительностью; при ошибке — статус, **Category** (`auth`, `rate_limit`, …), усечённое тело ответа; отдельно таймаут vs отмена по токену. Секреты в лог не пишутся.
 - **Диагностика «тишины» после сплита:** `TranscriptionPipeline` пишет сводку первого батча и для чанка **0** — старт `ProcessChunkAsync` (файл, параллелизм).

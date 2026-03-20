@@ -229,8 +229,21 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                         jobId,
                         parallel,
                         manifestGate,
+                        cancellation,
                         cancellationToken);
                     return (idx, result, null);
+                }
+                catch (OperationCanceledException oce) when (!cancellationToken.IsCancellationRequested)
+                {
+                    lock (stepLock)
+                    {
+                        StepComplete(transcribeParent, "chunk-" + idx, JobState.Cancelled, "Cancelled");
+                        progress.MarkCancelled(idx);
+                        progress.Update();
+                    }
+
+                    _logger?.LogInformation("Chunk {Index} transcription cancelled (operator)", idx + 1);
+                    return (idx, null, oce);
                 }
                 catch (Exception ex)
                 {
@@ -247,7 +260,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             }
 
             var outcomes = await Task.WhenAll(indices.Select(RunChunkAsync));
-            var failure = Array.Find(outcomes, o => o.Error != null);
+            var failure = Array.Find(outcomes, o => o.Error != null && o.Error is not OperationCanceledException);
             if (failure.Error != null)
             {
                 foreach (var o in outcomes.Where(x => x.Error == null))
@@ -267,7 +280,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 throw failure.Error;
             }
 
-            foreach (var o in outcomes.OrderBy(x => x.Idx))
+            foreach (var o in outcomes.Where(x => x.Result != null).OrderBy(x => x.Idx))
             {
                 var idx = o.Idx;
                 var result = o.Result!;
@@ -387,6 +400,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         string? agentJobId,
         int parallelWorkersConfigured,
         SemaphoreSlim? manifestGate,
+        ICancellationManager cancellation,
         CancellationToken ct)
     {
         var chunkBasename = Path.GetFileName(chunkInfo.Path);
@@ -424,7 +438,31 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 AgentJobId = agentJobId,
                 ParallelWorkersConfigured = parallelWorkersConfigured
             };
-            var result = await _client.TranscribeAsync(chunkInfo.Path, options, ct);
+            using var transcribeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            using var stopPolling = new CancellationTokenSource();
+            var pollTask = PollChunkCancelWhileTranscribingAsync(
+                cancellation,
+                index,
+                transcribeCts,
+                stopPolling.Token);
+            TranscriptionClientResult result;
+            try
+            {
+                result = await _client.TranscribeAsync(chunkInfo.Path, options, transcribeCts.Token);
+            }
+            finally
+            {
+                stopPolling.Cancel();
+                try
+                {
+                    await pollTask.ConfigureAwait(false);
+                }
+                catch
+                {
+                    /* poll loop ended with OCE */
+                }
+            }
+
             rawResponse = result.RawResponse;
             if (manifestGate != null)
                 await manifestGate.WaitAsync(ct);
@@ -481,5 +519,32 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             JsonValueKind.Object => e.EnumerateObject().ToDictionary(x => x.Name, x => ToObject(x.Value)),
             _ => null
         };
+    }
+
+    /// <summary>
+    /// While transcription HTTP is in flight, poll chunk cancel flags and cancel the linked CTS so <see cref="HttpClient"/> aborts the request.
+    /// </summary>
+    internal static async Task PollChunkCancelWhileTranscribingAsync(
+        ICancellationManager cancellation,
+        int chunkIndex,
+        CancellationTokenSource cancelTranscription,
+        CancellationToken stopPollingToken)
+    {
+        try
+        {
+            while (!stopPollingToken.IsCancellationRequested)
+            {
+                await Task.Delay(200, stopPollingToken).ConfigureAwait(false);
+                if (cancellation.IsCancelled(chunkIndex))
+                {
+                    cancelTranscription.Cancel();
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // stopPollingToken fired after transcription finished or job cancelled
+        }
     }
 }

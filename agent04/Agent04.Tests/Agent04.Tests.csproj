@@ -20,4 +20,8 @@
     <ProjectReference Include="..\Agent04\Agent04.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\Agent04\config\default.json" Link="config\default.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
