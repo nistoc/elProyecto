@@ -11,6 +11,8 @@ service TranscriptionService {
   rpc QueryJobs(QueryJobsRequest) returns (QueryJobsResponse);
   /// Chunk-level operator actions (cancel is implemented; others may return ok=false).
   rpc ChunkCommand(ChunkCommandRequest) returns (ChunkCommandResponse);
+  /// Enqueue chunk indices for the next pipeline run (writes pending_chunks.json under the job artifact root).
+  rpc EnqueueTranscriptionWork(EnqueueTranscriptionWorkRequest) returns (EnqueueTranscriptionWorkResponse);
 }
 
 // Paths in config_path and input_file_path are relative to the instance's workspace_root (from config).
@@ -37,6 +39,10 @@ message ChunkVirtualModelEntry {
   string completed_at = 3; // ISO8601, empty if not completed
   string state = 4;        // Pending, Running, Completed, Failed, Cancelled
   string error_message = 5; // optional; set when state is Failed (truncated server-side if needed)
+  /// True for split sub-chunk rows (same chunk_index may appear twice: main row + sub rows).
+  bool is_sub_chunk = 6;
+  int32 parent_chunk_index = 7; // main chunk index when is_sub_chunk; otherwise 0
+  int32 sub_chunk_index = 8;    // sub index within parent when is_sub_chunk; otherwise 0
 }
 
 message JobStatusResponse {
@@ -106,6 +112,19 @@ message ChunkCommandRequest {
 }
 
 message ChunkCommandResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message EnqueueTranscriptionWorkRequest {
+  string job_id = 1;
+  /// Indices to transcribe on the next run (0-based). Written to pending_chunks.json next to job artifacts.
+  repeated int32 chunk_indices = 2;
+  /// Same as ChunkCommand: single segment under workspace_root when registry is cold.
+  string job_directory_relative = 3;
+}
+
+message EnqueueTranscriptionWorkResponse {
   bool ok = 1;
   string message = 2;
 }

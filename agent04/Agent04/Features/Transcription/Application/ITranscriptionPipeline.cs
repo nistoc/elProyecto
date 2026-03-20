@@ -21,5 +21,6 @@ public interface ITranscriptionPipeline
         string? jobId = null,
         IJobStatusStore? statusStore = null,
         INodeModel? nodeModel = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<int>? chunkIndicesFilter = null);
 }

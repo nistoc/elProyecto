@@ -1,4 +1,6 @@
 using System.Linq;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Agent04.Application;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
@@ -14,6 +16,9 @@ namespace Agent04.Services;
 
 public class TranscriptionGrpcService : TranscriptionService.TranscriptionServiceBase
 {
+    private static readonly Regex SubChunkNodeId = new(
+        @"^(?<job>.+):transcribe:chunk-(?<parent>\d+):sub-(?<sub>\d+)$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private readonly ITranscriptionPipeline _pipeline;
     private readonly IJobStatusStore _store;
     private readonly WorkspaceRoot _workspaceRoot;
@@ -210,8 +215,52 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 if (job.State is JobState.Completed or JobState.Failed or JobState.Cancelled)
                     return;
             }
-            await Task.Delay(500, context.CancellationToken);
+            var pollMs = _configuration.GetValue("Agent04:StreamJobStatusPollMs", 2000);
+            if (pollMs < 100) pollMs = 100;
+            await Task.Delay(pollMs, context.CancellationToken);
         }
+    }
+
+    public override Task<EnqueueTranscriptionWorkResponse> EnqueueTranscriptionWork(
+        EnqueueTranscriptionWorkRequest request,
+        ServerCallContext context)
+    {
+        if (string.IsNullOrWhiteSpace(request.JobId))
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "job_id is required"));
+
+        string artifactRoot;
+        try
+        {
+            artifactRoot = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
+        }
+        catch (RpcException ex)
+        {
+            return Task.FromResult(new EnqueueTranscriptionWorkResponse { Ok = false, Message = ex.Status.Detail });
+        }
+
+        var path = Path.Combine(artifactRoot, PendingChunksReader.FileName);
+        var dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        var payload = new { chunk_indices = request.ChunkIndices.ToList() };
+        var json = JsonSerializer.Serialize(payload, TranscriptionJsonSerializerOptions.Compact);
+        try
+        {
+            File.WriteAllText(path, json);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "EnqueueTranscriptionWork: failed to write {Path}", path);
+            return Task.FromResult(new EnqueueTranscriptionWorkResponse { Ok = false, Message = ex.Message });
+        }
+
+        _logger.LogInformation(
+            "EnqueueTranscriptionWork: job {JobId} wrote {Path} count={Count}",
+            request.JobId,
+            path,
+            request.ChunkIndices.Count);
+        return Task.FromResult(new EnqueueTranscriptionWorkResponse { Ok = true, Message = "pending_chunks_written" });
     }
 
     public override async Task<ChunkCommandResponse> ChunkCommand(ChunkCommandRequest request, ServerCallContext context)
@@ -430,7 +479,14 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             var node = _nodeQuery.GetNodeByScopeAndId(agent04JobId, nodeId);
             if (node == null)
             {
-                list.Add(new ChunkVirtualModelEntry { ChunkIndex = i, State = nameof(JobState.Pending) });
+                list.Add(new ChunkVirtualModelEntry
+                {
+                    ChunkIndex = i,
+                    State = nameof(JobState.Pending),
+                    IsSubChunk = false,
+                    ParentChunkIndex = 0,
+                    SubChunkIndex = 0
+                });
                 continue;
             }
 
@@ -440,7 +496,31 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 StartedAt = node.StartedAt?.ToString("O") ?? "",
                 CompletedAt = node.CompletedAt?.ToString("O") ?? "",
                 State = node.Status.ToString(),
-                ErrorMessage = TruncateForChunkVm(node.ErrorMessage)
+                ErrorMessage = TruncateForChunkVm(node.ErrorMessage),
+                IsSubChunk = false,
+                ParentChunkIndex = 0,
+                SubChunkIndex = 0
+            });
+        }
+
+        foreach (var n in _nodeQuery.GetByScope(agent04JobId))
+        {
+            var m = SubChunkNodeId.Match(n.Id);
+            if (!m.Success) continue;
+            if (!string.Equals(m.Groups["job"].Value, agent04JobId, StringComparison.Ordinal))
+                continue;
+            var parent = int.Parse(m.Groups["parent"].Value, System.Globalization.CultureInfo.InvariantCulture);
+            var sub = int.Parse(m.Groups["sub"].Value, System.Globalization.CultureInfo.InvariantCulture);
+            list.Add(new ChunkVirtualModelEntry
+            {
+                ChunkIndex = parent,
+                StartedAt = n.StartedAt?.ToString("O") ?? "",
+                CompletedAt = n.CompletedAt?.ToString("O") ?? "",
+                State = n.Status.ToString(),
+                ErrorMessage = TruncateForChunkVm(n.ErrorMessage),
+                IsSubChunk = true,
+                ParentChunkIndex = parent,
+                SubChunkIndex = sub
             });
         }
 
@@ -458,7 +538,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
     {
         if (entries.Count == 0)
             return "";
-        return string.Join("|", entries.Select(e => $"{e.ChunkIndex}:{e.StartedAt}:{e.CompletedAt}:{e.State}:{e.ErrorMessage}"));
+        return string.Join("|", entries.Select(e =>
+            $"{e.ChunkIndex}:{e.IsSubChunk}:{e.ParentChunkIndex}:{e.SubChunkIndex}:{e.StartedAt}:{e.CompletedAt}:{e.State}:{e.ErrorMessage}"));
     }
 
     private async Task RunJobAsync(string jobId, TranscriptionConfig config, string inputPath, string workspaceRoot, CancellationToken cancellationToken)

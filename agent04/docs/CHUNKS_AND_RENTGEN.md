@@ -17,7 +17,7 @@
 |--------|------------|
 | API | gRPC `ChunkCommand` с `ChunkCommandAction.Cancel`. |
 | Изоляция по job | `ICancellationManagerFactory` → per-job каталог под workspace (не общий singleton `cancel_signals` для всех job). |
-| Поведение пайплайна | Перед обработкой чанка `i`: если `IsCancelled(i)` — `continue` (чанк пропускается, в `results` не попадает); узел чанка через `Start`/`Complete` не проходит. |
+| Поведение пайплайна | Перед постановкой в очередь: если `IsCancelled(i)` — `StepStart`/`StepComplete(Cancelled)` в RENTGEN, чанк не в очереди; в merge не попадает. |
 | Итог job | Если хотя бы один чанк обработан, идёт merge; полная отмена всех чанков — граничный случай (пустой `results`), см. код пайплайна. |
 
 ## 3. Операторский split и `split_chunks/chunk_N/…`
@@ -26,7 +26,7 @@
 |--------|--------|
 | Каталоги `split_chunks/chunk_*` из **JobProjectFilesScanner** (agent05) | В Agent04 **нет** отдельного пайплайна «оператор разбил чанк N на подчанки» с записью в эту структуру. |
 | `pre_split` | Это **автоматическая** нарезка **исходного** файла на много чанков в `chunks/`, не иерархия chunk → subchunks для UI scanner. |
-| gRPC `ChunkCommandAction.Split` | Ответ `ok=false`, `not_implemented` (метаданные оператора в RENTGEN — см. ниже). |
+| gRPC `ChunkCommandAction.Split` | При `split_parts >= 2` — ffmpeg-нарезка в `split_chunks/chunk_{N}/sub_chunks/`; метаданные оператора в RENTGEN. |
 
 ## 4. Парсинг подчанков по отдельности
 
@@ -45,3 +45,7 @@
 ## 6. Тесты agent05
 
 - См. `API.Tests/ChunkActionsControllerTests.cs`: `POST /api/jobs/{id}/chunk-actions` с моком `ITranscriptionServiceClient`.
+
+## 7. Восстановление state-файла (legacy)
+
+См. [LEGACY_WORK_STATE_RECOVERY.md](LEGACY_WORK_STATE_RECOVERY.md) — эвристика §1a, если `transcription_work_state.json` отсутствует.

@@ -52,7 +52,6 @@ function AppContent() {
   }, [jobId]);
 
   const steps: { id: StepId; title: string }[] = [
-    { id: 'upload', title: t('upload') },
     { id: 'transcriber', title: t('transcriber') },
     { id: 'refiner', title: t('refiner') },
     { id: 'result', title: t('result') },
@@ -61,7 +60,16 @@ function AppContent() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1 className="topbar__title">{t('appTitle')}</h1>
+        <div className="topbar__brand">
+          <h1 className="topbar__title">{t('appTitle')}</h1>
+          <button
+            type="button"
+            className="topbar__upload"
+            onClick={() => setActiveStep('upload')}
+          >
+            {t('upload')}
+          </button>
+        </div>
         <div className="topbar__actions">
           <button
             type="button"
@@ -252,7 +260,25 @@ function AppContent() {
           background: var(--color-surface-raised);
           color: var(--color-text);
         }
+        .topbar__brand {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          min-width: 0;
+        }
         .topbar__title { margin: 0; font-size: 1.25rem; color: var(--color-text); }
+        .topbar__upload {
+          flex-shrink: 0;
+          padding: 0.35rem 0.75rem;
+          border-radius: 6px;
+          border: 1px solid var(--color-border-strong);
+          background: var(--color-primary);
+          color: var(--color-on-primary);
+          font-size: 0.875rem;
+          font-weight: 500;
+          cursor: pointer;
+        }
+        .topbar__upload:hover { background: var(--color-primary-hover); }
         .topbar__actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
         .topbar__theme,
         .topbar__locale,

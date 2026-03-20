@@ -11,13 +11,17 @@ service TranscriptionService {
   rpc QueryJobs(QueryJobsRequest) returns (QueryJobsResponse);
   /// Chunk-level operator actions (cancel is implemented; others may return ok=false).
   rpc ChunkCommand(ChunkCommandRequest) returns (ChunkCommandResponse);
+  /// Enqueue chunk indices for the next pipeline run (writes pending_chunks.json under the job artifact root).
+  rpc EnqueueTranscriptionWork(EnqueueTranscriptionWorkRequest) returns (EnqueueTranscriptionWorkResponse);
 }
 
+// Paths in config_path and input_file_path are relative to the instance's workspace_root (from config).
+// workspace_root is not sent in the request; it is read from the server's appsettings/environment.
 message SubmitJobRequest {
   string config_path = 1;
   string input_file_path = 2;
   repeated string tags = 3;
-  string callback_url = 4;
+  string callback_url = 4;  // Optional. If set, HTTP POST is sent to this URL when job completes or fails.
 }
 
 message SubmitJobResponse {
@@ -28,17 +32,22 @@ message GetJobStatusRequest {
   string job_id = 1;
 }
 
+/// Per-chunk row from the in-process virtual model (RENTGEN / INodeStore): stable timestamps across refresh.
 message ChunkVirtualModelEntry {
   int32 chunk_index = 1;
-  string started_at = 2;
-  string completed_at = 3;
-  string state = 4;
-  string error_message = 5;
+  string started_at = 2;   // ISO8601, empty if not started
+  string completed_at = 3; // ISO8601, empty if not completed
+  string state = 4;        // Pending, Running, Completed, Failed, Cancelled
+  string error_message = 5; // optional; set when state is Failed (truncated server-side if needed)
+  /// True for split sub-chunk rows (same chunk_index may appear twice: main row + sub rows).
+  bool is_sub_chunk = 6;
+  int32 parent_chunk_index = 7; // main chunk index when is_sub_chunk; otherwise 0
+  int32 sub_chunk_index = 8;    // sub index within parent when is_sub_chunk; otherwise 0
 }
 
 message JobStatusResponse {
   string job_id = 1;
-  string state = 2;
+  string state = 2;  // Pending, Running, Completed, Failed, Cancelled
   int32 progress_percent = 3;
   string current_phase = 4;
   int32 total_chunks = 12;
@@ -54,10 +63,10 @@ message JobStatusResponse {
 }
 
 message QueryJobsRequest {
-  string semantic_key = 1;
-  string status = 2;
-  string from = 3;
-  string to = 4;
+  string semantic_key = 1;  // Filter jobs by this semantic key (one of the job's tags)
+  string status = 2;       // Pending, Running, Completed, Failed, Cancelled
+  string from = 3;          // ISO8601
+  string to = 4;            // ISO8601
   int32 limit = 5;
   int32 offset = 6;
 }
@@ -96,11 +105,26 @@ message ChunkCommandRequest {
   string job_id = 1;
   ChunkCommandAction action = 2;
   int32 chunk_index = 3;
+  /// Optional. Single path segment under workspace_root (Xtract job folder name). Required after Agent04 restart if in-process registry is cold.
   string job_directory_relative = 4;
+  /// For SPLIT: number of sub-chunks (>= 2). Ignored if 0 or unset.
   int32 split_parts = 5;
 }
 
 message ChunkCommandResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message EnqueueTranscriptionWorkRequest {
+  string job_id = 1;
+  /// Indices to transcribe on the next run (0-based). Written to pending_chunks.json next to job artifacts.
+  repeated int32 chunk_indices = 2;
+  /// Same as ChunkCommand: single segment under workspace_root when registry is cold.
+  string job_directory_relative = 3;
+}
+
+message EnqueueTranscriptionWorkResponse {
   bool ok = 1;
   string message = 2;
 }
