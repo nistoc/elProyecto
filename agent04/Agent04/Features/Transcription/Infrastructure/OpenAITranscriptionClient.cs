@@ -315,7 +315,7 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
         }
         else
         {
-            var txt = JsonSerializer.Serialize(raw);
+            var txt = JsonSerializer.Serialize(raw, TranscriptionJsonSerializerOptions.Compact);
             segments.Add(new ASRSegment(0, 0, txt, null));
         }
         return segments;

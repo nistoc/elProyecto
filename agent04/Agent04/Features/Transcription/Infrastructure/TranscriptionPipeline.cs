@@ -510,7 +510,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 dict[p.Name] = ToObject(p.Value);
             return dict;
         }
-        var json = JsonSerializer.Serialize(value);
+        var json = JsonSerializer.Serialize(value, TranscriptionJsonSerializerOptions.Compact);
         using var doc = JsonDocument.Parse(json);
         return ToDictionary(doc.RootElement);
     }

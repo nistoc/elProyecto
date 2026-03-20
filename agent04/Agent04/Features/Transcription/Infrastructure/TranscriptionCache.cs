@@ -66,7 +66,7 @@ public sealed class TranscriptionCache : ITranscriptionCache
             chunks[k] = new { fingerprint = v.Fingerprint, response = v.Response };
         dto["chunks"] = chunks;
         await using var fs = File.Create(manifestPath);
-        await JsonSerializer.SerializeAsync(fs, dto, new JsonSerializerOptions { WriteIndented = true }, cancellationToken);
+        await JsonSerializer.SerializeAsync(fs, dto, TranscriptionJsonSerializerOptions.Indented, cancellationToken);
     }
 
     public async Task<string> GetFileFingerprintAsync(string filePath, CancellationToken cancellationToken = default)

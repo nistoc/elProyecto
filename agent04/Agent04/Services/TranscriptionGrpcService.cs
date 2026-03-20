@@ -492,7 +492,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         try
         {
             var client = _httpClientFactory.CreateClient();
-            var json = System.Text.Json.JsonSerializer.Serialize(job);
+            var json = System.Text.Json.JsonSerializer.Serialize(job, TranscriptionJsonSerializerOptions.Compact);
             var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
             await client.PostAsync(job.CallbackUrl!, content);
         }

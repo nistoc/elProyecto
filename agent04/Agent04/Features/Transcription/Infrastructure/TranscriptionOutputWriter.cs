@@ -62,7 +62,7 @@ public sealed class TranscriptionOutputWriter : ITranscriptionOutputWriter
                 response = r.RawResponse
             }).ToList()
         };
-        var json = JsonSerializer.Serialize(combined, new JsonSerializerOptions { WriteIndented = true });
+        var json = JsonSerializer.Serialize(combined, TranscriptionJsonSerializerOptions.Indented);
         File.WriteAllText(jsonPath, json);
         _logger?.LogInformation("Saved combined raw JSON to: {Path}", jsonPath);
     }
@@ -74,7 +74,7 @@ public sealed class TranscriptionOutputWriter : ITranscriptionOutputWriter
         var outPath = Path.Combine(outputDir, safeBase + ".json");
         try
         {
-            var json = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+            var json = JsonSerializer.Serialize(response, TranscriptionJsonSerializerOptions.Indented);
             File.WriteAllText(outPath, json);
             _logger?.LogInformation("Saved per-chunk JSON: {Path}", outPath);
         }

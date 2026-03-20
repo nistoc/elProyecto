@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace XtractManager.Infrastructure;
@@ -9,5 +10,8 @@ namespace XtractManager.Infrastructure;
 /// </summary>
 public static class ApiJson
 {
-    public static readonly JsonSerializerOptions CamelCase = new(JsonSerializerDefaults.Web);
+    public static readonly JsonSerializerOptions CamelCase = new(JsonSerializerDefaults.Web)
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 }
