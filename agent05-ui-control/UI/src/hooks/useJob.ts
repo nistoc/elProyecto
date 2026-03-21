@@ -46,8 +46,26 @@ function getStepStatus(step: StepId, job: JobSnapshot | null): StepStatus {
 }
 
 const ACTIVE_STEP_KEY = 'xtract-manager-active-step';
+const LAST_JOB_KEY = 'xtract-manager-last-job-id';
 
-export function useJob(initialJobId: string | null): {
+function readLastJobId(): string | null {
+  try {
+    return localStorage.getItem(LAST_JOB_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistLastJobId(id: string | null) {
+  try {
+    if (id) localStorage.setItem(LAST_JOB_KEY, id);
+    else localStorage.removeItem(LAST_JOB_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function useJob(): {
   jobId: string | null;
   job: JobSnapshot | null;
   jobsList: JobListItem[];
@@ -72,7 +90,7 @@ export function useJob(initialJobId: string | null): {
   toggleLogsPause: () => void;
   clearLogsForStep: () => void;
 } {
-  const [jobId, setJobIdState] = useState<string | null>(initialJobId);
+  const [jobId, setJobIdState] = useState<string | null>(() => readLastJobId());
   const [job, setJob] = useState<JobSnapshot | null>(null);
   const [jobsList, setJobsList] = useState<JobListItem[]>([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -87,19 +105,25 @@ export function useJob(initialJobId: string | null): {
   const [jobSnapshotRevision, setJobSnapshotRevision] = useState(0);
   const logBuffer = useLogBuffer();
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  const prevJobIdsRef = useRef<Set<string>>(new Set());
+  const listHydratedRef = useRef(false);
 
   const setJobId = useCallback((id: string | null) => {
+    persistLastJobId(id);
     setJobIdState(id);
     setJob(null);
     setError(null);
     setJobSnapshotRevision(0);
   }, []);
 
-  const setActiveStep = useCallback((step: StepId) => {
-    setActiveStepState(step);
-    localStorage.setItem(ACTIVE_STEP_KEY, step);
-    if (jobId) localStorage.setItem(`${ACTIVE_STEP_KEY}-${jobId}`, step);
-  }, [jobId]);
+  const setActiveStep = useCallback(
+    (step: StepId) => {
+      setActiveStepState(step);
+      localStorage.setItem(ACTIVE_STEP_KEY, step);
+      if (jobId) localStorage.setItem(`${ACTIVE_STEP_KEY}-${jobId}`, step);
+    },
+    [jobId]
+  );
 
   const refreshList = useCallback(async () => {
     setLoadingList(true);
@@ -117,6 +141,34 @@ export function useJob(initialJobId: string | null): {
   useEffect(() => {
     refreshList();
   }, [refreshList]);
+
+  /** First list load: validate restored jobId; later loads: auto-select newest newly appeared job. */
+  useEffect(() => {
+    if (loadingList) return;
+
+    const ids = new Set(jobsList.map((j) => j.id));
+
+    if (!listHydratedRef.current) {
+      listHydratedRef.current = true;
+      prevJobIdsRef.current = ids;
+      if (jobId && !ids.has(jobId)) {
+        setJobId(jobsList[0]?.id ?? null);
+      }
+      return;
+    }
+
+    const prev = prevJobIdsRef.current;
+    const newOnes = jobsList.filter((j) => !prev.has(j.id));
+    prevJobIdsRef.current = ids;
+
+    if (newOnes.length === 0) return;
+
+    const newestNew = [...newOnes].sort((a, b) =>
+      (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
+    )[0];
+    if (newestNew) setJobId(newestNew.id);
+  }, [jobsList, loadingList, jobId, setJobId]);
+
   useEffect(() => {
     if (!jobId) {
       setJob(null);
@@ -194,7 +246,7 @@ export function useJob(initialJobId: string | null): {
       setIsSubmitting(true);
       try {
         const { jobId: newId } = await createJob(file, tags);
-        setJobIdState(newId);
+        setJobId(newId);
         setActiveStepState('transcriber');
         localStorage.setItem(ACTIVE_STEP_KEY, 'transcriber');
         localStorage.setItem(`${ACTIVE_STEP_KEY}-${newId}`, 'transcriber');
@@ -206,30 +258,47 @@ export function useJob(initialJobId: string | null): {
         setIsSubmitting(false);
       }
     },
-    [file, refreshList]
+    [file, refreshList, setJobId]
   );
 
   const handleReset = useCallback(() => {
     setJobId(null);
-    setJob(null);
     setFile(null);
-    setError(null);
-    setJobSnapshotRevision(0);
     setActiveStepState('upload');
     localStorage.removeItem(ACTIVE_STEP_KEY);
   }, [setJobId]);
 
   const handleDeleteJob = useCallback(
     async (id: string) => {
+      const wasSelected = jobId === id;
+      const listBefore = jobsList;
+      let nextId: string | null = null;
+      if (wasSelected) {
+        const idx = listBefore.findIndex((j) => j.id === id);
+        if (idx >= 0) {
+          if (idx + 1 < listBefore.length) nextId = listBefore[idx + 1].id;
+          else if (idx - 1 >= 0) nextId = listBefore[idx - 1].id;
+        }
+      }
       try {
         await deleteJob(id);
-        if (jobId === id) handleReset();
+        if (wasSelected) {
+          if (nextId) {
+            setJobId(nextId);
+            setActiveStepState((prev) => {
+              const s = localStorage.getItem(`${ACTIVE_STEP_KEY}-${nextId}`);
+              return (s as StepId) || prev;
+            });
+          } else {
+            handleReset();
+          }
+        }
         await refreshList();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to delete job');
       }
     },
-    [jobId, handleReset, refreshList]
+    [jobId, jobsList, refreshList, setJobId, handleReset]
   );
 
   const toggleLogsPause = logBuffer.togglePause;

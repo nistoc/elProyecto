@@ -7,6 +7,7 @@ import {
 } from '../api';
 import type { JobProjectFilesState } from '../hooks/useJobProjectFiles';
 import type { JobProjectFile, JobProjectFiles } from '../types';
+import { JobAudioWavePlayer } from './JobAudioWavePlayer';
 
 export type ProjectFilesMode = 'full' | 'transcripts';
 
@@ -210,12 +211,7 @@ export function FileRow({
       </div>
       <div className="pf-file-actions">
         {f.kind === 'audio' && (
-          <audio
-            className="pf-audio"
-            src={url}
-            controls
-            preload="none"
-          />
+          <JobAudioWavePlayer src={url} t={t} />
         )}
         <a href={url} target="_blank" rel="noreferrer" className="pf-open">
           {t('openFile')}
@@ -586,7 +582,69 @@ const styles = `
   .pf-file-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pf-file-meta { color: var(--color-text-secondary); font-size: 0.75rem; }
   .pf-file-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; flex-shrink: 0; }
-  .pf-audio { max-width: min(220px, 100%); height: 28px; vertical-align: middle; }
+  .pf-wave {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: min(100%, 800px);
+    min-width: 280px;
+    max-width: 800px;
+    --pf-wave-line: var(--color-border-strong);
+    --pf-wave-fill: color-mix(in srgb, var(--color-primary) 50%, var(--color-surface-sunken));
+    --pf-wave-playhead: var(--color-primary);
+  }
+  .pf-wave__audio {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .pf-wave__play {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border-radius: 4px;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
+    color: var(--color-heading);
+    cursor: pointer;
+    font-size: 0.75rem;
+    line-height: 1;
+  }
+  .pf-wave__play:disabled { opacity: 0.45; cursor: not-allowed; }
+  .pf-wave__play:hover:not(:disabled) { background: var(--color-surface-hover); }
+  .pf-wave__track {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    height: 40px;
+    border-radius: 4px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-sunken);
+    overflow: hidden;
+    touch-action: none;
+  }
+  .pf-wave__canvas {
+    display: block;
+    width: 100%;
+    height: 40px;
+    vertical-align: top;
+  }
+  .pf-wave__overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    color: var(--color-label);
+    background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+    pointer-events: none;
+  }
+  .pf-wave__overlay--err { color: var(--color-error-muted); }
   .pf-open, .pf-edit { font-size: 0.75rem; }
   .pf-open { color: var(--color-link); }
   .pf-edit {

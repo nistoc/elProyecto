@@ -15,7 +15,6 @@ import { ChunkControlsStats } from './components/ChunkControlsStats';
 function AppContent() {
   const { t, locale, setLocale } = useI18n();
   const { theme, toggleTheme } = useTheme();
-  const [initialJobId] = useState<string | null>(() => null);
   const {
     jobId,
     job,
@@ -38,7 +37,7 @@ function AppContent() {
     bufferedCount,
     toggleLogsPause,
     clearLogsForStep,
-  } = useJob(initialJobId);
+  } = useJob();
 
   const jobFiles = useJobProjectFiles(jobId, jobSnapshotRevision);
 
