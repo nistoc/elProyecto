@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { I18nProvider, useI18n } from './contexts/I18nContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { useJob, type StepId } from './hooks/useJob';
+import { useJobProjectFiles } from './hooks/useJobProjectFiles';
 import { StepCard } from './components/StepCard';
 import { UploadCard } from './components/UploadCard';
 import { JobsList } from './components/JobsList';
@@ -9,6 +10,7 @@ import { LogsSection } from './components/LogsSection';
 import { ResultSection } from './components/ResultSection';
 import { ProjectFilesPanel } from './components/ProjectFilesPanel';
 import { ChunkControlPanel } from './components/ChunkControlPanel';
+import { ChunkControlsStats } from './components/ChunkControlsStats';
 
 function AppContent() {
   const { t, locale, setLocale } = useI18n();
@@ -37,6 +39,8 @@ function AppContent() {
     toggleLogsPause,
     clearLogsForStep,
   } = useJob(initialJobId);
+
+  const jobFiles = useJobProjectFiles(jobId, jobSnapshotRevision);
 
   const [chunkFileFilter, setChunkFileFilter] = useState<number | null>(null);
   const onChunkFileFilterChange = useCallback((v: number | null) => {
@@ -164,6 +168,15 @@ function AppContent() {
                     />
                     {jobId && (
                       <>
+                        <ChunkControlsStats
+                          jobId={jobId}
+                          job={job}
+                          files={jobFiles.data}
+                          filesLoading={jobFiles.loading}
+                          filesError={jobFiles.error}
+                          filesRefreshKey={jobSnapshotRevision}
+                          t={t}
+                        />
                         <ChunkControlPanel
                           jobId={jobId}
                           job={job}
@@ -180,6 +193,8 @@ function AppContent() {
                           t={t}
                           chunkIndexFilter={chunkFileFilter}
                           filesRefreshKey={jobSnapshotRevision}
+                          managedFiles={jobFiles}
+                          hideChunkSections
                         />
                       </>
                     )}

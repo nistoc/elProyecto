@@ -24,6 +24,8 @@ dotnet run
 
 Ensure `appsettings.json` (or environment) contains a valid `WorkspaceRoot` path before starting.
 
+- **Console logging:** timestamps are **UTC** (see `Program.cs`, `SimpleConsole` + `UseUtcTimestamp`).
+
 - **Порт (профили http/https):** **http://localhost:5032** — только **HTTP/2 (h2c)** для gRPC. На Windows без TLS для gRPC нужен отдельный endpoint с h2c (см. `Program.cs` → `ConfigureKestrel`).
 
 ## gRPC API

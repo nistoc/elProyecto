@@ -1,6 +1,7 @@
 using Agent04.Application;
 using Agent04.Composition;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.Logging.Console;
 
 // Load .env from project directory so OPENAI_API_KEY is available
 var envPaths = new[]
@@ -18,6 +19,13 @@ foreach (var p in envPaths)
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.ClearProviders();
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ ";
+    options.UseUtcTimestamp = true;
+});
 
 // gRPC over http:// (h2c): single endpoint HTTP/2 only (Windows без TLS).
 builder.WebHost.ConfigureKestrel(serverOptions =>

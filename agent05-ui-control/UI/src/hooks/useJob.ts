@@ -98,7 +98,8 @@ export function useJob(initialJobId: string | null): {
   const setActiveStep = useCallback((step: StepId) => {
     setActiveStepState(step);
     localStorage.setItem(ACTIVE_STEP_KEY, step);
-  }, []);
+    if (jobId) localStorage.setItem(`${ACTIVE_STEP_KEY}-${jobId}`, step);
+  }, [jobId]);
 
   const refreshList = useCallback(async () => {
     setLoadingList(true);
@@ -195,6 +196,8 @@ export function useJob(initialJobId: string | null): {
         const { jobId: newId } = await createJob(file, tags);
         setJobIdState(newId);
         setActiveStepState('transcriber');
+        localStorage.setItem(ACTIVE_STEP_KEY, 'transcriber');
+        localStorage.setItem(`${ACTIVE_STEP_KEY}-${newId}`, 'transcriber');
         setFile(null);
         await refreshList();
       } catch (e) {

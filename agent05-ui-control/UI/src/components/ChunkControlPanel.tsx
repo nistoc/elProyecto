@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { postJobChunkAction, type ChunkActionName } from '../api';
 import type { ChunkVirtualModelEntry, JobSnapshot } from '../types';
 
@@ -50,9 +50,10 @@ export function ChunkControlPanel({
   const [message, setMessage] = useState<string | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
 
-  const canOperate =
-    job.phase === 'transcriber' &&
-    job.status === 'running' &&
+  const transcriberRunning =
+    job.phase === 'transcriber' && job.status === 'running';
+  const live =
+    transcriberRunning &&
     total > 0 &&
     chunkIndex >= 0 &&
     chunkIndex < total;
@@ -61,9 +62,9 @@ export function ChunkControlPanel({
 
   const readOnly =
     job.status === 'failed' && (vm?.length ?? 0) > 0;
-  const showPanel =
-    (job.phase === 'transcriber' && job.status === 'running') || readOnly;
+  const viewOnly = !readOnly && !transcriberRunning;
 
+  const prevTranscriberRunningRef = useRef(false);
   useEffect(() => {
     if (!hasRunningVm) return;
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);
@@ -76,9 +77,10 @@ export function ChunkControlPanel({
   }, [total]);
 
   useEffect(() => {
-    const running = job.phase === 'transcriber' && job.status === 'running';
-    if (!running && !readOnly) onFileFilterChunkChange(null);
-  }, [job.phase, job.status, readOnly, onFileFilterChunkChange]);
+    if (prevTranscriberRunningRef.current && !transcriberRunning && !readOnly)
+      onFileFilterChunkChange(null);
+    prevTranscriberRunningRef.current = transcriberRunning;
+  }, [transcriberRunning, readOnly, onFileFilterChunkChange]);
 
   useEffect(() => {
     if (fileFilterChunkIndex === null) return;
@@ -124,12 +126,9 @@ export function ChunkControlPanel({
     await runAction('split', idx, n);
   };
 
-  if (!showPanel) {
-    return null;
-  }
-
   const showVmTable = vm && vm.length > 0;
-  const showVmPlaceholder = !readOnly && !showVmTable && total > 0;
+  const showVmPlaceholder =
+    !showVmTable && total > 0 && (transcriberRunning || viewOnly);
 
   return (
     <section className="chunk-panel" aria-label={t('chunkOperatorTitle')}>
@@ -138,6 +137,11 @@ export function ChunkControlPanel({
       {readOnly && (
         <p className="chunk-panel__readonly" role="status">
           {t('chunkPanelReadOnlyAfterFailure')}
+        </p>
+      )}
+      {viewOnly && (
+        <p className="chunk-panel__viewonly" role="status">
+          {t('chunkPanelViewOnlyDisk')}
         </p>
       )}
 
@@ -179,11 +183,11 @@ export function ChunkControlPanel({
                           : t('chunkVmNoStarted')}
                       </td>
                       <td className="chunk-vm__cancel">
-                        {!readOnly && row.state === 'Running' ? (
+                        {live && row.state === 'Running' ? (
                           <button
                             type="button"
                             className="chunk-vm__x"
-                            disabled={!canOperate || busy}
+                            disabled={!live || busy}
                             aria-label={t('chunkVmCancelAria').replace(
                               '{n}',
                               String(row.index)
@@ -285,32 +289,32 @@ export function ChunkControlPanel({
           {t('chunkFilterActive')}: #{fileFilterChunkIndex}
         </p>
       )}
-      {!readOnly && (
+      {live && (
         <div className="chunk-panel__actions">
           <button
             type="button"
-            disabled={!canOperate || busy}
+            disabled={!live || busy}
             onClick={() => runAction('cancel')}
           >
             {t('chunkCancelChunk')}
           </button>
           <button
             type="button"
-            disabled={!canOperate || busy}
+            disabled={!live || busy}
             onClick={() => runAction('skip')}
           >
             {t('chunkSkip')}
           </button>
           <button
             type="button"
-            disabled={!canOperate || busy}
+            disabled={!live || busy}
             onClick={() => runAction('retranscribe')}
           >
             {t('chunkRetranscribe')}
           </button>
           <button
             type="button"
-            disabled={!canOperate || busy}
+            disabled={!live || busy}
             title={t('chunkSplitTitle')}
             onClick={() => void runSplit()}
           >
@@ -349,7 +353,8 @@ export function ChunkControlPanel({
           font-size: 0.8125rem;
           color: var(--color-text-secondary);
         }
-        .chunk-panel__readonly {
+        .chunk-panel__readonly,
+        .chunk-panel__viewonly {
           margin: 0 0 0.75rem 0;
           padding: 0.5rem 0.65rem;
           font-size: 0.8125rem;

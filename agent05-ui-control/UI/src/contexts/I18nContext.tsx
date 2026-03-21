@@ -79,6 +79,15 @@ const messages: Record<Locale, Record<string, string>> = {
     themeDark: 'Dark',
     themeSwitch: 'Color theme',
     chunkOperatorTitle: 'Chunk controls',
+    chunkStatsTitle: 'Chunk controls (Stats)',
+    chunkStatsAudio: 'Chunk audio',
+    chunkStatsJson: 'Chunk JSON',
+    chunkStatsVmStatus: 'VM status',
+    chunkStatsTranscriptionActive: 'Transcription in progress — you can cancel this chunk',
+    chunkStatsCancelChunk: 'Cancel chunk',
+    chunkStatsEmpty: 'No chunk rows yet (upload audio and run transcription, or open a job with chunk artifacts).',
+    chunkStatsLoadingFiles: 'Loading project files…',
+    chunkStatsChunkPrefix: 'Chunk',
     chunkOperatorHint:
       'Cancel stops the in-flight request for a running chunk. Skip / Retranscribe depend on Agent04. Split asks how many parts to write under split_chunks/.',
     chunkIndexLabel: 'Chunk index',
@@ -112,6 +121,8 @@ const messages: Record<Locale, Record<string, string>> = {
     transcriptionErrorTitle: 'Transcription error',
     chunkPanelReadOnlyAfterFailure:
       'The job failed. This chunk table is read-only (last known state from Agent04).',
+    chunkPanelViewOnlyDisk:
+      'View-only: data from disk / API snapshot. Chunk actions are disabled (no live Agent04 session).',
     chunkVmColError: 'Detail',
     chunkSplitPartsPrompt: 'Split into how many parts? (integer, minimum 2)',
     chunkSplitPartsInvalid: 'Enter an integer ≥ 2.',
@@ -188,6 +199,15 @@ const messages: Record<Locale, Record<string, string>> = {
     themeDark: 'Тёмная',
     themeSwitch: 'Тема оформления',
     chunkOperatorTitle: 'Управление чанками',
+    chunkStatsTitle: 'Chunk controls (статистика)',
+    chunkStatsAudio: 'Аудио чанка',
+    chunkStatsJson: 'JSON чанка',
+    chunkStatsVmStatus: 'Статус VM',
+    chunkStatsTranscriptionActive: 'Идёт транскрипция — можно отменить этот чанк',
+    chunkStatsCancelChunk: 'Отменить чанк',
+    chunkStatsEmpty: 'Пока нет строк по чанкам (загрузите аудио и запустите транскрипцию или откройте job с артефактами).',
+    chunkStatsLoadingFiles: 'Загрузка файлов проекта…',
+    chunkStatsChunkPrefix: 'Чанк',
     chunkOperatorHint:
       '«Отменить чанк» обрывает текущий HTTP-запрос для выполняющегося чанка. Skip / Retranscribe — по поддержке Agent04. Split спрашивает число частей и пишет в split_chunks/.',
     chunkIndexLabel: 'Индекс чанка',
@@ -221,6 +241,8 @@ const messages: Record<Locale, Record<string, string>> = {
     transcriptionErrorTitle: 'Ошибка транскрипции',
     chunkPanelReadOnlyAfterFailure:
       'Задание завершилось с ошибкой. Таблица чанков только для просмотра (последнее состояние от Agent04).',
+    chunkPanelViewOnlyDisk:
+      'Только просмотр: данные с диска / снимок API. Действия с чанками отключены (нет живой сессии Agent04).',
     chunkVmColError: 'Деталь',
     chunkSplitPartsPrompt: 'На сколько частей разбить? (целое число, минимум 2)',
     chunkSplitPartsInvalid: 'Введите целое число ≥ 2.',
@@ -297,6 +319,15 @@ const messages: Record<Locale, Record<string, string>> = {
     themeDark: 'Oscuro',
     themeSwitch: 'Tema de color',
     chunkOperatorTitle: 'Control de fragmentos',
+    chunkStatsTitle: 'Chunk controls (estadísticas)',
+    chunkStatsAudio: 'Audio del fragmento',
+    chunkStatsJson: 'JSON del fragmento',
+    chunkStatsVmStatus: 'Estado VM',
+    chunkStatsTranscriptionActive: 'Transcripción en curso — puede cancelar este fragmento',
+    chunkStatsCancelChunk: 'Cancelar fragmento',
+    chunkStatsEmpty: 'Aún no hay filas por fragmento (suba audio y ejecute la transcripción o abra un trabajo con artefactos).',
+    chunkStatsLoadingFiles: 'Cargando archivos del proyecto…',
+    chunkStatsChunkPrefix: 'Fragmento',
     chunkOperatorHint:
       'Cancelar corta la solicitud en curso de un fragmento activo. Omitir / Retranscribir dependen de Agent04. Dividir pide cuántas partes y escribe en split_chunks/.',
     chunkIndexLabel: 'Índice del fragmento',
@@ -330,6 +361,8 @@ const messages: Record<Locale, Record<string, string>> = {
     transcriptionErrorTitle: 'Error de transcripción',
     chunkPanelReadOnlyAfterFailure:
       'El trabajo falló. La tabla de fragmentos es solo lectura (último estado de Agent04).',
+    chunkPanelViewOnlyDisk:
+      'Solo lectura: datos del disco / instantánea de la API. Las acciones de fragmentos están desactivadas (sin sesión viva de Agent04).',
     chunkVmColError: 'Detalle',
     chunkSplitPartsPrompt:
       '¿En cuántas partes dividir? (entero, mínimo 2)',

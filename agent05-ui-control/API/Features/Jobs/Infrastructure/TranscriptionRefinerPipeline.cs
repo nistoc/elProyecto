@@ -70,7 +70,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                 s.Status = "failed";
                 s.Phase = "idle";
                 s.TranscriptionError = "Audio file missing for transcription.";
-            });
+            }, ct);
             return;
         }
         var inputFilePath = Path.GetRelativePath(workspaceRoot, audioFullPath).Replace('\\', '/');
@@ -80,7 +80,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             s.Status = "running";
             s.Phase = "transcriber";
             s.TranscriptionError = null;
-        });
+        }, ct);
         Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
 
         _logger.LogInformation(
@@ -103,7 +103,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                 s.Status = "failed";
                 s.Phase = "idle";
                 s.TranscriptionError = $"Agent04 SubmitJob RPC failed: {ex.StatusCode} {ex.Status.Detail}";
-            });
+            }, ct);
             Broadcast(jobId, "done", null);
             return;
         }
@@ -115,12 +115,12 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                 s.Status = "failed";
                 s.Phase = "idle";
                 s.TranscriptionError = ex.Message;
-            });
+            }, ct);
             Broadcast(jobId, "done", null);
             return;
         }
 
-        await UpdateAndBroadcastAsync(jobId, s => { s.Agent04JobId = transcriptionJobId; });
+        await UpdateAndBroadcastAsync(jobId, s => { s.Agent04JobId = transcriptionJobId; }, ct);
         Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
 
         await foreach (var update in _transcription.StreamJobStatusAsync(transcriptionJobId, ct))
@@ -168,7 +168,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                         ? (update.State == "Cancelled" ? "Transcription cancelled." : "Transcription failed.")
                         : update.ErrorMessage;
                 }
-            });
+            }, ct);
             Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
             var evtPhase = update.State == "Completed"
                 ? "awaiting_refiner"
@@ -216,7 +216,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             }
         }
 
-        await UpdateAndBroadcastAsync(jobId, s => s.Phase = "refiner");
+        await UpdateAndBroadcastAsync(jobId, s => s.Phase = "refiner", ct);
         Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = "refiner" }, ApiJson.CamelCase));
 
         var outputRelForRefiner = TryGetRefinerOutputRelativePath(jobId, jobDir);
@@ -251,7 +251,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         catch (Exception ex)
         {
             _logger.LogError(ex, "Job {JobId}: Agent06 SubmitRefineJob failed", jobId);
-            await UpdateAndBroadcastAsync(jobId, s => { s.Phase = "awaiting_refiner"; s.Status = "done"; });
+            await UpdateAndBroadcastAsync(jobId, s => { s.Phase = "awaiting_refiner"; s.Status = "done"; }, ct);
             Broadcast(jobId, "done", null);
             return;
         }
@@ -265,14 +265,14 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                 { s.Phase = "completed"; s.Status = "done"; }
                 else if (update.State == "Failed" || update.State == "Cancelled")
                 { s.Phase = "awaiting_refiner"; s.Status = update.State == "Failed" ? "failed" : "done"; }
-            });
+            }, ct);
             Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = update.State == "Completed" ? "completed" : snap?.Phase, status = update.State == "Completed" ? "done" : snap?.Status, progress_percent = update.ProgressPercent }, ApiJson.CamelCase));
             if (update.State is "Completed" or "Failed" or "Cancelled")
                 break;
         }
 
         var completedAt = DateTime.UtcNow.ToString("O");
-        await UpdateAndBroadcastAsync(jobId, s => { if (s.Phase != "completed") s.Phase = "completed"; s.Status = "done"; s.CompletedAt = completedAt; });
+        await UpdateAndBroadcastAsync(jobId, s => { if (s.Phase != "completed") s.Phase = "completed"; s.Status = "done"; s.CompletedAt = completedAt; }, ct);
         Broadcast(jobId, "done", null);
     }
 
@@ -335,9 +335,12 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             _ => "running"
         };
 
-    private async Task UpdateAndBroadcastAsync(string jobId, Action<JobSnapshot> update)
+    private async Task UpdateAndBroadcastAsync(string jobId, Action<JobSnapshot> update, CancellationToken ct = default)
     {
         await _store.UpdateAsync(jobId, update);
+        var fresh = await _store.GetAsync(jobId, ct);
+        if (fresh != null)
+            await JobSnapshotDiskEnricher.TryWriteUiStateAsync(_workspace.GetJobDirectoryPath(jobId), fresh, ct);
     }
 
     private void Broadcast(string jobId, string eventType, string? payloadJson)

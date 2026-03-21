@@ -5,6 +5,7 @@ import {
   fetchJobFileText,
   putJobFileContent,
 } from '../api';
+import type { JobProjectFilesState } from '../hooks/useJobProjectFiles';
 import type { JobProjectFile, JobProjectFiles } from '../types';
 
 export type ProjectFilesMode = 'full' | 'transcripts';
@@ -274,6 +275,8 @@ interface ProjectFilesViewProps {
   chunkIndexFilter?: number | null;
   /** Called after a text file is saved (refresh lists / line counts). */
   onFilesMutated?: () => void;
+  /** Hide chunks + chunk JSON (shown in Chunk controls Stats). */
+  hideChunkSections?: boolean;
 }
 
 /** Renders structured file lists (no fetch). */
@@ -284,6 +287,7 @@ export function ProjectFilesView({
   t,
   chunkIndexFilter = null,
   onFilesMutated,
+  hideChunkSections = false,
 }: ProjectFilesViewProps) {
   const [editTarget, setEditTarget] = useState<{
     relativePath: string;
@@ -337,20 +341,27 @@ export function ProjectFilesView({
           t={t}
           onEditText={openEditor}
         />
-        <Section
-          title={indexedSectionTitle(viewData.chunks, t('sectionChunks'))}
-          jobId={jobId}
-          items={viewData.chunks}
-          t={t}
-          onEditText={openEditor}
-        />
-        <Section
-          title={indexedSectionTitle(viewData.chunkJson, t('sectionChunkJson'))}
-          jobId={jobId}
-          items={viewData.chunkJson}
-          t={t}
-          onEditText={openEditor}
-        />
+        {!hideChunkSections && (
+          <>
+            <Section
+              title={indexedSectionTitle(viewData.chunks, t('sectionChunks'))}
+              jobId={jobId}
+              items={viewData.chunks}
+              t={t}
+              onEditText={openEditor}
+            />
+            <Section
+              title={indexedSectionTitle(
+                viewData.chunkJson,
+                t('sectionChunkJson')
+              )}
+              jobId={jobId}
+              items={viewData.chunkJson}
+              t={t}
+              onEditText={openEditor}
+            />
+          </>
+        )}
         <Section
           title={t('sectionIntermediate')}
           jobId={jobId}
@@ -399,6 +410,9 @@ interface ProjectFilesPanelProps {
   chunkIndexFilter?: number | null;
   /** When this changes (e.g. SSE job snapshot), refetch GET .../files so new disk artifacts appear without switching tabs. */
   filesRefreshKey?: number;
+  /** When set, file list state comes from parent (shared with Chunk controls Stats). */
+  managedFiles?: JobProjectFilesState;
+  hideChunkSections?: boolean;
 }
 
 export function ProjectFilesPanel({
@@ -407,6 +421,8 @@ export function ProjectFilesPanel({
   t,
   chunkIndexFilter = null,
   filesRefreshKey = 0,
+  managedFiles,
+  hideChunkSections = false,
 }: ProjectFilesPanelProps) {
   const [data, setData] = useState<JobProjectFiles | null>(null);
   const [jobDir, setJobDir] = useState<string | null>(null);
@@ -417,6 +433,8 @@ export function ProjectFilesPanel({
   const prevJobIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (managedFiles != null) return;
+
     let cancelled = false;
     const jobChanged = prevJobIdRef.current !== jobId;
     prevJobIdRef.current = jobId;
@@ -460,28 +478,35 @@ export function ProjectFilesPanel({
     };
   }, [jobId, reloadKey, filesRefreshKey, t]);
 
-  const showFullSpinner = loading && !data && !err;
+  const effectiveData = managedFiles?.data ?? data;
+  const effectiveJobDir = managedFiles?.jobDir ?? jobDir;
+  const effectiveErr = managedFiles?.error ?? err;
+  const effectiveLoading = managedFiles?.loading ?? loading;
+  const effectiveRefreshing = managedFiles?.refreshing ?? refreshing;
+  const reloadFiles = managedFiles?.reload ?? (() => setReloadKey((k) => k + 1));
+
+  const showFullSpinner = effectiveLoading && !effectiveData && !effectiveErr;
 
   const fullModeToolbar =
     mode === 'full' ? (
       <div className="pf-panel-toolbar">
-        {jobDir && jobDir.length > 0 ? (
+        {effectiveJobDir && effectiveJobDir.length > 0 ? (
           <p className="pf-jobdir">
             <span className="pf-jobdir__label">{t('jobDirectoryPath')}:</span>{' '}
-            <code className="pf-jobdir__path">{jobDir}</code>
+            <code className="pf-jobdir__path">{effectiveJobDir}</code>
           </p>
         ) : (
           <div className="pf-jobdir-spacer" aria-hidden />
         )}
         <div className="pf-toolbar-actions">
-          {refreshing && (
+          {effectiveRefreshing && (
             <span className="pf-refresh-hint">{t('loadingFiles')}</span>
           )}
           <button
             type="button"
             className="pf-refresh-files"
-            onClick={() => setReloadKey((k) => k + 1)}
-            disabled={refreshing}
+            onClick={() => reloadFiles()}
+            disabled={effectiveRefreshing}
           >
             {t('refresh')}
           </button>
@@ -498,16 +523,16 @@ export function ProjectFilesPanel({
       </>
     );
   }
-  if (err) {
+  if (effectiveErr) {
     return (
       <>
         {fullModeToolbar}
-        <p className="pf-status pf-status--err">{err}</p>
+        <p className="pf-status pf-status--err">{effectiveErr}</p>
         <style>{styles}</style>
       </>
     );
   }
-  if (!data) {
+  if (!effectiveData) {
     return (
       <>
         {fullModeToolbar}
@@ -522,11 +547,12 @@ export function ProjectFilesPanel({
       {fullModeToolbar}
       <ProjectFilesView
         jobId={jobId}
-        data={data}
+        data={effectiveData}
         mode={mode}
         t={t}
         chunkIndexFilter={chunkIndexFilter}
-        onFilesMutated={() => setReloadKey((k) => k + 1)}
+        onFilesMutated={() => reloadFiles()}
+        hideChunkSections={hideChunkSections}
       />
     </>
   );

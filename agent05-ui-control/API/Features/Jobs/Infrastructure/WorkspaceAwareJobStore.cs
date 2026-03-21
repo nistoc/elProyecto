@@ -23,8 +23,23 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
     public async Task<Application.JobSnapshot?> GetAsync(string jobId, CancellationToken ct = default)
     {
         var snap = await _inner.GetAsync(jobId, ct);
-        if (snap != null)
-            return snap;
+        if (snap == null)
+            snap = TryBuildArchiveSnapshot(jobId);
+        if (snap == null)
+            return null;
+
+        var dirPath = _workspace.GetJobDirectoryPath(jobId);
+        if (Directory.Exists(dirPath))
+        {
+            snap.JobDirectoryPath ??= dirPath;
+            JobSnapshotDiskEnricher.TryEnrichFromDisk(snap, dirPath, _logger);
+        }
+
+        return snap;
+    }
+
+    private Application.JobSnapshot? TryBuildArchiveSnapshot(string jobId)
+    {
         var dirPath = _workspace.GetJobDirectoryPath(jobId);
         if (!Directory.Exists(dirPath))
         {
