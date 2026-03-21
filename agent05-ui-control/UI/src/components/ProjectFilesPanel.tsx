@@ -73,7 +73,7 @@ function fileMeta(f: JobProjectFile, t: (key: string) => string): string {
   return parts.join(' · ');
 }
 
-function TextFileEditorModal({
+export function TextFileEditorModal({
   jobId,
   file,
   onClose,
@@ -176,7 +176,7 @@ function TextFileEditorModal({
   );
 }
 
-function FileRow({
+export function FileRow({
   jobId,
   f,
   t,
@@ -569,13 +569,20 @@ const styles = `
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 0.5rem;
     padding: 0.35rem 0;
     border-bottom: 1px solid var(--color-border);
     font-size: 0.8125rem;
   }
-  .pf-file-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+  .pf-file-main {
+    width: 400px;
+    min-width: 0;
+    flex: 0 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
   .pf-file-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pf-file-meta { color: var(--color-text-secondary); font-size: 0.75rem; }
   .pf-file-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; flex-shrink: 0; }

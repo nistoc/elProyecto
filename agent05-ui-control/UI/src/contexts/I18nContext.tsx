@@ -11,6 +11,8 @@ type Locale = 'en' | 'ru' | 'es';
 const messages: Record<Locale, Record<string, string>> = {
   en: {
     appTitle: 'XtractManager',
+    statusBarAriaLabel: 'Status bar',
+    statusBarDefaultMessage: 'No notifications yet.',
     clear: 'Clear',
     upload: 'Upload',
     transcriber: 'Transcriber',
@@ -88,6 +90,12 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsEmpty: 'No chunk rows yet (upload audio and run transcription, or open a job with chunk artifacts).',
     chunkStatsLoadingFiles: 'Loading project files…',
     chunkStatsChunkPrefix: 'Chunk',
+    chunkStatsVmBlockTitle: 'Transcription (VM)',
+    chunkStatsStartedAt: 'Started',
+    chunkStatsCompletedAt: 'Finished',
+    chunkStatsOperatorChunk: 'Operator chunk',
+    chunkStatsArtifactCompleted:
+      'Completed (audio + JSON on disk; no Agent04 VM timeline for this job).',
     chunkOperatorHint:
       'Cancel stops the in-flight request for a running chunk. Skip / Retranscribe depend on Agent04. Split asks how many parts to write under split_chunks/.',
     chunkIndexLabel: 'Chunk index',
@@ -131,6 +139,8 @@ const messages: Record<Locale, Record<string, string>> = {
   },
   ru: {
     appTitle: 'XtractManager',
+    statusBarAriaLabel: 'Строка состояния',
+    statusBarDefaultMessage: 'Пока нет уведомлений.',
     clear: 'Очистить',
     upload: 'Загрузка',
     transcriber: 'Транскрайбер',
@@ -208,6 +218,12 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsEmpty: 'Пока нет строк по чанкам (загрузите аудио и запустите транскрипцию или откройте job с артефактами).',
     chunkStatsLoadingFiles: 'Загрузка файлов проекта…',
     chunkStatsChunkPrefix: 'Чанк',
+    chunkStatsVmBlockTitle: 'Транскрипция (VM)',
+    chunkStatsStartedAt: 'Начало',
+    chunkStatsCompletedAt: 'Завершение',
+    chunkStatsOperatorChunk: 'Чанк для операций',
+    chunkStatsArtifactCompleted:
+      'Завершено (есть пары аудио + JSON; для этого job нет VM-таймлайна Agent04).',
     chunkOperatorHint:
       '«Отменить чанк» обрывает текущий HTTP-запрос для выполняющегося чанка. Skip / Retranscribe — по поддержке Agent04. Split спрашивает число частей и пишет в split_chunks/.',
     chunkIndexLabel: 'Индекс чанка',
@@ -251,6 +267,8 @@ const messages: Record<Locale, Record<string, string>> = {
   },
   es: {
     appTitle: 'XtractManager',
+    statusBarAriaLabel: 'Barra de estado',
+    statusBarDefaultMessage: 'Sin notificaciones por ahora.',
     clear: 'Limpiar',
     upload: 'Subir',
     transcriber: 'Transcriptor',
@@ -328,6 +346,12 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsEmpty: 'Aún no hay filas por fragmento (suba audio y ejecute la transcripción o abra un trabajo con artefactos).',
     chunkStatsLoadingFiles: 'Cargando archivos del proyecto…',
     chunkStatsChunkPrefix: 'Fragmento',
+    chunkStatsVmBlockTitle: 'Transcripción (MV)',
+    chunkStatsStartedAt: 'Inicio',
+    chunkStatsCompletedAt: 'Fin',
+    chunkStatsOperatorChunk: 'Fragmento para acciones',
+    chunkStatsArtifactCompleted:
+      'Completado (audio + JSON en disco; sin línea de tiempo VM de Agent04 para este trabajo).',
     chunkOperatorHint:
       'Cancelar corta la solicitud en curso de un fragmento activo. Omitir / Retranscribir dependen de Agent04. Dividir pide cuántas partes y escribe en split_chunks/.',
     chunkIndexLabel: 'Índice del fragmento',

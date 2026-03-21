@@ -47,13 +47,22 @@ function AppContent() {
     setChunkFileFilter(v);
   }, []);
 
+  const [chunkOperatorIndex, setChunkOperatorIndex] = useState(0);
+
   useEffect(() => {
     if (activeStep !== 'transcriber') setChunkFileFilter(null);
   }, [activeStep]);
 
   useEffect(() => {
     setChunkFileFilter(null);
+    setChunkOperatorIndex(0);
   }, [jobId]);
+
+  useEffect(() => {
+    const total = job?.chunks?.total ?? 0;
+    if (total <= 0) return;
+    setChunkOperatorIndex((i) => Math.min(Math.max(0, i), total - 1));
+  }, [job?.chunks?.total]);
 
   const steps: { id: StepId; title: string }[] = [
     { id: 'transcriber', title: t('transcriber') },
@@ -175,12 +184,17 @@ function AppContent() {
                           filesLoading={jobFiles.loading}
                           filesError={jobFiles.error}
                           filesRefreshKey={jobSnapshotRevision}
+                          chunkOperatorIndex={chunkOperatorIndex}
+                          locale={locale}
                           t={t}
+                          onProjectFilesChanged={jobFiles.reload}
                         />
                         <ChunkControlPanel
                           jobId={jobId}
                           job={job}
                           t={t}
+                          chunkIndex={chunkOperatorIndex}
+                          onChunkIndexChange={setChunkOperatorIndex}
                           fileFilterChunkIndex={chunkFileFilter}
                           onFileFilterChunkChange={onChunkFileFilterChange}
                         />
@@ -264,9 +278,20 @@ function AppContent() {
         </main>
       </div>
 
+      <footer className="status-bar" role="status" aria-label={t('statusBarAriaLabel')}>
+        <span className="status-bar__text">{t('statusBarDefaultMessage')}</span>
+      </footer>
+
       <style>{`
-        .app { min-height: 100vh; display: flex; flex-direction: column; }
+        .app {
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
         .topbar {
+          flex-shrink: 0;
           display: flex;
           justify-content: space-between;
           align-items: center;
@@ -309,14 +334,48 @@ function AppContent() {
         .topbar__theme:hover,
         .topbar__clear:hover { background: var(--color-surface-hover); }
         .topbar__locale { cursor: pointer; }
-        .layout { display: flex; flex: 1; min-height: 0; }
+        .layout {
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          overflow: hidden;
+        }
         .sidebar {
           width: 280px;
+          flex-shrink: 0;
+          min-height: 0;
           border-right: 1px solid var(--color-border);
           background: var(--color-sidebar);
+          overflow-x: hidden;
           overflow-y: auto;
         }
-        .content { flex: 1; padding: 1rem; overflow-y: auto; }
+        .content {
+          flex: 1;
+          min-width: 0;
+          min-height: 0;
+          padding: 1rem;
+          overflow-x: hidden;
+          overflow-y: auto;
+        }
+        .status-bar {
+          flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          min-height: 1.75rem;
+          padding: 0.35rem 1rem;
+          border-top: 1px solid var(--color-border);
+          background: var(--color-surface-sunken);
+          color: var(--color-text-secondary);
+          font-size: 0.75rem;
+          gap: 0.75rem;
+        }
+        .status-bar__text {
+          flex: 1;
+          min-width: 0;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
         .steps-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
         .step-content { margin-top: 0.5rem; }
         .step-panel { padding: 1rem; }

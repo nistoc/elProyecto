@@ -1,25 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { postJobChunkAction, type ChunkActionName } from '../api';
-import type { ChunkVirtualModelEntry, JobSnapshot } from '../types';
-
-function formatMmSs(totalSeconds: number): string {
-  const s = Math.max(0, Math.floor(totalSeconds));
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-}
-
-function elapsedSeconds(
-  row: ChunkVirtualModelEntry,
-  nowMs: number
-): number | null {
-  if (!row.startedAt) return null;
-  const start = Date.parse(row.startedAt);
-  if (Number.isNaN(start)) return null;
-  const end = row.completedAt ? Date.parse(row.completedAt) : nowMs;
-  if (Number.isNaN(end)) return null;
-  return (end - start) / 1000;
-}
+import type { JobSnapshot } from '../types';
+import { elapsedSeconds, formatMmSs } from '../utils/chunkVmFormat';
 
 function labelForChunkState(state: string, t: (key: string) => string): string {
   const key = `chunkState${state}`;
@@ -31,6 +13,9 @@ export interface ChunkControlPanelProps {
   jobId: string;
   job: JobSnapshot;
   t: (key: string) => string;
+  /** Selected chunk for operator actions (shared with Chunk controls Stats). */
+  chunkIndex: number;
+  onChunkIndexChange: (index: number) => void;
   /** When set, project file lists can narrow to this chunk index. */
   fileFilterChunkIndex: number | null;
   onFileFilterChunkChange: (index: number | null) => void;
@@ -40,12 +25,13 @@ export function ChunkControlPanel({
   jobId,
   job,
   t,
+  chunkIndex,
+  onChunkIndexChange,
   fileFilterChunkIndex,
   onFileFilterChunkChange,
 }: ChunkControlPanelProps) {
   const total = job.chunks?.total ?? 0;
   const vm = job.chunks?.chunkVirtualModel;
-  const [chunkIndex, setChunkIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -70,11 +56,6 @@ export function ChunkControlPanel({
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [hasRunningVm]);
-
-  useEffect(() => {
-    if (total <= 0) return;
-    setChunkIndex((i) => Math.min(Math.max(0, i), total - 1));
-  }, [total]);
 
   useEffect(() => {
     if (prevTranscriberRunningRef.current && !transcriberRunning && !readOnly)
@@ -257,7 +238,7 @@ export function ChunkControlPanel({
             onChange={(e) => {
               const v = parseInt(e.target.value, 10);
               if (Number.isNaN(v)) return;
-              setChunkIndex(v);
+              onChunkIndexChange(v);
             }}
             className="chunk-panel__input"
           />

@@ -66,8 +66,13 @@ html[data-theme='dark'] {
   --shadow-modal: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
 }
 
+html {
+  height: 100%;
+}
+
 body {
   margin: 0;
+  height: 100%;
   font-family:
     system-ui,
     -apple-system,
@@ -81,5 +86,8 @@ body {
 }
 
 #root {
-  min-height: 100vh;
+  height: 100%;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
 }
