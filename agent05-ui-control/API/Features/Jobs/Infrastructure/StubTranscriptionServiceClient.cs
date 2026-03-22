@@ -18,4 +18,12 @@ public sealed class StubTranscriptionServiceClient : Application.ITranscriptionS
 
     public Task<Application.ChunkCommandResult> ChunkCommandAsync(string agent04JobId, Application.TranscriptionChunkAction action, int chunkIndex, string? jobDirectoryRelative = null, int splitParts = 0, int subChunkIndex = 0, CancellationToken ct = default) =>
         Task.FromResult(new Application.ChunkCommandResult(false, "stub_transcription_client"));
+
+    public Task<Application.ChunkArtifactGroupsResult?> GetChunkArtifactGroupsAsync(
+        string agent04JobId,
+        string jobDirectoryRelative,
+        int totalChunks,
+        CancellationToken ct = default) =>
+        Task.FromResult<Application.ChunkArtifactGroupsResult?>(
+            new Application.ChunkArtifactGroupsResult { Groups = Array.Empty<Application.ChunkArtifactGroupJson>() });
 }

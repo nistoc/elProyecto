@@ -65,6 +65,15 @@ internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient
 
     public Task<JobStatusUpdate?> GetJobStatusAsync(string agent04JobId, CancellationToken ct = default) =>
         Task.FromResult<JobStatusUpdate?>(null);
+
+    public ChunkArtifactGroupsResult? NextChunkGroups { get; set; }
+
+    public Task<ChunkArtifactGroupsResult?> GetChunkArtifactGroupsAsync(
+        string agent04JobId,
+        string jobDirectoryRelative,
+        int totalChunks,
+        CancellationToken ct = default) =>
+        Task.FromResult(NextChunkGroups);
 }
 
 public class ChunkActionsControllerTests

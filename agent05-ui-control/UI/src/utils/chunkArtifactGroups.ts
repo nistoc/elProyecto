@@ -231,6 +231,25 @@ export function chunkArtifactsTranscriptionComplete(
   return audioFiles.every((a) => jsonStems.has(stripExtension(a.name)));
 }
 
+/**
+ * Attach VM rows from the job snapshot to groups loaded from GET .../chunk-artifact-groups
+ * (Agent04 returns file metadata only; vmRow fields are null in JSON).
+ */
+export function mergeChunkGroupVm(
+  groups: ChunkArtifactGroup[],
+  job: JobSnapshot
+): ChunkArtifactGroup[] {
+  const vm = job.chunks?.chunkVirtualModel;
+  return groups.map((g) => ({
+    ...g,
+    vmRow: findMainChunkVmRow(vm, g.index),
+    subChunks: (g.subChunks ?? []).map((sc) => ({
+      ...sc,
+      vmRow: findSubChunkVmRow(vm, g.index, sc.subIndex ?? null),
+    })),
+  }));
+}
+
 export function buildChunkGroups(
   job: JobSnapshot,
   files: JobProjectFiles

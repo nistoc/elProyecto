@@ -196,6 +196,39 @@ public class JobsController : ControllerBase
         return Ok(new { files, jobDir });
     }
 
+    /// <summary>Chunk/split artifact groups from Agent04 (file metadata); UI merges <c>chunkVirtualModel</c> from the job snapshot.</summary>
+    [HttpGet("{id}/chunk-artifact-groups")]
+    public async Task<ActionResult> GetChunkArtifactGroups(string id, CancellationToken ct = default)
+    {
+        var job = await _store.GetAsync(id, ct);
+        var jobDir = _workspace.GetJobDirectoryPath(id);
+        if (job == null && !Directory.Exists(jobDir))
+            return NotFound();
+        if (job == null || string.IsNullOrWhiteSpace(job.Agent04JobId))
+            return Conflict(new { error = "agent04_job_id not available" });
+
+        var totalChunks = job.Chunks?.Total ?? 0;
+        try
+        {
+            var result = await _transcription
+                .GetChunkArtifactGroupsAsync(job.Agent04JobId.Trim(), id, totalChunks, ct)
+                .ConfigureAwait(false);
+            if (result == null)
+                return StatusCode(502, new { error = "agent04_chunk_groups_unavailable" });
+            return Ok(new { groups = result.Groups });
+        }
+        catch (RpcException ex)
+        {
+            _logger.LogWarning(ex, "GetChunkArtifactGroups gRPC failed for job {JobId}", id);
+            return ex.StatusCode switch
+            {
+                Grpc.Core.StatusCode.InvalidArgument => BadRequest(new { error = ex.Status.Detail }),
+                Grpc.Core.StatusCode.NotFound => NotFound(new { error = ex.Status.Detail }),
+                _ => StatusCode(502, new { error = ex.Status.Detail })
+            };
+        }
+    }
+
     /// <summary>Stream a file from the job directory (relative path only). Supports range requests for audio.</summary>
     [HttpGet("{id}/files/content")]
     public IActionResult GetProjectFileContent(string id, [FromQuery] string? path)

@@ -15,6 +15,13 @@ public interface ITranscriptionServiceClient
         int splitParts = 0,
         int subChunkIndex = 0,
         CancellationToken ct = default);
+
+    /// <summary>Chunk/split artifact grouping from Agent04 (file metadata; VM merged in Agent05 UI).</summary>
+    Task<ChunkArtifactGroupsResult?> GetChunkArtifactGroupsAsync(
+        string agent04JobId,
+        string jobDirectoryRelative,
+        int totalChunks,
+        CancellationToken ct = default);
 }
 
 /// <summary>Aligns with agent04.proto ChunkCommandAction numeric values.</summary>
@@ -26,9 +33,36 @@ public enum TranscriptionChunkAction
     Split = 4,
     TranscribeSub = 5,
     RebuildCombined = 6,
+    DeleteSubChunk = 7,
 }
 
 public record ChunkCommandResult(bool Ok, string Message);
+
+/// <summary>JSON shape matches UI <c>ChunkArtifactGroup</c> (camelCase); <c>vmRow</c> is always null from gRPC.</summary>
+public sealed class ChunkArtifactGroupsResult
+{
+    public IReadOnlyList<ChunkArtifactGroupJson> Groups { get; init; } = Array.Empty<ChunkArtifactGroupJson>();
+}
+
+public sealed class ChunkArtifactGroupJson
+{
+    public int Index { get; set; }
+    public string DisplayStem { get; set; } = "";
+    public IReadOnlyList<JobProjectFile> AudioFiles { get; set; } = Array.Empty<JobProjectFile>();
+    public IReadOnlyList<JobProjectFile> JsonFiles { get; set; } = Array.Empty<JobProjectFile>();
+    public IReadOnlyList<SubChunkArtifactGroupJson> SubChunks { get; set; } = Array.Empty<SubChunkArtifactGroupJson>();
+    public IReadOnlyList<JobProjectFile> MergedSplitFiles { get; set; } = Array.Empty<JobProjectFile>();
+    public object? VmRow { get; set; }
+}
+
+public sealed class SubChunkArtifactGroupJson
+{
+    public int? SubIndex { get; set; }
+    public string DisplayStem { get; set; } = "";
+    public IReadOnlyList<JobProjectFile> AudioFiles { get; set; } = Array.Empty<JobProjectFile>();
+    public IReadOnlyList<JobProjectFile> JsonFiles { get; set; } = Array.Empty<JobProjectFile>();
+    public object? VmRow { get; set; }
+}
 
 public record SubmitJobResult(string JobId);
 

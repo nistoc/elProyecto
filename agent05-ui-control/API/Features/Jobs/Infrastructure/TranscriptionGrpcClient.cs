@@ -148,4 +148,89 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
             cancellationToken: ct);
         return new Application.ChunkCommandResult(response.Ok, response.Message ?? "");
     }
+
+    public async Task<Application.ChunkArtifactGroupsResult?> GetChunkArtifactGroupsAsync(
+        string agent04JobId,
+        string jobDirectoryRelative,
+        int totalChunks,
+        CancellationToken ct = default)
+    {
+        using var channel = GrpcChannel.ForAddress(_address);
+        var client = new TranscriptionService.TranscriptionServiceClient(channel);
+        try
+        {
+            var response = await client.GetChunkArtifactGroupsAsync(
+                new GetChunkArtifactGroupsRequest
+                {
+                    JobId = agent04JobId,
+                    JobDirectoryRelative = jobDirectoryRelative ?? "",
+                    TotalChunks = totalChunks
+                },
+                cancellationToken: ct).ResponseAsync.ConfigureAwait(false);
+            var groups = response.Groups.Select(MapChunkGroup).ToList();
+            return new Application.ChunkArtifactGroupsResult { Groups = groups };
+        }
+        catch (RpcException ex)
+        {
+            _logger.LogDebug(
+                ex,
+                "Agent04 GetChunkArtifactGroups failed for {JobId}, dir={Dir}",
+                agent04JobId,
+                jobDirectoryRelative);
+            return null;
+        }
+    }
+
+    private static Application.JobProjectFile MapArtifactFile(JobArtifactFileEntry e)
+    {
+        var f = new Application.JobProjectFile
+        {
+            Name = e.Name ?? "",
+            RelativePath = e.RelativePath ?? "",
+            Kind = string.IsNullOrEmpty(e.Kind) ? "other" : e.Kind,
+            SizeBytes = e.SizeBytes,
+            FullPath = null
+        };
+        if (e.HasLineCount)
+            f.LineCount = e.LineCount;
+        if (e.HasDurationSeconds)
+            f.DurationSeconds = e.DurationSeconds;
+        if (e.HasFileChunkIndex)
+            f.Index = e.FileChunkIndex;
+        if (e.HasParentIndex)
+            f.ParentIndex = e.ParentIndex;
+        if (e.HasSubIndex)
+            f.SubIndex = e.SubIndex;
+        if (e.HasHasTranscript)
+            f.HasTranscript = e.HasTranscript;
+        if (e.HasIsTranscript)
+            f.IsTranscript = e.IsTranscript;
+        return f;
+    }
+
+    private static Application.SubChunkArtifactGroupJson MapSubChunkGroup(SubChunkArtifactGroup s)
+    {
+        return new Application.SubChunkArtifactGroupJson
+        {
+            SubIndex = s.HasSubIndex ? s.SubIndex : null,
+            DisplayStem = s.DisplayStem ?? "",
+            AudioFiles = s.AudioFiles.Select(MapArtifactFile).ToList(),
+            JsonFiles = s.JsonFiles.Select(MapArtifactFile).ToList(),
+            VmRow = null
+        };
+    }
+
+    private static Application.ChunkArtifactGroupJson MapChunkGroup(ChunkArtifactGroup c)
+    {
+        return new Application.ChunkArtifactGroupJson
+        {
+            Index = c.Index,
+            DisplayStem = c.DisplayStem ?? "",
+            AudioFiles = c.AudioFiles.Select(MapArtifactFile).ToList(),
+            JsonFiles = c.JsonFiles.Select(MapArtifactFile).ToList(),
+            SubChunks = c.SubChunks.Select(MapSubChunkGroup).ToList(),
+            MergedSplitFiles = c.MergedSplitFiles.Select(MapArtifactFile).ToList(),
+            VmRow = null
+        };
+    }
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   deleteJobSubChunk,
+  fetchJobChunkArtifactGroups,
   postJobChunkAction,
   type ChunkActionName,
   type PostChunkActionOptions,
@@ -11,10 +12,12 @@ import type {
   JobProjectFiles,
   JobSnapshot,
 } from '../types';
+import type { ChunkArtifactGroup } from '../utils/chunkArtifactGroups';
 import {
   buildChunkGroups,
   chunkArtifactsTranscriptionComplete,
   chunkHasBlockingSplitArtifacts,
+  mergeChunkGroupVm,
 } from '../utils/chunkArtifactGroups';
 import {
   elapsedSeconds,
@@ -268,6 +271,10 @@ export function ChunkControlsStats({
     relativePath: string;
     name: string;
   } | null>(null);
+  /** From Agent04 via GET .../chunk-artifact-groups; null = use file-based buildChunkGroups. */
+  const [agent04ArtifactGroups, setAgent04ArtifactGroups] = useState<
+    ChunkArtifactGroup[] | null
+  >(null);
 
   const openEditor = (f: JobProjectFile) =>
     setEditTarget({ relativePath: f.relativePath, name: f.name });
@@ -301,13 +308,36 @@ export function ChunkControlsStats({
     return () => window.clearInterval(id);
   }, [hasRunningVm, refreshJobSnapshot]);
 
+  useEffect(() => {
+    const aid = job.agent04JobId?.trim();
+    if (!aid) {
+      setAgent04ArtifactGroups(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { groups } = await fetchJobChunkArtifactGroups(jobId);
+        if (!cancelled) setAgent04ArtifactGroups(groups ?? []);
+      } catch {
+        if (!cancelled) setAgent04ArtifactGroups(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, job.agent04JobId, files]);
+
   const total = job.chunks?.total ?? 0;
   const readOnly =
     job.status === 'failed' && (vmAll?.length ?? 0) > 0;
   const live = transcriberRunning && total > 0;
 
   const fileData = files ?? emptyFiles;
-  const groups = buildChunkGroups(job, fileData);
+  const groups =
+    agent04ArtifactGroups != null
+      ? mergeChunkGroupVm(agent04ArtifactGroups, job)
+      : buildChunkGroups(job, fileData);
   const showList = groups.length > 0;
   const anyVmTelemetry = groups.some((g) => vmRowHasTelemetry(g.vmRow));
 

@@ -6,6 +6,7 @@ import type {
   StreamEvent,
   JobFilesApiResponse,
 } from './types';
+import type { ChunkArtifactGroup } from './utils/chunkArtifactGroups';
 
 const API_BASE = '';
 
@@ -58,6 +59,32 @@ export async function fetchJobFiles(
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`HTTP ${r.status}: /api/jobs/.../files`);
   return r.json() as Promise<JobFilesApiResponse>;
+}
+
+/** Chunk/split groups from Agent04 via API proxy (VM merged client-side). */
+export async function fetchJobChunkArtifactGroups(
+  jobId: string
+): Promise<{ groups: ChunkArtifactGroup[] }> {
+  const r = await fetch(
+    `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/chunk-artifact-groups`
+  );
+  if (r.status === 404) throw new Error(`HTTP ${r.status}: job not found`);
+  if (r.status === 409) {
+    const text = await r.text();
+    throw new Error(text || 'agent04_job_id not available');
+  }
+  if (!r.ok) {
+    const text = await r.text();
+    let msg = text || `HTTP ${r.status}`;
+    try {
+      const j = JSON.parse(text) as { error?: string };
+      if (j?.error) msg = j.error;
+    } catch {
+      /* keep */
+    }
+    throw new Error(msg);
+  }
+  return r.json() as Promise<{ groups: ChunkArtifactGroup[] }>;
 }
 
 /** URL to stream/download a file by path relative to the job directory. */

@@ -4,6 +4,9 @@ option csharp_namespace = "Agent04.Proto";
 
 package agent04.transcription;
 
+// VM policy (chunk groups RPC, phase 2): grouped file metadata only from Agent04; ChunkVirtualModel rows for Stats stay merged
+// in Agent05 (ChunkVirtualModelMerge + snapshot) until phase 7 — see docs/PROJECT_ARTIFACT_SERVICE.md.
+
 service TranscriptionService {
   rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse);
   rpc GetJobStatus(GetJobStatusRequest) returns (JobStatusResponse);
@@ -13,6 +16,8 @@ service TranscriptionService {
   rpc ChunkCommand(ChunkCommandRequest) returns (ChunkCommandResponse);
   /// Enqueue chunk indices for the next pipeline run (writes pending_chunks.json under the job artifact root).
   rpc EnqueueTranscriptionWork(EnqueueTranscriptionWorkRequest) returns (EnqueueTranscriptionWorkResponse);
+  /// Chunk / split artifact grouping for Stats (file metadata only; VM rows stay in Agent05 until phase 7).
+  rpc GetChunkArtifactGroups(GetChunkArtifactGroupsRequest) returns (GetChunkArtifactGroupsResponse);
 }
 
 // Paths in config_path and input_file_path are relative to the instance's workspace_root (from config).
@@ -43,6 +48,7 @@ message ChunkVirtualModelEntry {
   bool is_sub_chunk = 6;
   int32 parent_chunk_index = 7; // main chunk index when is_sub_chunk; otherwise 0
   int32 sub_chunk_index = 8;    // sub index within parent when is_sub_chunk; otherwise 0
+  /// Multi-line diagnostic: retries, HTTP errors, completion (cleared when chunk restarts).
   string transcript_activity_log = 9;
 }
 
@@ -61,6 +67,7 @@ message JobStatusResponse {
   string json_output_path = 10;
   string error_message = 11;
   repeated ChunkVirtualModelEntry chunk_virtual_model = 14;
+  /// Latest concise line for operator UI (e.g. automatic transcription HTTP retry).
   string transcription_footer_hint = 15;
 }
 
@@ -102,8 +109,12 @@ enum ChunkCommandAction {
   CHUNK_COMMAND_ACTION_SKIP = 2;
   CHUNK_COMMAND_ACTION_RETRANSCRIBE = 3;
   CHUNK_COMMAND_ACTION_SPLIT = 4;
+  /// Transcribe one operator split sub-file under split_chunks/chunk_{chunk_index}/sub_chunks/ (writes results/sub_chunk_XX_result.json).
   CHUNK_COMMAND_ACTION_TRANSCRIBE_SUB = 5;
+  /// Rebuild combined transcript.md + openai_response.json from per-chunk JSON only (chunk_index ignored).
   CHUNK_COMMAND_ACTION_REBUILD_COMBINED = 6;
+  /// Remove one operator-split sub-chunk (audio, result json, merged split, cancel flag, work-state row). chunk_index = parent, sub_chunk_index = sub.
+  CHUNK_COMMAND_ACTION_DELETE_SUB_CHUNK = 7;
 }
 
 message ChunkCommandRequest {
@@ -114,6 +125,7 @@ message ChunkCommandRequest {
   string job_directory_relative = 4;
   /// For SPLIT: number of sub-chunks (>= 2). Ignored if 0 or unset.
   int32 split_parts = 5;
+  /// For TRANSCRIBE_SUB / DELETE_SUB_CHUNK: 0-based sub-chunk index (matches _sub_XX in filename).
   int32 sub_chunk_index = 6;
 }
 
@@ -133,4 +145,46 @@ message EnqueueTranscriptionWorkRequest {
 message EnqueueTranscriptionWorkResponse {
   bool ok = 1;
   string message = 2;
+}
+
+message JobArtifactFileEntry {
+  string name = 1;
+  string relative_path = 2;
+  string kind = 3;
+  int64 size_bytes = 4;
+  optional int32 line_count = 5;
+  optional double duration_seconds = 6;
+  /// Chunk index from chunks/ or chunks_json/ scan (first digits in filename).
+  optional int32 file_chunk_index = 7;
+  optional int32 parent_index = 8;
+  optional int32 sub_index = 9;
+  optional bool has_transcript = 10;
+  optional bool is_transcript = 11;
+}
+
+message SubChunkArtifactGroup {
+  optional int32 sub_index = 1;
+  string display_stem = 2;
+  repeated JobArtifactFileEntry audio_files = 3;
+  repeated JobArtifactFileEntry json_files = 4;
+}
+
+message ChunkArtifactGroup {
+  int32 index = 1;
+  string display_stem = 2;
+  repeated JobArtifactFileEntry audio_files = 3;
+  repeated JobArtifactFileEntry json_files = 4;
+  repeated SubChunkArtifactGroup sub_chunks = 5;
+  repeated JobArtifactFileEntry merged_split_files = 6;
+}
+
+message GetChunkArtifactGroupsRequest {
+  string job_id = 1;
+  string job_directory_relative = 2;
+  /// If > 0, group rows are 0..total_chunks-1. If 0, total_chunks is read from transcription_work_state.json; if still 0, indices come from chunk files + split_chunks only.
+  int32 total_chunks = 3;
+}
+
+message GetChunkArtifactGroupsResponse {
+  repeated ChunkArtifactGroup groups = 1;
 }

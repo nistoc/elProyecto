@@ -1,0 +1,120 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
+using XtractManager.Controllers;
+using XtractManager.Features.Jobs.Application;
+using XtractManager.Features.Jobs.Infrastructure;
+using XtractManager.Infrastructure;
+using Xunit;
+
+namespace XtractManager.Tests;
+
+public class ChunkArtifactGroupsControllerTests
+{
+    [Fact]
+    public async Task GetChunkArtifactGroups_ReturnsGroups_FromTranscriptionClient()
+    {
+        var store = new InMemoryJobStore();
+        var jobId = await store.CreateAsync(new JobCreateInput("a.wav", null));
+        await store.UpdateAsync(jobId, s =>
+        {
+            s.Agent04JobId = "grpc-job-1";
+            s.Chunks = new ChunkState { Total = 2 };
+        });
+
+        var ws = new StubJobWorkspace();
+        Directory.CreateDirectory(ws.GetJobDirectoryPath(jobId));
+
+        var transcription = new RecordingTranscriptionClient
+        {
+            NextChunkGroups = new ChunkArtifactGroupsResult
+            {
+                Groups =
+                [
+                    new ChunkArtifactGroupJson
+                    {
+                        Index = 0,
+                        DisplayStem = "chunk0",
+                        AudioFiles =
+                        [
+                            new JobProjectFile
+                            {
+                                Name = "x.wav",
+                                RelativePath = "chunks/x.wav",
+                                Kind = "audio",
+                                SizeBytes = 10,
+                                Index = 0
+                            }
+                        ],
+                        JsonFiles = [],
+                        SubChunks = [],
+                        MergedSplitFiles = [],
+                        VmRow = null
+                    }
+                ]
+            }
+        };
+
+        var controller = new JobsController(
+            store,
+            ws,
+            MockPipeline.Instance,
+            MockBroadcaster.Instance,
+            transcription,
+            NullLogger<JobsController>.Instance);
+
+        var result = await controller.GetChunkArtifactGroups(jobId, CancellationToken.None);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var json = JsonSerializer.Serialize(ok.Value, ApiJson.CamelCase);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.True(root.TryGetProperty("groups", out var groupsEl));
+        Assert.Equal(JsonValueKind.Array, groupsEl.ValueKind);
+        Assert.Equal(1, groupsEl.GetArrayLength());
+        var g0 = groupsEl[0];
+        Assert.Equal(0, g0.GetProperty("index").GetInt32());
+        Assert.Equal("chunk0", g0.GetProperty("displayStem").GetString());
+        Assert.Equal("x.wav", g0.GetProperty("audioFiles")[0].GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task GetChunkArtifactGroups_WithoutAgent04Id_Returns409()
+    {
+        var store = new InMemoryJobStore();
+        var jobId = await store.CreateAsync(new JobCreateInput("a.wav", null));
+        var ws = new StubJobWorkspace();
+        Directory.CreateDirectory(ws.GetJobDirectoryPath(jobId));
+
+        var controller = new JobsController(
+            store,
+            ws,
+            MockPipeline.Instance,
+            MockBroadcaster.Instance,
+            new RecordingTranscriptionClient(),
+            NullLogger<JobsController>.Instance);
+
+        var result = await controller.GetChunkArtifactGroups(jobId, CancellationToken.None);
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        Assert.NotNull(conflict.Value);
+    }
+
+    private static class MockPipeline
+    {
+        public static readonly IPipeline Instance = new NoOpPipeline();
+        private sealed class NoOpPipeline : IPipeline
+        {
+            public Task RunAsync(string jobId, CancellationToken ct = default) => Task.CompletedTask;
+        }
+    }
+
+    private static class MockBroadcaster
+    {
+        public static readonly IBroadcaster Instance = new NoOpBroadcaster();
+        private sealed class NoOpBroadcaster : IBroadcaster
+        {
+            public void Publish(string jobId, string payloadJson) { }
+            public void Subscribe(string jobId, Action<string> handler) { }
+            public void Unsubscribe(string jobId, Action<string> handler) { }
+        }
+    }
+}
