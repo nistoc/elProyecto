@@ -4,6 +4,9 @@ option csharp_namespace = "Agent04.Proto";
 
 package agent04.transcription;
 
+// VM policy (chunk groups RPC, phase 2): grouped file metadata only from Agent04; ChunkVirtualModel rows for Stats stay merged
+// in Agent05 (ChunkVirtualModelMerge + snapshot) until phase 7 — see docs/PROJECT_ARTIFACT_SERVICE.md.
+
 service TranscriptionService {
   rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse);
   rpc GetJobStatus(GetJobStatusRequest) returns (JobStatusResponse);

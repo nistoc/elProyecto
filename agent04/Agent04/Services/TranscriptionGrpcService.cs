@@ -27,6 +27,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
     private readonly ILogger<TranscriptionGrpcService> _logger;
     private readonly IConfiguration _configuration;
     private readonly IJobArtifactRootRegistry _artifactRootRegistry;
+    private readonly IProjectArtifactService _projectArtifactService;
     private readonly ICancellationManagerFactory _cancellationFactory;
     private readonly IAudioUtils _audioUtils;
     private readonly INodeModel? _nodeModel;
@@ -43,6 +44,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         ILogger<TranscriptionGrpcService> logger,
         IConfiguration configuration,
         IJobArtifactRootRegistry artifactRootRegistry,
+        IProjectArtifactService projectArtifactService,
         ICancellationManagerFactory cancellationFactory,
         IAudioUtils audioUtils,
         INodeModel? nodeModel = null,
@@ -58,6 +60,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         _logger = logger;
         _configuration = configuration;
         _artifactRootRegistry = artifactRootRegistry;
+        _projectArtifactService = projectArtifactService;
         _cancellationFactory = cancellationFactory;
         _audioUtils = audioUtils;
         _nodeModel = nodeModel;
@@ -655,30 +658,18 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
     private string ResolveChunkCancelBase(string agent04JobId, string jobDirectoryRelativeFromRequest)
     {
         var root = Path.GetFullPath(_workspaceRoot.RootPath);
-        if (_artifactRootRegistry.TryGet(agent04JobId, out var registered) && !string.IsNullOrEmpty(registered))
-            return registered;
+        var result = _projectArtifactService.ResolveJobArtifactRoot(root, agent04JobId, jobDirectoryRelativeFromRequest);
+        if (result.IsSuccess)
+            return result.Path!;
 
-        if (!string.IsNullOrWhiteSpace(jobDirectoryRelativeFromRequest))
+        return result.Failure switch
         {
-            var rel = jobDirectoryRelativeFromRequest.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            if (rel.Contains("..", StringComparison.Ordinal) || rel.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]) >= 0)
-                throw new RpcException(new Status(StatusCode.InvalidArgument, "job_directory_relative must be a single path segment"));
-            var combined = Path.GetFullPath(Path.Combine(root, rel));
-            var back = Path.GetRelativePath(root, combined);
-            if (back.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(back))
-                throw new RpcException(new Status(StatusCode.InvalidArgument, "job_directory_relative resolves outside workspace_root"));
-            return combined;
-        }
-
-        var strict = _configuration.GetValue("Agent04:StrictChunkCancelPath", false);
-        if (strict)
-            throw new RpcException(new Status(StatusCode.FailedPrecondition,
-                "Chunk cancel requires job_directory_relative after restart or unknown job; set Agent04:StrictChunkCancelPath=false to allow legacy workspace-root fallback."));
-
-        _logger.LogWarning(
-            "ChunkCommand: cancel signals use workspace root for Agent04 job {JobId}; worker may not see them if artifacts are under a job subfolder. Pass job_directory_relative.",
-            agent04JobId);
-        return root;
+            ArtifactRootResolutionFailureCode.InvalidRelativePath or ArtifactRootResolutionFailureCode.OutsideWorkspace =>
+                throw new RpcException(new Status(StatusCode.InvalidArgument, result.Message ?? "invalid path")),
+            ArtifactRootResolutionFailureCode.StrictRequiresJobDirectoryRelative =>
+                throw new RpcException(new Status(StatusCode.FailedPrecondition, result.Message ?? "strict path required")),
+            _ => throw new RpcException(new Status(StatusCode.Internal, result.Message ?? "artifact root resolution failed"))
+        };
     }
 
     private string? ResolveConfigFullPath(string workspaceRoot, string configPathRel)

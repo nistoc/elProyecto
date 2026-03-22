@@ -41,6 +41,8 @@ Paths in requests are relative to the instance `workspace_root` (from config):
 
 Proto: `Agent04/Proto/transcription.proto`.
 
+Контракт персистентного слоя артефактов job на диске: **`docs/PROJECT_ARTIFACT_SERVICE.md`** (`IProjectArtifactService` / `ProjectArtifactService`).
+
 > **RENTGEN / узлы:** ранее дерево узлов отдавалось по HTTP (`GET .../nodes`). Внешнего HTTP больше нет; для списка заданий используйте **QueryJobs**. При необходимости дерева узлов — расширение `.proto` или отдельный read-сервис (см. `docs/RENTGEN_IMPLEMENTATION.md`). Аудит чанков, под-чанков и связи с RENTGEN — **`docs/CHUNKS_AND_RENTGEN.md`**.
 
 ## Parallel transcription & HTTP logs

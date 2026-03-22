@@ -46,6 +46,7 @@ public static class Agent04ServiceRegistration
 
         services.AddSingleton<ICancellationManagerFactory, PerJobCancellationManagerFactory>();
         services.AddSingleton<IJobArtifactRootRegistry, JobArtifactRootRegistry>();
+        services.AddSingleton<IProjectArtifactService, ProjectArtifactService>();
 
         services.AddSingleton<ITranscriptionOutputWriter>(sp =>
         {
