@@ -25,12 +25,16 @@ public static class SplitChunkMergeIntegrator
             artifactRoot + "|" + parentChunkIndex,
             static _ => new SemaphoreSlim(1, 1));
 
-    public static async Task TryAfterSubChunkCompletedAsync(
+    /// <summary>
+    /// Idempotent merge for operator split: all expected <c>sub_chunk_XX_result.json</c> must exist (from <c>sub_chunks/</c> audio indices).
+    /// Uses the same per-(artifactRoot, parent) lock as <see cref="TryAfterSubChunkCompletedAsync"/>.
+    /// </summary>
+    /// <returns><c>(true, rebuild_split_merged_ok)</c> on success; otherwise a stable <c>split_merge_*</c> reason.</returns>
+    public static async Task<(bool Ok, string Message)> TryRebuildSplitMergedForChunkAsync(
         TranscriptionConfig config,
         string artifactRoot,
         string agentJobId,
         int parentChunkIndex,
-        int totalChunks,
         ITranscriptionMerger merger,
         ILogger? logger,
         CancellationToken ct)
@@ -40,7 +44,7 @@ public static class SplitChunkMergeIntegrator
         var subChunksDir = Path.Combine(chunkFolder, "sub_chunks");
         var resultsDir = Path.Combine(chunkFolder, "results");
         if (!Directory.Exists(subChunksDir) || !Directory.Exists(resultsDir))
-            return;
+            return (false, "split_merge_no_split_layout");
 
         var sem = MergeLock(artifactRoot, parentChunkIndex);
         await sem.WaitAsync(ct).ConfigureAwait(false);
@@ -48,17 +52,17 @@ public static class SplitChunkMergeIntegrator
         {
             var expectedSubs = CountExpectedSubChunks(subChunksDir);
             if (expectedSubs <= 0)
-                return;
+                return (false, "split_merge_no_expected_sub_chunks");
 
             var pairs = new List<(int SubIdx, TranscriptionResult Result)>();
             for (var i = 0; i < expectedSubs; i++)
             {
                 var path = Path.Combine(resultsDir, $"sub_chunk_{i:D2}_result.json");
                 if (!File.Exists(path))
-                    return;
+                    return (false, "split_merge_incomplete_sub_results");
                 var tr = SubChunkResultReader.TryLoad(path);
                 if (tr == null)
-                    return;
+                    return (false, "split_merge_invalid_sub_result");
                 pairs.Add((i, tr));
             }
 
@@ -71,7 +75,7 @@ public static class SplitChunkMergeIntegrator
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "Split merge: could not resolve parent offset for chunk {Chunk}", parentChunkIndex);
-                return;
+                return (false, "split_merge_parent_offset_failed");
             }
 
             TranscriptionResult mergedAbs;
@@ -82,7 +86,7 @@ public static class SplitChunkMergeIntegrator
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "Split merge: merger failed for chunk {Chunk}", parentChunkIndex);
-                return;
+                return (false, "split_merge_merger_failed");
             }
 
             await SaveChunkMergedArtifactsAsync(chunkFolder, parentChunkIndex, mergedAbs, logger, ct).ConfigureAwait(false);
@@ -97,11 +101,36 @@ public static class SplitChunkMergeIntegrator
                     logger,
                     ct)
                 .ConfigureAwait(false);
+
+            return (true, "rebuild_split_merged_ok");
         }
         finally
         {
             sem.Release();
         }
+    }
+
+    /// <summary>Called after a sub-chunk transcription finishes; merges when every expected sub has a result (silent no-op if not).</summary>
+    public static async Task TryAfterSubChunkCompletedAsync(
+        TranscriptionConfig config,
+        string artifactRoot,
+        string agentJobId,
+        int parentChunkIndex,
+        int totalChunks,
+        ITranscriptionMerger merger,
+        ILogger? logger,
+        CancellationToken ct)
+    {
+        _ = totalChunks;
+        await TryRebuildSplitMergedForChunkAsync(
+                config,
+                artifactRoot,
+                agentJobId,
+                parentChunkIndex,
+                merger,
+                logger,
+                ct)
+            .ConfigureAwait(false);
     }
 
     private static int CountExpectedSubChunks(string subChunksDir)

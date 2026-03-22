@@ -75,6 +75,24 @@ export function chunkArtifactsTranscriptionComplete(
   return audioFiles.every((a) => jsonStems.has(stripExtension(a.name)));
 }
 
+/** Matches Agent04 `sub_chunk_XX_result.json` naming (two-digit index). */
+export function subChunkGroupHasMergeResultJson(
+  sc: SubChunkArtifactGroup
+): boolean {
+  if (sc.subIndex == null) return false;
+  const needle = `sub_chunk_${String(sc.subIndex).padStart(2, '0')}_result.json`;
+  const n = needle.toLowerCase();
+  return sc.jsonFiles.some((f) => f.name.toLowerCase() === n);
+}
+
+/** True when every sub-chunk row has its paired result JSON (integrator-ready). */
+export function chunkGroupAllSubResultsPresentForMerge(
+  g: ChunkArtifactGroup
+): boolean {
+  if (!g.subChunks.length) return false;
+  return g.subChunks.every(subChunkGroupHasMergeResultJson);
+}
+
 /**
  * Fills vmRow from the job snapshot only where the API omitted it (e.g. Rentgen node missing).
  * When Agent04 sends main_virtual_model / sub_virtual_model, those win.

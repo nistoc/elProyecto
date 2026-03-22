@@ -106,6 +106,11 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkRebuildCombined: 'Rebuild combined MD + JSON',
     chunkRebuildCombinedHint:
       'Rebuild transcript.md and openai_response.json from per-chunk JSON (no new API calls).',
+    chunkRebuildSplitMerged: 'Rebuild merged split JSON + MD',
+    chunkRebuildSplitMergedHint:
+      'Rewrite chunk_N_merged.json and .md from all sub-chunk results; updates job-level combined outputs if present.',
+    chunkRebuildSplitMergedDisabled:
+      'Wait until every sub-chunk has results/sub_chunk_XX_result.json on disk.',
     chunkStatsCancelChunk: 'Cancel chunk',
     chunkStatsEmpty: 'No chunk rows yet (upload audio and run transcription, or open a job with chunk artifacts).',
     chunkStatsLoadingFiles: 'Loading project files…',
@@ -251,6 +256,11 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkRebuildCombined: 'Собрать общий MD + JSON',
     chunkRebuildCombinedHint:
       'Пересобрать transcript.md и openai_response.json из chunks_json (без новых запросов к API).',
+    chunkRebuildSplitMerged: 'Пересобрать merged JSON + MD сплита',
+    chunkRebuildSplitMergedHint:
+      'Перезаписать chunk_N_merged.json и .md из результатов всех субчанков; при наличии — обновить общие transcript.md / combined JSON.',
+    chunkRebuildSplitMergedDisabled:
+      'Дождитесь, пока у каждого субчанка появится results/sub_chunk_XX_result.json на диске.',
     chunkStatsCancelChunk: 'Отменить чанк',
     chunkStatsEmpty: 'Пока нет строк по чанкам (загрузите аудио и запустите транскрипцию или откройте job с артефактами).',
     chunkStatsLoadingFiles: 'Загрузка файлов проекта…',
@@ -396,6 +406,11 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkRebuildCombined: 'Reconstruir MD + JSON combinados',
     chunkRebuildCombinedHint:
       'Reconstruir transcript.md y openai_response.json desde JSON por fragmento (sin nuevas llamadas a la API).',
+    chunkRebuildSplitMerged: 'Reconstruir JSON + MD fusionados del split',
+    chunkRebuildSplitMergedHint:
+      'Vuelve a escribir chunk_N_merged.json y .md a partir de todos los resultados de subfragmentos; actualiza salidas combinadas del trabajo si existen.',
+    chunkRebuildSplitMergedDisabled:
+      'Espere a que cada subfragmento tenga results/sub_chunk_XX_result.json en disco.',
     chunkStatsCancelChunk: 'Cancelar fragmento',
     chunkStatsEmpty: 'Aún no hay filas por fragmento (suba audio y ejecute la transcripción o abra un trabajo con artefactos).',
     chunkStatsLoadingFiles: 'Cargando archivos del proyecto…',

@@ -33,6 +33,7 @@
 
 - gRPC `ChunkCommandAction.TranscribeSub` + `TranscriptionPipeline.TranscribeSplitSubChunkAsync` пишут `split_chunks/chunk_N/results/sub_chunk_XX_result.json` и строки work state v2.
 - Когда **все** ожидаемые субчанки для `chunk_N` имеют результат на диске, `SplitChunkMergeIntegrator` вызывает `ITranscriptionMerger.MergeTranscriptions`, пишет `split_chunks/chunk_N/chunk_N_merged.json` и `.md`, и при наличии job-level `openai_response.json` **пересобирает** `transcript.md` и combined JSON, подставляя merged-сегменты вместо родительского чанка (см. `SplitChunkMergeIntegrator.cs`).
+- Тот же merge можно запустить вручную: gRPC `ChunkCommandAction.REBUILD_SPLIT_MERGED` (`chunk_index` = родитель) или кнопка в Stats (agent05), без повторной транскрипции субчанков.
 - Восстановление `ChunkCommand` после рестарта Agent04: если задан `job_directory_relative` и каталог job существует, для **Split / TranscribeSub / Retranscribe** допускается «теневой» `JobStatus` в памяти, чтобы не возвращать gRPC `NotFound` при пустом `IJobStatusStore`.
 
 ## 5. RENTGEN / виртуальная модель узлов
@@ -47,6 +48,7 @@
 ## 6. Тесты Agent04 (этап плана §8)
 
 - **`SubChunkResultReaderWriterTests`** — round-trip `sub_chunk_XX_result.json` ↔ `TranscriptionResult`.
+- **`SplitChunkMergeIntegratorRebuildTests`** — ручной merge: полный набор `sub_chunk_XX_result.json` → `chunk_0_merged.json` / `.md`.
 - **`TranscriptionMergerTests`** — слияние двух субрезультатов с `parentChunkOffset` и абсолютными таймкодами.
 - **`OperatorChunkSplitPlannerTests`** — границы сегментов и overlap как у agent01.
 - **`CancellationManagerSubChunkTests`** — файлы `cancel_sub_{parent}_{sub}.flag` и опрос.

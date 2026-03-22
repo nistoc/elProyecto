@@ -336,6 +336,38 @@ public class ChunkActionsControllerTests
         Assert.Equal(1, grpc.ChunkCalls[0].ChunkIndex);
     }
 
+    [Fact]
+    public async Task PostChunkAction_rebuild_split_merged_forwards_to_client()
+    {
+        var store = new InMemoryJobStore();
+        var jobId = await CreateRunningTranscriberJobAsync(store);
+        var grpc = new RecordingTranscriptionClient
+        {
+            NextChunkResult = new ChunkCommandResult(true, "rebuild_split_merged_ok")
+        };
+        var controller = new JobsController(
+            store,
+            new StubJobWorkspace(),
+            MockPipeline.Instance,
+            MockBroadcaster.Instance,
+            grpc,
+            NullLogger<JobsController>.Instance);
+
+        var result = await controller.PostChunkAction(
+            jobId,
+            new ChunkActionRequest { Action = "rebuild_split_merged", ChunkIndex = 2 },
+            CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var body = Assert.IsType<ChunkActionResponse>(ok.Value);
+        Assert.True(body.Ok);
+        Assert.Equal("rebuild_split_merged_ok", body.Message);
+        Assert.Single(grpc.ChunkCalls);
+        Assert.Equal(TranscriptionChunkAction.RebuildSplitMerged, grpc.ChunkCalls[0].Action);
+        Assert.Equal(2, grpc.ChunkCalls[0].ChunkIndex);
+        Assert.Equal(jobId, grpc.ChunkCalls[0].JobDirectoryRelative);
+    }
+
     private static class MockPipeline
     {
         public static readonly IPipeline Instance = new NoOpPipeline();

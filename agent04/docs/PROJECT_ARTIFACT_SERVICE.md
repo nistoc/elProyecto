@@ -25,5 +25,6 @@
 | `WriteSubChunkTranscriptionResult` | 4 | Делегирование `SubChunkResultWriter`. |
 | `TryOperatorSplitAsync` | 4 | Операторский split (ffmpeg-сегменты в `sub_chunks/`). |
 | `TryDeleteSubChunkArtifactsAsync` | 5 | Удаление audio/results, `chunk_N_merged.*`, cancel flag, строка work state (`TranscriptionWorkStateFile.TryRemoveSubChunkRowAsync`). gRPC: `ChunkCommand` + **DELETE_SUB_CHUNK**. |
+| `SplitChunkMergeIntegrator.TryRebuildSplitMergedForChunkAsync` | — | Операторская пересборка `chunk_N_merged.json` / `.md` и опционально job-level combined (gRPC **REBUILD_SPLIT_MERGED**). |
 
 Имена методов 3–5 уточняются при реализации; в таблице зафиксированы обязанности из плана миграции.

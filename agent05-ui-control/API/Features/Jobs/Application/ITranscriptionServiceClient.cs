@@ -50,6 +50,7 @@ public enum TranscriptionChunkAction
     TranscribeSub = 5,
     RebuildCombined = 6,
     DeleteSubChunk = 7,
+    RebuildSplitMerged = 8,
 }
 
 public record ChunkCommandResult(bool Ok, string Message);

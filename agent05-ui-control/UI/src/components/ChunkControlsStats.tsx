@@ -15,6 +15,7 @@ import type {
 import type { ChunkArtifactGroup } from '../utils/chunkArtifactGroups';
 import {
   chunkArtifactsTranscriptionComplete,
+  chunkGroupAllSubResultsPresentForMerge,
   chunkGroupHasBlockingSplitArtifacts,
   overlayVmFromJobWhenMissing,
 } from '../utils/chunkArtifactGroups';
@@ -247,7 +248,7 @@ export interface ChunkControlsStatsProps {
 export function ChunkControlsStats({
   jobId,
   job,
-  files,
+  files: _files,
   filesLoading,
   filesError,
   locale,
@@ -285,24 +286,31 @@ export function ChunkControlsStats({
     canPostDoneChunkOps && Boolean(job.agent04JobId?.trim());
   const vmAll = job.chunks?.chunkVirtualModel;
   const hasRunningVm = vmAll?.some((r) => vmIsRunning(r.state)) ?? false;
+  const total = job.chunks?.total ?? 0;
+  /** Slower poll when main transcriber is idle (e.g. done job + sub-chunk HTTP) — less UI churn. */
+  const vmSnapshotPollMs =
+    transcriberRunning && total > 0 ? 2800 : 6500;
 
   useEffect(() => {
     if (!hasRunningVm) return;
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [hasRunningVm]);
+  }, [hasRunningVm, jobId]);
 
   useEffect(() => {
     if (!hasRunningVm || !refreshJobSnapshot) return;
     const id = window.setInterval(() => {
       void refreshJobSnapshot();
-    }, 2800);
+    }, vmSnapshotPollMs);
     return () => window.clearInterval(id);
-  }, [hasRunningVm, refreshJobSnapshot]);
+  }, [hasRunningVm, refreshJobSnapshot, jobId, vmSnapshotPollMs]);
+
+  useEffect(() => {
+    setAgent04ArtifactGroups(null);
+  }, [jobId]);
 
   useEffect(() => {
     let cancelled = false;
-    setAgent04ArtifactGroups(null);
     void (async () => {
       try {
         const { groups } = await fetchJobChunkArtifactGroups(jobId);
@@ -314,11 +322,12 @@ export function ChunkControlsStats({
     return () => {
       cancelled = true;
     };
-  }, [jobId, artifactGroupsRefreshKey, files]);
+    // Intentionally omit `files`: new object after GET .../files retriggered this effect with the same
+    // artifactGroupsRefreshKey → duplicate Agent04 calls and flicker. Groups refresh via revision/SSE/poll.
+  }, [jobId, artifactGroupsRefreshKey]);
 
   const artifactGroupsLoading = agent04ArtifactGroups === null;
 
-  const total = job.chunks?.total ?? 0;
   const readOnly =
     job.status === 'failed' && (vmAll?.length ?? 0) > 0;
   const live = transcriberRunning && total > 0;
@@ -469,6 +478,11 @@ export function ChunkControlsStats({
               !hasSplitArtifacts &&
               canPostDoneChunkOps &&
               (liveInteractive || showCancelledSplitRetranscribe);
+            const showRebuildSplitMerged =
+              g.subChunks.length > 0 && canPostDoneChunkOps && !readOnly;
+            const rebuildSplitMergedEnabled =
+              showRebuildSplitMerged &&
+              chunkGroupAllSubResultsPresentForMerge(g);
 
             return (
               <li key={g.index} className="chunk-stats__card">
@@ -584,6 +598,22 @@ export function ChunkControlsStats({
                         >
                           {t('chunkSplit')}
                         </button>
+                        {showRebuildSplitMerged && (
+                          <button
+                            type="button"
+                            disabled={busy || !rebuildSplitMergedEnabled}
+                            title={
+                              rebuildSplitMergedEnabled
+                                ? t('chunkRebuildSplitMergedHint')
+                                : t('chunkRebuildSplitMergedDisabled')
+                            }
+                            onClick={() =>
+                              void runAction('rebuild_split_merged', g.index)
+                            }
+                          >
+                            {t('chunkRebuildSplitMerged')}
+                          </button>
+                        )}
                       </div>
                     </div>
                     <VmActivityLogCol

@@ -440,7 +440,7 @@ public class JobsController : ControllerBase
         };
     }
 
-    /// <summary>Forward chunk operator action to Agent04 (cancel implemented; skip/retranscribe/split may return not_implemented).</summary>
+    /// <summary>Forward chunk operator action to Agent04. Actions: cancel, skip, retranscribe, split, transcribe_sub, rebuild_combined, rebuild_split_merged (see body.action).</summary>
     [HttpPost("{id}/chunk-actions")]
     public async Task<ActionResult<ChunkActionResponse>> PostChunkAction(
         string id,
@@ -448,7 +448,7 @@ public class JobsController : ControllerBase
         CancellationToken ct = default)
     {
         if (body == null || string.IsNullOrWhiteSpace(body.Action))
-            return BadRequest(new { error = "action is required (cancel | skip | retranscribe | split | transcribe_sub | rebuild_combined)" });
+            return BadRequest(new { error = "action is required (cancel | skip | retranscribe | split | transcribe_sub | rebuild_combined | rebuild_split_merged)" });
         if (body.ChunkIndex < 0)
             return BadRequest(new { error = "chunkIndex must be >= 0" });
 
@@ -460,19 +460,20 @@ public class JobsController : ControllerBase
 
         var action = ParseChunkAction(body.Action.Trim());
         if (action == null)
-            return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "skip", "retranscribe", "split", "transcribe_sub", "rebuild_combined" } });
+            return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "skip", "retranscribe", "split", "transcribe_sub", "rebuild_combined", "rebuild_split_merged" } });
 
         var allowAfterDone = action == TranscriptionChunkAction.Split
             || action == TranscriptionChunkAction.TranscribeSub
             || action == TranscriptionChunkAction.Retranscribe
-            || action == TranscriptionChunkAction.RebuildCombined;
+            || action == TranscriptionChunkAction.RebuildCombined
+            || action == TranscriptionChunkAction.RebuildSplitMerged;
         if (!allowAfterDone && (job.Phase != "transcriber" || job.Status != "running"))
             return Conflict(new { error = "this action requires phase=transcriber and status=running" });
         if (allowAfterDone
             && !string.Equals(job.Status, "running", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(job.Status, "done", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(job.Status, "completed", StringComparison.OrdinalIgnoreCase))
-            return Conflict(new { error = "split / transcribe_sub / retranscribe require status running, done, or completed" });
+            return Conflict(new { error = "split / transcribe_sub / retranscribe / rebuild_combined / rebuild_split_merged require status running, done, or completed" });
 
         if (action == TranscriptionChunkAction.Split && (body.SplitParts is null || body.SplitParts < 2))
             return BadRequest(new { error = "split requires splitParts >= 2" });
@@ -508,7 +509,8 @@ public class JobsController : ControllerBase
                 await PublishEnrichedSnapshotAsync(id, ct);
                 if (string.Equals(result.Message, "transcribe_sub_started", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(result.Message, "retranscribe_started", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(result.Message, "rebuild_combined_started", StringComparison.OrdinalIgnoreCase))
+                    || string.Equals(result.Message, "rebuild_combined_started", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(result.Message, "rebuild_split_merged_ok", StringComparison.OrdinalIgnoreCase))
                     ScheduleTranscribeSubFollowUpSnapshots(id);
             }
             return Ok(new ChunkActionResponse(result.Ok, result.Message));
@@ -535,6 +537,7 @@ public class JobsController : ControllerBase
             "split" => TranscriptionChunkAction.Split,
             "transcribe_sub" => TranscriptionChunkAction.TranscribeSub,
             "rebuild_combined" => TranscriptionChunkAction.RebuildCombined,
+            "rebuild_split_merged" => TranscriptionChunkAction.RebuildSplitMerged,
             _ => null
         };
 

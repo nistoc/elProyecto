@@ -205,7 +205,8 @@ export type ChunkActionName =
   | 'retranscribe'
   | 'split'
   | 'transcribe_sub'
-  | 'rebuild_combined';
+  | 'rebuild_combined'
+  | 'rebuild_split_merged';
 
 export interface ChunkActionResponseBody {
   ok: boolean;

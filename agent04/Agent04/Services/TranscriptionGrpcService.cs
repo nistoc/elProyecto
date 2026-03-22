@@ -28,6 +28,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
     private readonly IConfiguration _configuration;
     private readonly IJobArtifactRootRegistry _artifactRootRegistry;
     private readonly IProjectArtifactService _projectArtifactService;
+    private readonly ITranscriptionMerger _merger;
     private readonly INodeModel? _nodeModel;
     private readonly INodeQuery? _nodeQuery;
     private readonly IHttpClientFactory? _httpClientFactory;
@@ -43,6 +44,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         IConfiguration configuration,
         IJobArtifactRootRegistry artifactRootRegistry,
         IProjectArtifactService projectArtifactService,
+        ITranscriptionMerger merger,
         INodeModel? nodeModel = null,
         INodeQuery? nodeQuery = null,
         IHttpClientFactory? httpClientFactory = null,
@@ -57,6 +59,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         _configuration = configuration;
         _artifactRootRegistry = artifactRootRegistry;
         _projectArtifactService = projectArtifactService;
+        _merger = merger;
         _nodeModel = nodeModel;
         _nodeQuery = nodeQuery;
         _httpClientFactory = httpClientFactory;
@@ -387,7 +390,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             || request.Action == ChunkCommandAction.TranscribeSub
             || request.Action == ChunkCommandAction.Retranscribe
             || request.Action == ChunkCommandAction.RebuildCombined
-            || request.Action == ChunkCommandAction.DeleteSubChunk;
+            || request.Action == ChunkCommandAction.DeleteSubChunk
+            || request.Action == ChunkCommandAction.RebuildSplitMerged;
         var job = _store.Get(request.JobId);
         if (job == null && allowCompleted && !string.IsNullOrWhiteSpace(request.JobDirectoryRelative))
         {
@@ -421,7 +425,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             throw new RpcException(new Status(StatusCode.FailedPrecondition, $"Job is not running (state={job.State})"));
         if (allowCompleted && job.State != JobState.Running && job.State != JobState.Completed)
             throw new RpcException(new Status(StatusCode.FailedPrecondition,
-                $"Split / transcribe_sub / retranscribe / rebuild_combined / delete_sub_chunk require job Running or Completed (state={job.State})"));
+                $"Split / transcribe_sub / retranscribe / rebuild_combined / rebuild_split_merged / delete_sub_chunk require job Running or Completed (state={job.State})"));
 
         switch (request.Action)
         {
@@ -472,6 +476,11 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                     throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
                 RecordSubChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, request.SubChunkIndex, "delete_sub_chunk");
                 return await ExecuteDeleteSubChunkAsync(request, context.CancellationToken).ConfigureAwait(false);
+            case ChunkCommandAction.RebuildSplitMerged:
+                if (request.ChunkIndex < 0)
+                    throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
+                RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "rebuild_split_merged");
+                return await ExecuteRebuildSplitMergedAsync(request, context.CancellationToken).ConfigureAwait(false);
             default:
                 return new ChunkCommandResponse { Ok = false, Message = "unknown_action" };
         }
@@ -654,6 +663,54 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         }, CancellationToken.None);
 
         return new ChunkCommandResponse { Ok = true, Message = "rebuild_combined_started" };
+    }
+
+    private async Task<ChunkCommandResponse> ExecuteRebuildSplitMergedAsync(ChunkCommandRequest request, CancellationToken ct)
+    {
+        string artifactRoot;
+        try
+        {
+            artifactRoot = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
+        }
+        catch (RpcException ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = ex.Status.Detail };
+        }
+
+        var configRel = (_configuration["Agent04:ConfigPath"] ?? "config/default.json").Trim()
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var configPathFull = ResolveConfigFullPath(_workspaceRoot.RootPath, configRel);
+        if (string.IsNullOrEmpty(configPathFull))
+            return new ChunkCommandResponse { Ok = false, Message = "transcription config file not found" };
+
+        TranscriptionConfig config;
+        try
+        {
+            config = await TranscriptionConfig.FromFileAsync(configPathFull, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = "config load failed: " + ex.Message };
+        }
+
+        var (ok, message) = await SplitChunkMergeIntegrator
+            .TryRebuildSplitMergedForChunkAsync(
+                config,
+                artifactRoot,
+                request.JobId,
+                request.ChunkIndex,
+                _merger,
+                _logger,
+                ct)
+            .ConfigureAwait(false);
+
+        if (ok)
+            _logger.LogInformation(
+                "rebuild_split_merged ok: job {JobId} parent chunk {Chunk}",
+                request.JobId,
+                request.ChunkIndex);
+
+        return new ChunkCommandResponse { Ok = ok, Message = message };
     }
 
     private async Task<ChunkCommandResponse> ExecuteOperatorSplitAsync(ChunkCommandRequest request, CancellationToken ct)
