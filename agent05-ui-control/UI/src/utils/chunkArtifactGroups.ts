@@ -5,6 +5,17 @@ import type {
   JobSnapshot,
 } from '../types';
 
+/** One operator split child under `split_chunks/chunk_N/` (API: `parentIndex` / `subIndex`). */
+export interface SubChunkArtifactGroup {
+  /** 0-based sub-chunk index within the parent; `null` if the scanner could not parse it. */
+  subIndex: number | null;
+  displayStem: string;
+  audioFiles: JobProjectFile[];
+  jsonFiles: JobProjectFile[];
+  /** Agent04 VM row when present (isSubChunk + matching indices). */
+  vmRow: ChunkVirtualModelEntry | null;
+}
+
 export interface ChunkArtifactGroup {
   /** 0-based chunk index in the pipeline / VM. */
   index: number;
@@ -12,6 +23,10 @@ export interface ChunkArtifactGroup {
   displayStem: string;
   audioFiles: JobProjectFile[];
   jsonFiles: JobProjectFile[];
+  /** Files under `split_chunks/chunk_{index}/`, grouped by `subIndex`. */
+  subChunks: SubChunkArtifactGroup[];
+  /** `chunk_{index}_merged.json` / `.md` at split chunk folder root (agent01-style). */
+  mergedSplitFiles: JobProjectFile[];
   vmRow: ChunkVirtualModelEntry | null;
 }
 
@@ -51,7 +66,8 @@ export function fileBelongsToChunkIndex(
 /**
  * Indices to show as groups:
  * - If `job.chunks.total > 0`: always **0 .. total-1** only (do not build a dense range up to a bogus max from misparsed file indices).
- * - Else: **sorted unique** indices from VM + chunk files (no filling 0..max, so a stray `2026` does not allocate 2027 slots).
+ * - Else: **sorted unique** indices from VM + chunk files + **parentIndex** from `splitChunks`
+ *   (narrow archives: only `split_chunks/` and empty `chunks/`).
  */
 export function computeChunkIndices(
   job: JobSnapshot,
@@ -75,8 +91,21 @@ export function computeChunkIndices(
   if (vm) {
     for (const r of vm) set.add(r.index);
   }
+  for (const f of files.splitChunks) {
+    if (f.parentIndex != null) set.add(f.parentIndex);
+  }
 
   return [...set].sort((a, b) => a - b);
+}
+
+/** Merged split output at `split_chunks/chunk_N/chunk_N_merged.{json,md}`. */
+export function isSplitParentMergedArtifact(
+  f: JobProjectFile,
+  parentIndex: number
+): boolean {
+  if (f.parentIndex !== parentIndex) return false;
+  const m = /^chunk_(\d+)_merged\.(json|md)$/i.exec(f.name);
+  return m != null && parseInt(m[1], 10) === parentIndex;
 }
 
 function computeDisplayStem(
@@ -88,7 +117,92 @@ function computeDisplayStem(
   return '';
 }
 
+function subChunkGroupSortKey(subIndex: number | null): number {
+  return subIndex == null ? Number.POSITIVE_INFINITY : subIndex;
+}
+
+export function findMainChunkVmRow(
+  vm: ChunkVirtualModelEntry[] | null | undefined,
+  index: number
+): ChunkVirtualModelEntry | null {
+  if (!vm?.length) return null;
+  const row = vm.find((r) => r.isSubChunk !== true && r.index === index);
+  return row ?? null;
+}
+
+export function findSubChunkVmRow(
+  vm: ChunkVirtualModelEntry[] | null | undefined,
+  parentIndex: number,
+  subIndex: number | null
+): ChunkVirtualModelEntry | null {
+  if (!vm?.length || subIndex == null) return null;
+  return (
+    vm.find(
+      (r) =>
+        r.isSubChunk === true &&
+        r.parentChunkIndex === parentIndex &&
+        r.subChunkIndex === subIndex
+    ) ?? null
+  );
+}
+
+/**
+ * Partition `files.splitChunks` for a single parent chunk index (scanner sets `parentIndex` / `subIndex`).
+ */
+export function buildSubChunkGroups(
+  splitChunks: JobProjectFile[],
+  parentIndex: number,
+  vm: ChunkVirtualModelEntry[] | null | undefined
+): SubChunkArtifactGroup[] {
+  const forParent = splitChunks.filter((f) => f.parentIndex === parentIndex);
+  if (forParent.length === 0) return [];
+
+  const byKey = new Map<
+    string,
+    { subIndex: number | null; bucket: JobProjectFile[] }
+  >();
+  for (const f of forParent) {
+    const subIndex = f.subIndex ?? null;
+    const key = subIndex != null ? `i:${subIndex}` : 'i:null';
+    let row = byKey.get(key);
+    if (!row) {
+      row = { subIndex, bucket: [] };
+      byKey.set(key, row);
+    }
+    row.bucket.push(f);
+  }
+
+  const out: SubChunkArtifactGroup[] = [];
+  for (const { subIndex, bucket } of byKey.values()) {
+    const audioFiles = bucket.filter((f) => f.kind === 'audio');
+    const jsonFiles = bucket.filter((f) => f.kind === 'text');
+    if (audioFiles.length === 0 && jsonFiles.length === 0) continue;
+    out.push({
+      subIndex,
+      audioFiles,
+      jsonFiles,
+      displayStem: computeDisplayStem(audioFiles, jsonFiles),
+      vmRow: findSubChunkVmRow(vm, parentIndex, subIndex),
+    });
+  }
+
+  out.sort(
+    (a, b) => subChunkGroupSortKey(a.subIndex) - subChunkGroupSortKey(b.subIndex)
+  );
+  return out;
+}
+
 /** True when every chunk audio has a JSON with the same basename (stem) — legacy completion signal. */
+/** Any `split_chunks/` artifact tied to this parent chunk (sub-chunks or merged split output). */
+export function chunkHasSplitArtifacts(
+  files: JobProjectFiles | null | undefined,
+  chunkIndex: number
+): boolean {
+  const list = files?.splitChunks;
+  if (!list?.length) return false;
+  return list.some((f) => f.parentIndex === chunkIndex);
+}
+
 export function chunkArtifactsTranscriptionComplete(
   audioFiles: JobProjectFile[],
   jsonFiles: JobProjectFile[]
@@ -105,10 +219,6 @@ export function buildChunkGroups(
   const indices = computeChunkIndices(job, files);
   const vm = job.chunks?.chunkVirtualModel;
   const total = job.chunks?.total ?? 0;
-  const vmByIndex = new Map<number, ChunkVirtualModelEntry>();
-  if (vm) {
-    for (const r of vm) vmByIndex.set(r.index, r);
-  }
 
   return indices.map((index) => {
     const audioFiles = files.chunks.filter((f) =>
@@ -117,11 +227,23 @@ export function buildChunkGroups(
     const jsonFiles = files.chunkJson.filter((f) =>
       fileBelongsToChunkIndex(f, index, total)
     );
+    const splitForParent = files.splitChunks.filter(
+      (f) => f.parentIndex === index
+    );
+    const mergedSplitFiles = splitForParent.filter((f) =>
+      isSplitParentMergedArtifact(f, index)
+    );
+    const splitForSubRows = splitForParent.filter(
+      (f) => !isSplitParentMergedArtifact(f, index)
+    );
+    const subChunks = buildSubChunkGroups(splitForSubRows, index, vm);
     const base: Omit<ChunkArtifactGroup, 'displayStem'> = {
       index,
       audioFiles,
       jsonFiles,
-      vmRow: vmByIndex.get(index) ?? null,
+      subChunks,
+      mergedSplitFiles,
+      vmRow: findMainChunkVmRow(vm, index),
     };
     return {
       ...base,

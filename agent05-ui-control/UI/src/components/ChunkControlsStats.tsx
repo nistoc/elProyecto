@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import { postJobChunkAction, type ChunkActionName } from '../api';
+import {
+  postJobChunkAction,
+  type ChunkActionName,
+  type PostChunkActionOptions,
+} from '../api';
 import type {
   ChunkVirtualModelEntry,
   JobProjectFile,
@@ -9,6 +13,7 @@ import type {
 import {
   buildChunkGroups,
   chunkArtifactsTranscriptionComplete,
+  chunkHasSplitArtifacts,
 } from '../utils/chunkArtifactGroups';
 import {
   elapsedSeconds,
@@ -18,18 +23,165 @@ import {
 import { FileRow, TextFileEditorModal } from './ProjectFilesPanel';
 
 function labelForChunkState(state: string, t: (key: string) => string): string {
-  const key = `chunkState${state}`;
+  const s = (state || '').trim();
+  const pascal =
+    s.length === 0
+      ? 'Pending'
+      : s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+  const key = `chunkState${pascal}`;
   const v = t(key);
-  return v === key ? state : v;
+  return v === key ? (s || 'Pending') : v;
 }
 
-/** Show Agent04 VM block only when we have timing / Running / error — not bare Pending with no logs. */
+function vmStateNorm(state: string | undefined | null): string {
+  return (state || '').trim().toLowerCase();
+}
+
+function vmIsRunning(state: string | undefined | null): boolean {
+  return vmStateNorm(state) === 'running';
+}
+
+function vmIsCancelled(state: string | undefined | null): boolean {
+  return vmStateNorm(state) === 'cancelled';
+}
+
+/** Show Agent04 VM block when we have timing, Running, terminal state, or error — not bare Pending with no logs. */
 function vmRowHasTelemetry(vm: ChunkVirtualModelEntry | null): boolean {
   if (!vm) return false;
-  if (vm.state === 'Running') return true;
+  const s = vmStateNorm(vm.state);
+  if (s === 'running') return true;
   if (vm.startedAt || vm.completedAt) return true;
   if (vm.errorMessage?.trim()) return true;
+  if (s === 'completed' || s === 'failed' || s === 'cancelled') return true;
   return false;
+}
+
+function SubChunkVmTelemetry({
+  vm,
+  locale,
+  t,
+  nowTick,
+  busy,
+  parentChunkIndex,
+  subIndex,
+  readOnly,
+  cancelEnabled,
+  retranscribeEnabled,
+  onCancelSub,
+  onRetranscribeSub,
+  onSkipSub,
+  onSplitParent,
+}: {
+  vm: ChunkVirtualModelEntry;
+  locale: 'en' | 'ru' | 'es';
+  t: (key: string) => string;
+  nowTick: number;
+  busy: boolean;
+  parentChunkIndex: number;
+  subIndex: number;
+  readOnly: boolean;
+  cancelEnabled: boolean;
+  retranscribeEnabled: boolean;
+  onCancelSub: () => void;
+  onRetranscribeSub: () => void;
+  onSkipSub: () => void;
+  onSplitParent: () => void;
+}) {
+  if (!vmRowHasTelemetry(vm)) return null;
+  const stateLabel = labelForChunkState(vm.state, t);
+  const sec = elapsedSeconds(vm, nowTick);
+  const elapsed = sec === null ? t('chunkVmNoStarted') : formatMmSs(sec);
+  const errFull = vm.errorMessage?.trim() ?? '';
+  const detailText = errFull ? errFull : t('chunkVmNoStarted');
+  const subSkipDisabled = true;
+  const subSplitDisabled = true;
+  return (
+    <div className="chunk-stats__vm chunk-stats__vm--sub">
+      <div className="chunk-stats__vm-title">{t('chunkStatsVmBlockTitle')}</div>
+      <div className="chunk-stats__vm-body">
+        <div className="chunk-stats__vm-telemetry-col">
+          <dl className="chunk-stats__vm-grid">
+            <dt>{t('chunkVmColElapsed')}</dt>
+            <dd className="chunk-stats__vm-mono" title={vm.startedAt ?? ''}>
+              {elapsed}
+            </dd>
+            <dt>{t('chunkVmColState')}</dt>
+            <dd>{stateLabel}</dd>
+            <dt>{t('chunkVmColError')}</dt>
+            <dd className="chunk-stats__vm-err" title={errFull || undefined}>
+              {detailText}
+            </dd>
+          </dl>
+          {(vm.startedAt || vm.completedAt) && (
+            <div className="chunk-stats__vm-times">
+              {vm.startedAt && (
+                <span className="chunk-stats__vm-time">
+                  <span className="chunk-stats__vm-time-label">
+                    {t('chunkStatsStartedAt')}
+                  </span>{' '}
+                  {formatIsoDateTime(vm.startedAt, locale)}
+                </span>
+              )}
+              {vm.completedAt && (
+                <span className="chunk-stats__vm-time">
+                  <span className="chunk-stats__vm-time-label">
+                    {t('chunkStatsCompletedAt')}
+                  </span>{' '}
+                  {formatIsoDateTime(vm.completedAt, locale)}
+                </span>
+              )}
+            </div>
+          )}
+          {vmIsRunning(vm.state) && (
+            <div className="chunk-stats__vm-running">
+              <span className="chunk-stats__inflight">
+                {t('chunkStatsSubChunkRunning')}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="chunk-stats__vm-actions-col">
+          <div className="chunk-stats__vm-actions chunk-stats__vm-actions-stack">
+            <button
+              type="button"
+              disabled={busy || readOnly || !cancelEnabled}
+              title={t('chunkCancelChunk')}
+              aria-label={t('chunkCancelSubAria')
+                .replace('{p}', String(parentChunkIndex))
+                .replace('{s}', String(subIndex))}
+              onClick={onCancelSub}
+            >
+              {t('chunkCancelChunk')}
+            </button>
+            <button
+              type="button"
+              disabled={busy || readOnly || subSkipDisabled}
+              title={t('chunkSkip')}
+              onClick={onSkipSub}
+            >
+              {t('chunkSkip')}
+            </button>
+            <button
+              type="button"
+              disabled={busy || readOnly || !retranscribeEnabled}
+              title={t('chunkRetranscribe')}
+              onClick={onRetranscribeSub}
+            >
+              {t('chunkRetranscribe')}
+            </button>
+            <button
+              type="button"
+              disabled={busy || readOnly || subSplitDisabled}
+              title={t('chunkSplitTitle')}
+              onClick={onSplitParent}
+            >
+              {t('chunkSplit')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export interface ChunkControlsStatsProps {
@@ -39,14 +191,12 @@ export interface ChunkControlsStatsProps {
   files: JobProjectFiles | null;
   filesLoading: boolean;
   filesError: string | null;
-  /** Bumps when job snapshot updates (same as ProjectFilesPanel). */
-  filesRefreshKey: number;
   /** Same index as Chunk controls (operator row). */
   chunkOperatorIndex: number;
   locale: 'en' | 'ru' | 'es';
   t: (key: string) => string;
   /** After saving a file in the editor, refresh GET .../files (e.g. jobFiles.reload). */
-  onProjectFilesChanged?: () => void;
+  onProjectFilesChanged?: () => void | Promise<void>;
 }
 
 const emptyFiles: JobProjectFiles = {
@@ -65,7 +215,6 @@ export function ChunkControlsStats({
   files,
   filesLoading,
   filesError,
-  filesRefreshKey,
   chunkOperatorIndex,
   locale,
   t,
@@ -84,8 +233,18 @@ export function ChunkControlsStats({
 
   const transcriberRunning =
     job.phase === 'transcriber' && job.status === 'running';
+  const jobStatusAllowsPostDoneChunkOps = (() => {
+    const s = (job.status || '').toLowerCase();
+    return s === 'done' || s === 'completed';
+  })();
+  const canTranscribeSubChunk =
+    Boolean(job.agent04JobId?.trim()) &&
+    (transcriberRunning || jobStatusAllowsPostDoneChunkOps);
+  const canPostDoneChunkOps = canTranscribeSubChunk;
+  const canCancelRunningSubChunk =
+    canPostDoneChunkOps && Boolean(job.agent04JobId?.trim());
   const vmAll = job.chunks?.chunkVirtualModel;
-  const hasRunningVm = vmAll?.some((r) => r.state === 'Running') ?? false;
+  const hasRunningVm = vmAll?.some((r) => vmIsRunning(r.state)) ?? false;
 
   useEffect(() => {
     if (!hasRunningVm) return;
@@ -110,22 +269,18 @@ export function ChunkControlsStats({
   const runAction = async (
     action: ChunkActionName,
     chunkIndex: number,
-    splitParts?: number
+    options?: PostChunkActionOptions
   ) => {
     setMessage(null);
     setBusy(true);
     try {
-      const res = await postJobChunkAction(
-        jobId,
-        action,
-        chunkIndex,
-        splitParts
-      );
+      const res = await postJobChunkAction(jobId, action, chunkIndex, options);
       setMessage(
         res.ok
           ? res.message || t('chunkActionOk')
           : `${t('chunkActionRejected')}: ${res.message}`
       );
+      if (res.ok) await Promise.resolve(onProjectFilesChanged?.());
     } catch (e) {
       setMessage(e instanceof Error ? e.message : t('chunkActionFailed'));
     } finally {
@@ -141,15 +296,11 @@ export function ChunkControlsStats({
       setMessage(t('chunkSplitPartsInvalid'));
       return;
     }
-    await runAction('split', chunkIndex, n);
+    await runAction('split', chunkIndex, { splitParts: n });
   };
 
   return (
-    <section
-      className="chunk-stats"
-      key={`${jobId}-${filesRefreshKey}`}
-      aria-label={t('chunkStatsTitle')}
-    >
+    <section className="chunk-stats" aria-label={t('chunkStatsTitle')}>
       <h4 className="chunk-stats__title">{t('chunkStatsTitle')}</h4>
       {showList && anyVmTelemetry && (
         <p className="chunk-stats__hint">{t('chunkVmTimerNote')}</p>
@@ -186,13 +337,42 @@ export function ChunkControlsStats({
             const detailText = errFull ? errFull : t('chunkVmNoStarted');
 
             const isOperatorChunk = g.index === chunkOperatorIndex;
+            const chunkIsCancelled =
+              vmIsCancelled(vm?.state) ||
+              (job.chunks?.cancelled?.includes(g.index) ?? false);
+            const showCancelledSplitRetranscribe =
+              chunkIsCancelled && canPostDoneChunkOps && !readOnly;
+            const chunkMainRunning = vmIsRunning(vm?.state);
             const showFullOperator =
               showVmBlock && live && isOperatorChunk && !readOnly;
+            const showRetryMainRetranscribe =
+              canPostDoneChunkOps &&
+              !readOnly &&
+              !chunkMainRunning &&
+              !showCancelledSplitRetranscribe &&
+              !showFullOperator &&
+              (showVmBlock || showArtifactDone);
             const showRunningOnlyCancel =
               showVmBlock &&
               live &&
-              vm?.state === 'Running' &&
+              vmIsRunning(vm?.state) &&
               !(isOperatorChunk && !readOnly);
+            const hasSplitArtifacts = chunkHasSplitArtifacts(fileData, g.index);
+            const mainVmActionsInPanel = showVmBlock && vm != null;
+            const mainCancelEnabled =
+              live && chunkMainRunning && !readOnly;
+            const mainSkipEnabled =
+              live && isOperatorChunk && !readOnly;
+            const mainRetranscribeEnabled =
+              !readOnly &&
+              (showFullOperator ||
+                showCancelledSplitRetranscribe ||
+                showRetryMainRetranscribe);
+            const mainSplitEnabled =
+              !readOnly &&
+              !hasSplitArtifacts &&
+              canPostDoneChunkOps &&
+              (showFullOperator || showCancelledSplitRetranscribe);
 
             return (
               <li key={g.index} className="chunk-stats__card">
@@ -213,105 +393,136 @@ export function ChunkControlsStats({
                   )}
                 </div>
 
+                {showCancelledSplitRetranscribe && !mainVmActionsInPanel && (
+                  <div className="chunk-stats__cancelled-actions">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void runAction('retranscribe', g.index)}
+                    >
+                      {t('chunkRetranscribe')}
+                    </button>
+                    {!hasSplitArtifacts && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        title={t('chunkSplitTitle')}
+                        onClick={() => void runSplit(g.index)}
+                      >
+                        {t('chunkSplit')}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {showRetryMainRetranscribe && !mainVmActionsInPanel && (
+                  <div className="chunk-stats__cancelled-actions">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void runAction('retranscribe', g.index)}
+                    >
+                      {t('chunkRetranscribe')}
+                    </button>
+                  </div>
+                )}
+
                 {showVmBlock && vm && (
                   <div className="chunk-stats__vm">
                     <div className="chunk-stats__vm-title">
                       {t('chunkStatsVmBlockTitle')}
                     </div>
-                    <dl className="chunk-stats__vm-grid">
-                      <dt>{t('chunkVmColElapsed')}</dt>
-                      <dd
-                        className="chunk-stats__vm-mono"
-                        title={vm.startedAt ?? ''}
-                      >
-                        {elapsed}
-                      </dd>
-                      <dt>{t('chunkVmColState')}</dt>
-                      <dd>{stateLabel}</dd>
-                      <dt>{t('chunkVmColError')}</dt>
-                      <dd
-                        className="chunk-stats__vm-err"
-                        title={errFull || undefined}
-                      >
-                        {detailText}
-                      </dd>
-                    </dl>
-                    {(vm.startedAt || vm.completedAt) && (
-                      <div className="chunk-stats__vm-times">
-                        {vm.startedAt && (
-                          <span className="chunk-stats__vm-time">
-                            <span className="chunk-stats__vm-time-label">
-                              {t('chunkStatsStartedAt')}
-                            </span>{' '}
-                            {formatIsoDateTime(vm.startedAt, locale)}
-                          </span>
+                    <div className="chunk-stats__vm-body">
+                      <div className="chunk-stats__vm-telemetry-col">
+                        <dl className="chunk-stats__vm-grid">
+                          <dt>{t('chunkVmColElapsed')}</dt>
+                          <dd
+                            className="chunk-stats__vm-mono"
+                            title={vm.startedAt ?? ''}
+                          >
+                            {elapsed}
+                          </dd>
+                          <dt>{t('chunkVmColState')}</dt>
+                          <dd>{stateLabel}</dd>
+                          <dt>{t('chunkVmColError')}</dt>
+                          <dd
+                            className="chunk-stats__vm-err"
+                            title={errFull || undefined}
+                          >
+                            {detailText}
+                          </dd>
+                        </dl>
+                        {(vm.startedAt || vm.completedAt) && (
+                          <div className="chunk-stats__vm-times">
+                            {vm.startedAt && (
+                              <span className="chunk-stats__vm-time">
+                                <span className="chunk-stats__vm-time-label">
+                                  {t('chunkStatsStartedAt')}
+                                </span>{' '}
+                                {formatIsoDateTime(vm.startedAt, locale)}
+                              </span>
+                            )}
+                            {vm.completedAt && (
+                              <span className="chunk-stats__vm-time">
+                                <span className="chunk-stats__vm-time-label">
+                                  {t('chunkStatsCompletedAt')}
+                                </span>{' '}
+                                {formatIsoDateTime(vm.completedAt, locale)}
+                              </span>
+                            )}
+                          </div>
                         )}
-                        {vm.completedAt && (
-                          <span className="chunk-stats__vm-time">
-                            <span className="chunk-stats__vm-time-label">
-                              {t('chunkStatsCompletedAt')}
-                            </span>{' '}
-                            {formatIsoDateTime(vm.completedAt, locale)}
-                          </span>
+                        {showRunningOnlyCancel && (
+                          <div className="chunk-stats__vm-running">
+                            <span className="chunk-stats__inflight">
+                              {t('chunkStatsTranscriptionActive')}
+                            </span>
+                          </div>
                         )}
                       </div>
-                    )}
-
-                    {showRunningOnlyCancel && (
-                      <div className="chunk-stats__vm-running">
-                        <span className="chunk-stats__inflight">
-                          {t('chunkStatsTranscriptionActive')}
-                        </span>
-                        <button
-                          type="button"
-                          className="chunk-stats__vm-x"
-                          disabled={busy}
-                          aria-label={t('chunkVmCancelAria').replace(
-                            '{n}',
-                            String(g.index)
-                          )}
-                          onClick={() => void runAction('cancel', g.index)}
-                        >
-                          ×
-                        </button>
+                      <div className="chunk-stats__vm-actions-col">
+                        <div className="chunk-stats__vm-actions chunk-stats__vm-actions-stack">
+                          <button
+                            type="button"
+                            disabled={busy || !mainCancelEnabled}
+                            title={t('chunkCancelChunk')}
+                            aria-label={t('chunkVmCancelAria').replace(
+                              '{n}',
+                              String(g.index)
+                            )}
+                            onClick={() => void runAction('cancel', g.index)}
+                          >
+                            {t('chunkCancelChunk')}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || !mainSkipEnabled}
+                            title={t('chunkSkip')}
+                            onClick={() => void runAction('skip', g.index)}
+                          >
+                            {t('chunkSkip')}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || !mainRetranscribeEnabled}
+                            title={t('chunkRetranscribe')}
+                            onClick={() =>
+                              void runAction('retranscribe', g.index)
+                            }
+                          >
+                            {t('chunkRetranscribe')}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || !mainSplitEnabled}
+                            title={t('chunkSplitTitle')}
+                            onClick={() => void runSplit(g.index)}
+                          >
+                            {t('chunkSplit')}
+                          </button>
+                        </div>
                       </div>
-                    )}
-
-                    {showFullOperator && (
-                      <div className="chunk-stats__vm-actions">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => void runAction('cancel', g.index)}
-                        >
-                          {t('chunkCancelChunk')}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => void runAction('skip', g.index)}
-                        >
-                          {t('chunkSkip')}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() =>
-                            void runAction('retranscribe', g.index)
-                          }
-                        >
-                          {t('chunkRetranscribe')}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          title={t('chunkSplitTitle')}
-                          onClick={() => void runSplit(g.index)}
-                        >
-                          {t('chunkSplit')}
-                        </button>
-                      </div>
-                    )}
+                    </div>
                   </div>
                 )}
 
@@ -323,13 +534,59 @@ export function ChunkControlsStats({
                   </div>
                 )}
 
-                {g.audioFiles.length > 0 && (
+                {(g.audioFiles.length > 0 || g.jsonFiles.length > 0) && (
+                  <div
+                    className="chunk-stats__media-row"
+                    aria-label={`${t('chunkStatsAudio')} / ${t('chunkStatsJson')}`}
+                  >
+                    <div className="chunk-stats__media-row__audio">
+                      {g.audioFiles.length > 0 ? (
+                        <ul className="pf-list chunk-stats__pf-list">
+                          {g.audioFiles.map((f) => (
+                            <FileRow
+                              key={f.relativePath}
+                              jobId={jobId}
+                              f={f}
+                              t={t}
+                              onEditText={openEditor}
+                            />
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="chunk-stats__media-row__empty chunk-stats__muted">
+                          {t('chunkStatsNoAudioInRow')}
+                        </p>
+                      )}
+                    </div>
+                    <div className="chunk-stats__media-row__text">
+                      {g.jsonFiles.length > 0 ? (
+                        <ul className="pf-list chunk-stats__pf-list">
+                          {g.jsonFiles.map((f) => (
+                            <FileRow
+                              key={f.relativePath}
+                              jobId={jobId}
+                              f={f}
+                              t={t}
+                              onEditText={openEditor}
+                            />
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="chunk-stats__media-row__empty chunk-stats__muted">
+                          {t('chunkStatsNoTranscriptFile')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {g.mergedSplitFiles.length > 0 && (
                   <div className="chunk-stats__block">
                     <div className="chunk-stats__block-title">
-                      {t('chunkStatsAudio')}
+                      {t('chunkStatsSplitMerged')}
                     </div>
                     <ul className="pf-list chunk-stats__pf-list">
-                      {g.audioFiles.map((f) => (
+                      {g.mergedSplitFiles.map((f) => (
                         <FileRow
                           key={f.relativePath}
                           jobId={jobId}
@@ -341,21 +598,151 @@ export function ChunkControlsStats({
                     </ul>
                   </div>
                 )}
-                {g.jsonFiles.length > 0 && (
-                  <div className="chunk-stats__block">
+
+                {g.subChunks.length > 0 && (
+                  <div className="chunk-stats__block chunk-stats__block--sub">
                     <div className="chunk-stats__block-title">
-                      {t('chunkStatsJson')}
+                      {t('chunkStatsSubChunks')}
                     </div>
-                    <ul className="pf-list chunk-stats__pf-list">
-                      {g.jsonFiles.map((f) => (
-                        <FileRow
-                          key={f.relativePath}
-                          jobId={jobId}
-                          f={f}
-                          t={t}
-                          onEditText={openEditor}
-                        />
-                      ))}
+                    <ul className="chunk-stats__sub-list">
+                      {g.subChunks.map((s) => {
+                        const subVmRunning = vmIsRunning(s.vmRow?.state);
+                        const subIdxResolved =
+                          s.subIndex ?? s.vmRow?.subChunkIndex ?? null;
+                        const subCancelEnabled =
+                          live &&
+                          subVmRunning &&
+                          canCancelRunningSubChunk &&
+                          subIdxResolved != null &&
+                          !readOnly;
+                        const subRetranscribeEnabled =
+                          canTranscribeSubChunk &&
+                          !readOnly &&
+                          subIdxResolved != null &&
+                          s.audioFiles.length > 0 &&
+                          !subVmRunning;
+                        return (
+                        <li
+                          key={`${g.index}-sub-${s.subIndex ?? 'u'}-${s.audioFiles[0]?.relativePath ?? s.jsonFiles[0]?.relativePath ?? 'empty'}`}
+                          className="chunk-stats__sub-card"
+                        >
+                          <div className="chunk-stats__sub-head">
+                            <span className="chunk-stats__sub-label">
+                              {t('chunkStatsSubChunkPrefix')} #
+                              {s.subIndex ?? '?'}
+                              {s.displayStem ? (
+                                <span
+                                  className="chunk-stats__stem"
+                                  title={s.displayStem}
+                                >
+                                  {' '}
+                                  — {s.displayStem}
+                                </span>
+                              ) : null}
+                            </span>
+                          </div>
+                          {s.vmRow && (
+                            <SubChunkVmTelemetry
+                              vm={s.vmRow}
+                              locale={locale}
+                              t={t}
+                              nowTick={nowTick}
+                              busy={busy}
+                              parentChunkIndex={g.index}
+                              subIndex={
+                                s.subIndex ?? s.vmRow.subChunkIndex ?? 0
+                              }
+                              readOnly={readOnly}
+                              cancelEnabled={subCancelEnabled}
+                              retranscribeEnabled={subRetranscribeEnabled}
+                              onCancelSub={() => {
+                                if (subIdxResolved == null) return;
+                                void runAction('cancel', g.index, {
+                                  subChunkIndex: subIdxResolved,
+                                });
+                              }}
+                              onRetranscribeSub={() => {
+                                if (subIdxResolved == null) return;
+                                void runAction('transcribe_sub', g.index, {
+                                  subChunkIndex: subIdxResolved,
+                                });
+                              }}
+                              onSkipSub={() =>
+                                void runAction('skip', g.index)
+                              }
+                              onSplitParent={() => void runSplit(g.index)}
+                            />
+                          )}
+                          {(!s.vmRow ||
+                            !vmRowHasTelemetry(s.vmRow)) &&
+                            s.subIndex != null &&
+                            s.audioFiles.length > 0 &&
+                            canTranscribeSubChunk &&
+                            !subVmRunning && (
+                              <div className="chunk-stats__sub-actions">
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  title={t('chunkTranscribeSubTitle')}
+                                  onClick={() =>
+                                    void runAction('transcribe_sub', g.index, {
+                                      subChunkIndex: s.subIndex!,
+                                    })
+                                  }
+                                >
+                                  {t('chunkTranscribeSub')}
+                                </button>
+                              </div>
+                            )}
+                          {(s.audioFiles.length > 0 ||
+                            s.jsonFiles.length > 0) && (
+                            <div
+                              className="chunk-stats__media-row chunk-stats__media-row--sub"
+                              aria-label={`${t('chunkStatsAudio')} / ${t('chunkStatsJson')}`}
+                            >
+                              <div className="chunk-stats__media-row__audio">
+                                {s.audioFiles.length > 0 ? (
+                                  <ul className="pf-list chunk-stats__pf-list">
+                                    {s.audioFiles.map((f) => (
+                                      <FileRow
+                                        key={f.relativePath}
+                                        jobId={jobId}
+                                        f={f}
+                                        t={t}
+                                        onEditText={openEditor}
+                                      />
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="chunk-stats__media-row__empty chunk-stats__muted">
+                                    {t('chunkStatsNoAudioInRow')}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="chunk-stats__media-row__text">
+                                {s.jsonFiles.length > 0 ? (
+                                  <ul className="pf-list chunk-stats__pf-list">
+                                    {s.jsonFiles.map((f) => (
+                                      <FileRow
+                                        key={f.relativePath}
+                                        jobId={jobId}
+                                        f={f}
+                                        t={t}
+                                        onEditText={openEditor}
+                                      />
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="chunk-stats__media-row__empty chunk-stats__muted">
+                                    {t('chunkStatsNoTranscriptFile')}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 )}
@@ -442,6 +829,16 @@ export function ChunkControlsStats({
           color: var(--color-info);
           background: var(--color-subtle-panel);
         }
+        .chunk-stats__cancelled-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.35rem;
+          margin-bottom: 0.4rem;
+        }
+        .chunk-stats__cancelled-actions button {
+          font-size: 0.75rem;
+          padding: 0.2rem 0.5rem;
+        }
         .chunk-stats__artifact-done {
           margin-bottom: 0.35rem;
           padding: 0.35rem 0.5rem;
@@ -460,6 +857,36 @@ export function ChunkControlsStats({
           border-radius: 6px;
           border: 1px solid var(--color-border);
           background: var(--color-subtle-panel);
+          max-width: 400px;
+        }
+        .chunk-stats__vm--sub {
+          margin-top: 0.3rem;
+          margin-bottom: 0.4rem;
+        }
+        .chunk-stats__vm-body {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-start;
+          gap: 0.5rem 0.65rem;
+        }
+        .chunk-stats__vm-telemetry-col {
+          flex: 1 1 auto;
+          max-width: 200px;
+          min-width: 0;
+        }
+        .chunk-stats__vm-telemetry-col .chunk-stats__vm-err {
+          white-space: normal;
+          word-break: break-word;
+        }
+        .chunk-stats__vm-actions-col {
+          flex: 1 1 auto;
+          min-width: 0;
+        }
+        .chunk-stats__vm-actions-stack {
+          flex-direction: column;
+          align-items: flex-start;
+          margin-top: 0;
+          gap: 0.35rem;
         }
         .chunk-stats__vm-title {
           font-size: 0.75rem;
@@ -559,7 +986,79 @@ export function ChunkControlsStats({
           opacity: 0.5;
           cursor: not-allowed;
         }
+        .chunk-stats__media-row {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-start;
+          gap: 0.65rem 1rem;
+          margin-top: 0.35rem;
+        }
+        .chunk-stats__media-row--sub {
+          margin-top: 0.3rem;
+        }
+        .chunk-stats__media-row__audio {
+          flex: 1 1 180px;
+          min-width: 0;
+          max-width: 1100px;
+        }
+        .chunk-stats__media-row__text {
+          flex: 1 1 180px;
+          min-width: 0;
+          max-width: 600px;
+        }
+        .chunk-stats__media-row__empty {
+          margin: 0;
+          padding: 0.3rem 0;
+        }
         .chunk-stats__block { margin-top: 0.35rem; }
+        .chunk-stats__block--sub {
+          margin-top: 0.5rem;
+          padding-top: 0.35rem;
+          border-top: 1px dashed var(--color-border);
+        }
+        .chunk-stats__sub-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 0.45rem;
+        }
+        .chunk-stats__sub-card {
+          margin-left: 50px;
+          border: 1px solid var(--color-border);
+          border-radius: 6px;
+          padding: 0.4rem 0.5rem;
+          background: color-mix(in srgb, var(--color-subtle-panel) 65%, var(--color-surface));
+        }
+        .chunk-stats__sub-head {
+          margin-bottom: 0.25rem;
+        }
+        .chunk-stats__sub-label {
+          font-size: 0.78rem;
+          font-weight: 600;
+          font-variant-numeric: tabular-nums;
+          color: var(--color-heading);
+        }
+        .chunk-stats__sub-actions {
+          margin: 0.35rem 0 0.25rem 0;
+        }
+        .chunk-stats__sub-actions button {
+          padding: 0.3rem 0.55rem;
+          font-size: 0.75rem;
+          border: 1px solid var(--color-border-strong);
+          border-radius: 4px;
+          background: var(--color-surface);
+          cursor: pointer;
+          color: var(--color-heading);
+        }
+        .chunk-stats__sub-actions button:hover:not(:disabled) {
+          background: var(--color-surface-hover);
+        }
+        .chunk-stats__sub-actions button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
         .chunk-stats__block-title {
           font-size: 0.7rem;
           text-transform: uppercase;

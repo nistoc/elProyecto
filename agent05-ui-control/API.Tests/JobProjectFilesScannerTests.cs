@@ -52,6 +52,39 @@ public class JobProjectFilesScannerTests
     }
 
     [Fact]
+    public void Scan_split_chunks_includes_merged_at_chunk_root()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "XtractManagerScanTests", Guid.NewGuid().ToString("N"));
+        var chunkDir = Path.Combine(root, "split_chunks", "chunk_2");
+        Directory.CreateDirectory(Path.Combine(chunkDir, "sub_chunks"));
+        Directory.CreateDirectory(Path.Combine(chunkDir, "results"));
+        File.WriteAllText(Path.Combine(chunkDir, "chunk_2_merged.json"), "{}");
+        File.WriteAllText(Path.Combine(chunkDir, "chunk_2_merged.md"), "# x");
+        File.WriteAllText(Path.Combine(chunkDir, "sub_chunks", "x_sub_00.m4a"), "");
+
+        try
+        {
+            var files = JobProjectFilesScanner.Scan(root);
+            Assert.Equal(3, files.SplitChunks.Count);
+            var merged = files.SplitChunks.Where(f => f.Name.StartsWith("chunk_2_merged", StringComparison.OrdinalIgnoreCase)).ToList();
+            Assert.Equal(2, merged.Count);
+            Assert.All(merged, f =>
+            {
+                Assert.Equal(2, f.ParentIndex);
+                Assert.Null(f.SubIndex);
+                Assert.True(f.IsTranscript);
+            });
+            var audio = files.SplitChunks.Single(f => f.Name.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase));
+            Assert.Equal(2, audio.ParentIndex);
+            Assert.Equal(0, audio.SubIndex);
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
     public void Scan_empty_dir_returns_empty_collections()
     {
         var root = Path.Combine(Path.GetTempPath(), "XtractManagerScanTests", Guid.NewGuid().ToString("N"));

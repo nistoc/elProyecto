@@ -204,28 +204,30 @@ export function FileRow({
           onEditText(f);
         }}
       >
-        <span className="pf-file-name" title={f.relativePath}>
-          {f.name}
-        </span>
+        <div className="pf-file-name-row">
+          <span className="pf-file-name" title={f.relativePath}>
+            {f.name}
+          </span>
+          <a href={url} target="_blank" rel="noreferrer" className="pf-open">
+            {t('openFile')}
+          </a>
+          {f.kind === 'text' && onEditText && (
+            <button
+              type="button"
+              className="pf-edit"
+              onClick={() => onEditText(f)}
+            >
+              {t('editFile')}
+            </button>
+          )}
+        </div>
         <span className="pf-file-meta">{fileMeta(f, t)}</span>
       </div>
-      <div className="pf-file-actions">
-        {f.kind === 'audio' && (
+      {f.kind === 'audio' && (
+        <div className="pf-file-actions">
           <JobAudioWavePlayer src={url} t={t} />
-        )}
-        <a href={url} target="_blank" rel="noreferrer" className="pf-open">
-          {t('openFile')}
-        </a>
-        {f.kind === 'text' && onEditText && (
-          <button
-            type="button"
-            className="pf-edit"
-            onClick={() => onEditText(f)}
-          >
-            {t('editFile')}
-          </button>
-        )}
-      </div>
+        </div>
+      )}
     </li>
   );
 }
@@ -579,6 +581,17 @@ const styles = `
     flex-direction: column;
     gap: 0.15rem;
   }
+  .pf-file-name-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.5rem;
+    min-width: 0;
+  }
+  .pf-file-name-row .pf-file-name {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
   .pf-file-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pf-file-meta { color: var(--color-text-secondary); font-size: 0.75rem; }
   .pf-file-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; flex-shrink: 0; }
@@ -616,6 +629,13 @@ const styles = `
   }
   .pf-wave__play:disabled { opacity: 0.45; cursor: not-allowed; }
   .pf-wave__play:hover:not(:disabled) { background: var(--color-surface-hover); }
+  .pf-wave__track-row {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
   .pf-wave__track {
     flex: 1;
     min-width: 0;
@@ -626,6 +646,28 @@ const styles = `
     background: var(--color-surface-sunken);
     overflow: hidden;
     touch-action: none;
+  }
+  .pf-wave__cursor-time {
+    position: absolute;
+    top: 2px;
+    left: 0;
+    transform: translateX(-50%);
+    z-index: 3;
+    font-size: 0.6rem;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-heading);
+    text-shadow: 0 0 3px var(--color-surface), 0 0 6px var(--color-surface);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .pf-wave__duration {
+    flex-shrink: 0;
+    font-size: 0.68rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-secondary);
+    min-width: 2.75rem;
+    text-align: right;
   }
   .pf-wave__canvas {
     display: block;

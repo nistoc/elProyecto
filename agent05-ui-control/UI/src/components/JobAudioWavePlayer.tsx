@@ -9,6 +9,16 @@ import {
 const CANVAS_HEIGHT = 40;
 const NUM_PEAKS = 280;
 
+function formatWaveTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0)
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 function computePeaks(buffer: AudioBuffer, numPeaks: number): Float32Array {
   const channels = buffer.numberOfChannels;
   const length = buffer.length;
@@ -284,33 +294,49 @@ export function JobAudioWavePlayer({
       >
         {playing ? '⏸' : '▶'}
       </button>
-      <div
-        ref={wrapRef}
-        className="pf-wave__track"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        role="slider"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(progress * 100)}
-        aria-label={t('audioWaveSeek')}
-        aria-disabled={loadState !== 'idle' || !duration}
-      >
-        <canvas
-          ref={canvasRef}
-          className="pf-wave__canvas"
-          height={CANVAS_HEIGHT}
-        />
-        {loadState === 'loading' && (
-          <span className="pf-wave__overlay">{t('audioWaveLoading')}</span>
-        )}
-        {loadState === 'error' && (
-          <span className="pf-wave__overlay pf-wave__overlay--err">
-            {t('audioWaveError')}
-          </span>
-        )}
+      <div className="pf-wave__track-row">
+        <div
+          ref={wrapRef}
+          className="pf-wave__track"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          role="slider"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(progress * 100)}
+          aria-label={t('audioWaveSeek')}
+          aria-disabled={loadState !== 'idle' || !duration}
+        >
+          {loadState === 'idle' && duration > 0 && (
+            <span
+              className="pf-wave__cursor-time"
+              style={{ left: `${progress * 100}%` }}
+            >
+              {formatWaveTime(currentTime)}
+            </span>
+          )}
+          <canvas
+            ref={canvasRef}
+            className="pf-wave__canvas"
+            height={CANVAS_HEIGHT}
+          />
+          {loadState === 'loading' && (
+            <span className="pf-wave__overlay">{t('audioWaveLoading')}</span>
+          )}
+          {loadState === 'error' && (
+            <span className="pf-wave__overlay pf-wave__overlay--err">
+              {t('audioWaveError')}
+            </span>
+          )}
+        </div>
+        <span
+          className="pf-wave__duration"
+          title={t('audioWaveTotalDuration')}
+        >
+          {formatWaveTime(duration)}
+        </span>
       </div>
     </div>
   );

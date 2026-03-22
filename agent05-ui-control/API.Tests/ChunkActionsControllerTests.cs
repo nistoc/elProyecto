@@ -31,7 +31,7 @@ internal sealed class StubJobWorkspace : IJobWorkspace
 
 internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient
 {
-    public List<(string Agent04JobId, TranscriptionChunkAction Action, int ChunkIndex, string? JobDirectoryRelative, int SplitParts)> ChunkCalls { get; } = new();
+    public List<(string Agent04JobId, TranscriptionChunkAction Action, int ChunkIndex, string? JobDirectoryRelative, int SplitParts, int SubChunkIndex)> ChunkCalls { get; } = new();
 
     public ChunkCommandResult? NextChunkResult { get; set; } = new(true, "cancel_requested");
 
@@ -41,9 +41,10 @@ internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient
         int chunkIndex,
         string? jobDirectoryRelative = null,
         int splitParts = 0,
+        int subChunkIndex = 0,
         CancellationToken ct = default)
     {
-        ChunkCalls.Add((agent04JobId, action, chunkIndex, jobDirectoryRelative, splitParts));
+        ChunkCalls.Add((agent04JobId, action, chunkIndex, jobDirectoryRelative, splitParts, subChunkIndex));
         return Task.FromResult(NextChunkResult ?? new ChunkCommandResult(false, "unset"));
     }
 
@@ -106,6 +107,33 @@ public class ChunkActionsControllerTests
         Assert.Equal(TranscriptionChunkAction.Cancel, grpc.ChunkCalls[0].Action);
         Assert.Equal(2, grpc.ChunkCalls[0].ChunkIndex);
         Assert.Equal(jobId, grpc.ChunkCalls[0].JobDirectoryRelative);
+        Assert.Equal(-1, grpc.ChunkCalls[0].SubChunkIndex);
+    }
+
+    [Fact]
+    public async Task PostChunkAction_cancel_with_subChunkIndex_forwards_sub_index()
+    {
+        var store = new InMemoryJobStore();
+        var jobId = await CreateRunningTranscriberJobAsync(store, "a04-sub");
+        var grpc = new RecordingTranscriptionClient();
+        var controller = new JobsController(
+            store,
+            new StubJobWorkspace(),
+            MockPipeline.Instance,
+            MockBroadcaster.Instance,
+            grpc,
+            NullLogger<JobsController>.Instance);
+
+        var result = await controller.PostChunkAction(
+            jobId,
+            new ChunkActionRequest { Action = "cancel", ChunkIndex = 4, SubChunkIndex = 2 },
+            CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.True(Assert.IsType<ChunkActionResponse>(ok.Value).Ok);
+        Assert.Single(grpc.ChunkCalls);
+        Assert.Equal(4, grpc.ChunkCalls[0].ChunkIndex);
+        Assert.Equal(2, grpc.ChunkCalls[0].SubChunkIndex);
     }
 
     [Fact]

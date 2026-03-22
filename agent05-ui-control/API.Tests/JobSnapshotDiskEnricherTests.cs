@@ -63,6 +63,40 @@ public class JobSnapshotDiskEnricherTests
     }
 
     [Fact]
+    public void TryEnrichFromDisk_loads_sub_chunk_rows_from_work_state_json()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "xtract-disk-subvm-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            const string json = """
+{
+  "schemaVersion": 2,
+  "totalChunks": 1,
+  "recoveredFromArtifacts": false,
+  "chunks": [
+    { "index": 0, "state": "Completed", "startedAt": "2020-01-01T00:00:00Z", "completedAt": "2020-01-01T00:01:00Z" },
+    { "index": 0, "state": "Running", "startedAt": "2020-01-01T00:02:00Z", "isSubChunk": true, "parentChunkIndex": 0, "subChunkIndex": 1 }
+  ]
+}
+""";
+            File.WriteAllText(Path.Combine(dir, JobSnapshotDiskEnricher.TranscriptionWorkStateFileName), json);
+            var snap = new JobSnapshot { Id = "abc", Status = "completed", Phase = "idle" };
+            JobSnapshotDiskEnricher.TryEnrichFromDisk(snap, dir, NullLogger.Instance);
+            Assert.NotNull(snap.Chunks?.ChunkVirtualModel);
+            Assert.Equal(2, snap.Chunks!.ChunkVirtualModel!.Count);
+            var sub = snap.Chunks.ChunkVirtualModel.First(e => e.IsSubChunk);
+            Assert.Equal(0, sub.ParentChunkIndex);
+            Assert.Equal(1, sub.SubChunkIndex);
+            Assert.Equal("Running", sub.State);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
     public void TryEnrichFromDisk_heuristic_chunks_folder_when_no_state_file()
     {
         var dir = Path.Combine(Path.GetTempPath(), "xtract-heur-" + Guid.NewGuid().ToString("N"));

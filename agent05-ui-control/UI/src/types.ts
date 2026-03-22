@@ -32,6 +32,10 @@ export interface ChunkVirtualModelEntry {
   completedAt?: string | null;
   state: string;
   errorMessage?: string | null;
+  /** Sub-chunk transcription row (proto is_sub_chunk). */
+  isSubChunk?: boolean | null;
+  parentChunkIndex?: number | null;
+  subChunkIndex?: number | null;
 }
 
 export interface ChunkState {

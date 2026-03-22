@@ -1,12 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
-import { postJobChunkAction, type ChunkActionName } from '../api';
-import type { JobSnapshot } from '../types';
+import {
+  postJobChunkAction,
+  type ChunkActionName,
+  type PostChunkActionOptions,
+} from '../api';
+import type {
+  ChunkVirtualModelEntry,
+  JobProjectFiles,
+  JobSnapshot,
+} from '../types';
+import { chunkHasSplitArtifacts } from '../utils/chunkArtifactGroups';
 import { elapsedSeconds, formatMmSs } from '../utils/chunkVmFormat';
 
 function labelForChunkState(state: string, t: (key: string) => string): string {
   const key = `chunkState${state}`;
   const v = t(key);
   return v === key ? state : v;
+}
+
+function chunkVmRowKey(row: ChunkVirtualModelEntry): string {
+  if (row.isSubChunk === true)
+    return `sub-${row.parentChunkIndex}-${row.subChunkIndex}`;
+  return `main-${row.index}`;
+}
+
+function chunkVmRowLabel(row: ChunkVirtualModelEntry): string {
+  if (row.isSubChunk === true)
+    return `#${row.parentChunkIndex}.${row.subChunkIndex}`;
+  return `#${row.index}`;
 }
 
 export interface ChunkControlPanelProps {
@@ -19,6 +40,8 @@ export interface ChunkControlPanelProps {
   /** When set, project file lists can narrow to this chunk index. */
   fileFilterChunkIndex: number | null;
   onFileFilterChunkChange: (index: number | null) => void;
+  /** From useJobProjectFiles; Split hidden when chunk already has split_chunks artifacts. */
+  projectFiles: JobProjectFiles | null;
 }
 
 export function ChunkControlPanel({
@@ -29,6 +52,7 @@ export function ChunkControlPanel({
   onChunkIndexChange,
   fileFilterChunkIndex,
   onFileFilterChunkChange,
+  projectFiles,
 }: ChunkControlPanelProps) {
   const total = job.chunks?.total ?? 0;
   const vm = job.chunks?.chunkVirtualModel;
@@ -71,18 +95,13 @@ export function ChunkControlPanel({
   const runAction = async (
     action: ChunkActionName,
     index?: number,
-    splitParts?: number
+    options?: PostChunkActionOptions
   ) => {
     const idx = index ?? chunkIndex;
     setMessage(null);
     setBusy(true);
     try {
-      const res = await postJobChunkAction(
-        jobId,
-        action,
-        idx,
-        splitParts
-      );
+      const res = await postJobChunkAction(jobId, action, idx, options);
       setMessage(
         res.ok
           ? res.message || t('chunkActionOk')
@@ -104,8 +123,13 @@ export function ChunkControlPanel({
       setMessage(t('chunkSplitPartsInvalid'));
       return;
     }
-    await runAction('split', idx, n);
+    await runAction('split', idx, { splitParts: n });
   };
+
+  const operatorChunkHasSplitArtifacts = chunkHasSplitArtifacts(
+    projectFiles,
+    chunkIndex
+  );
 
   const showVmTable = vm && vm.length > 0;
   const showVmPlaceholder =
@@ -148,9 +172,11 @@ export function ChunkControlPanel({
                   const sec = elapsedSeconds(row, nowTick);
                   const elapsed =
                     sec === null ? t('chunkVmNoStarted') : formatMmSs(sec);
+                  const canCancelRow =
+                    live && row.state === 'Running' && row.isSubChunk !== true;
                   return (
-                    <tr key={row.index}>
-                      <td className="chunk-vm__num">#{row.index}</td>
+                    <tr key={chunkVmRowKey(row)}>
+                      <td className="chunk-vm__num">{chunkVmRowLabel(row)}</td>
                       <td className="chunk-vm__time" title={row.startedAt ?? ''}>
                         {elapsed}
                       </td>
@@ -164,14 +190,14 @@ export function ChunkControlPanel({
                           : t('chunkVmNoStarted')}
                       </td>
                       <td className="chunk-vm__cancel">
-                        {live && row.state === 'Running' ? (
+                        {canCancelRow ? (
                           <button
                             type="button"
                             className="chunk-vm__x"
                             disabled={!live || busy}
                             aria-label={t('chunkVmCancelAria').replace(
                               '{n}',
-                              String(row.index)
+                              chunkVmRowLabel(row)
                             )}
                             onClick={() => runAction('cancel', row.index)}
                           >
@@ -293,14 +319,16 @@ export function ChunkControlPanel({
           >
             {t('chunkRetranscribe')}
           </button>
-          <button
-            type="button"
-            disabled={!live || busy}
-            title={t('chunkSplitTitle')}
-            onClick={() => void runSplit()}
-          >
-            {t('chunkSplit')}
-          </button>
+          {!operatorChunkHasSplitArtifacts && (
+            <button
+              type="button"
+              disabled={!live || busy}
+              title={t('chunkSplitTitle')}
+              onClick={() => void runSplit()}
+            >
+              {t('chunkSplit')}
+            </button>
+          )}
         </div>
       )}
       {message && <p className="chunk-panel__message">{message}</p>}

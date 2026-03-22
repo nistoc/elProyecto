@@ -134,22 +134,35 @@ export type ChunkActionName =
   | 'cancel'
   | 'skip'
   | 'retranscribe'
-  | 'split';
+  | 'split'
+  | 'transcribe_sub';
 
 export interface ChunkActionResponseBody {
   ok: boolean;
   message: string;
 }
 
+export type PostChunkActionOptions = {
+  splitParts?: number;
+  subChunkIndex?: number;
+};
+
 /** POST /api/jobs/:id/chunk-actions — forwards to Agent04 (cancel supported). */
 export async function postJobChunkAction(
   jobId: string,
   action: ChunkActionName,
   chunkIndex: number,
-  splitParts?: number
+  options?: PostChunkActionOptions
 ): Promise<ChunkActionResponseBody> {
   const body: Record<string, unknown> = { action, chunkIndex };
-  if (splitParts != null && splitParts >= 2) body.splitParts = splitParts;
+  if (options?.splitParts != null && options.splitParts >= 2)
+    body.splitParts = options.splitParts;
+  if (
+    options?.subChunkIndex !== undefined &&
+    options.subChunkIndex !== null &&
+    options.subChunkIndex >= 0
+  )
+    body.subChunkIndex = options.subChunkIndex;
   const r = await fetch(
     `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/chunk-actions`,
     {

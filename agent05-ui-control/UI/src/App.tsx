@@ -33,6 +33,7 @@ function AppContent() {
     handleReset,
     handleDeleteJob,
     jobSnapshotRevision,
+    refreshJobSnapshot,
     logsPaused,
     bufferedCount,
     toggleLogsPause,
@@ -182,11 +183,13 @@ function AppContent() {
                           files={jobFiles.data}
                           filesLoading={jobFiles.loading}
                           filesError={jobFiles.error}
-                          filesRefreshKey={jobSnapshotRevision}
                           chunkOperatorIndex={chunkOperatorIndex}
                           locale={locale}
                           t={t}
-                          onProjectFilesChanged={jobFiles.reload}
+                          onProjectFilesChanged={async () => {
+                            await jobFiles.reload();
+                            await refreshJobSnapshot();
+                          }}
                         />
                         <ChunkControlPanel
                           jobId={jobId}
@@ -196,6 +199,7 @@ function AppContent() {
                           onChunkIndexChange={setChunkOperatorIndex}
                           fileFilterChunkIndex={chunkFileFilter}
                           onFileFilterChunkChange={onChunkFileFilterChange}
+                          projectFiles={jobFiles.data}
                         />
                         <h4 className="step-panel__files-heading">
                           {t('projectFiles')}

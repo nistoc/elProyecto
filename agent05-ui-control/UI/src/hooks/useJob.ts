@@ -80,6 +80,8 @@ export function useJob(): {
   setFile: (f: File | null) => void;
   /** Increments when job snapshot updates over SSE; pass to ProjectFilesPanel as filesRefreshKey. */
   jobSnapshotRevision: number;
+  /** GET /api/jobs/:id (disk-enriched VM); use after chunk-actions so sub-chunk rows refresh without full reload. */
+  refreshJobSnapshot: () => Promise<void>;
   refreshList: () => Promise<void>;
   handleSelectJob: (id: string) => void;
   handleStart: (tags?: string[]) => Promise<void>;
@@ -137,6 +139,15 @@ export function useJob(): {
       setLoadingList(false);
     }
   }, []);
+
+  const refreshJobSnapshot = useCallback(async () => {
+    if (!jobId) return;
+    const snap = await fetchJob(jobId);
+    if (snap) {
+      setJob(snap);
+      setJobSnapshotRevision((r) => r + 1);
+    }
+  }, [jobId]);
 
   useEffect(() => {
     refreshList();
@@ -326,6 +337,7 @@ export function useJob(): {
     setActiveStep,
     setFile,
     jobSnapshotRevision,
+    refreshJobSnapshot,
     refreshList,
     handleSelectJob,
     handleStart,
