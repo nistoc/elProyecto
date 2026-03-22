@@ -123,7 +123,10 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         await UpdateAndBroadcastAsync(jobId, s => { s.Agent04JobId = transcriptionJobId; }, ct);
         Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
 
-        await foreach (var update in _transcription.StreamJobStatusAsync(transcriptionJobId, ct))
+        var streamSeedSnap = await _store.GetAsync(jobId, ct);
+        var streamSeedVm = streamSeedSnap?.Chunks?.ChunkVirtualModel;
+
+        await foreach (var update in _transcription.StreamJobStatusAsync(transcriptionJobId, streamSeedVm, ct))
         {
             if (update.State == "Failed")
                 _logger.LogWarning(
@@ -154,9 +157,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                 }
 
                 if (update.ChunkVirtualModel is { Count: > 0 })
-                    s.Chunks.ChunkVirtualModel = ChunkVirtualModelMerge.Merge(
-                        s.Chunks.ChunkVirtualModel,
-                        update.ChunkVirtualModel);
+                    s.Chunks.ChunkVirtualModel = update.ChunkVirtualModel;
                 if (!string.IsNullOrWhiteSpace(update.TranscriptionFooterHint))
                     s.TranscriptionFooterHint = update.TranscriptionFooterHint;
                 if (update.State == "Completed")

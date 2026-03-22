@@ -108,18 +108,20 @@ public class JobsController : ControllerBase
             return;
         try
         {
-            var live = await _transcription.GetJobStatusAsync(agentId, ct).ConfigureAwait(false);
+            var prevVm = snap.Chunks?.ChunkVirtualModel;
+            var live = await _transcription
+                .GetJobStatusAsync(agentId, prevVm, ct)
+                .ConfigureAwait(false);
             if (live == null)
                 return;
             if (live.ChunkVirtualModel is { Count: > 0 })
             {
                 snap.Chunks ??= new ChunkState();
-                var prevVm = snap.Chunks.ChunkVirtualModel;
                 var prevCount = prevVm?.Count ?? 0;
-                var merged = ChunkVirtualModelMerge.Merge(prevVm, live.ChunkVirtualModel);
-                snap.Chunks.ChunkVirtualModel = merged;
+                var mergedVm = live.ChunkVirtualModel;
+                snap.Chunks.ChunkVirtualModel = mergedVm;
                 snap.TranscriptionSyncDebug =
-                    $"{DateTime.UtcNow:O} liveVm={live.ChunkVirtualModel.Count} prevVm={prevCount} mergedVm={merged.Count} " +
+                    $"{DateTime.UtcNow:O} liveVm={live.ChunkVirtualModel.Count} prevVm={prevCount} mergedVm={mergedVm.Count} (server) " +
                     $"footer={(string.IsNullOrWhiteSpace(live.TranscriptionFooterHint) ? 0 : 1)}";
             }
             else

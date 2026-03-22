@@ -6,9 +6,10 @@
 
 ## Решение по VM (gRPC групп / Stats)
 
-До **фазы 7** новый RPC группировок (фаза 2) возвращает **только метаданные файлов** на диске. Строки виртуальной модели чанков (`ChunkVirtualModelEntry` / merge плейсхолдеры) по-прежнему склеиваются в **Agent05** (`ChunkVirtualModelMerge` + снимок job), чтобы не дублировать источник VM и не ломать гонки стрима. После выравнивания инвариантов в Agent04 политику можно сузить.
+- **Склейка VM (плейсхолдеры Pending, orphan-строки, activity log):** выполняется в **Agent04** (`ChunkVirtualModelMerge`), см. [CHUNK_VM_MERGE.md](./CHUNK_VM_MERGE.md). Запросы `GetJobStatus` / `StreamJobStatus` принимают `client_chunk_virtual_model`; ответ уже merged. Agent05 только передаёт снимок и сохраняет результат.
+- **RPC группировок** (`GetChunkArtifactGroups`) по-прежнему отдаёт **только метаданные файлов**; строки VM для Stats в UI пока подмешиваются на клиенте к группам (`mergeChunkGroupVm`), пока контракт групп не расширят.
 
-Комментарий в `Proto/transcription.proto` дублирует это решение для авторов контрактов.
+Комментарии в `Proto/transcription.proto` согласованы с этим разделением.
 
 ## Методы интерфейса (эволюция по фазам)
 

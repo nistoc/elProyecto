@@ -59,11 +59,26 @@ internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient
         string jobId,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        await foreach (var u in StreamJobStatusAsync(jobId, null, ct))
+            yield return u;
+    }
+
+    public async IAsyncEnumerable<JobStatusUpdate> StreamJobStatusAsync(
+        string jobId,
+        IReadOnlyList<ChunkVirtualModelEntry>? clientChunkVirtualModel,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
         await Task.CompletedTask;
         yield break;
     }
 
     public Task<JobStatusUpdate?> GetJobStatusAsync(string agent04JobId, CancellationToken ct = default) =>
+        GetJobStatusAsync(agent04JobId, null, ct);
+
+    public Task<JobStatusUpdate?> GetJobStatusAsync(
+        string agent04JobId,
+        IReadOnlyList<ChunkVirtualModelEntry>? clientChunkVirtualModel,
+        CancellationToken ct) =>
         Task.FromResult<JobStatusUpdate?>(null);
 
     public ChunkArtifactGroupsResult? NextChunkGroups { get; set; }

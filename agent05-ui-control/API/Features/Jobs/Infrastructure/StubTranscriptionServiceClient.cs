@@ -9,11 +9,26 @@ public sealed class StubTranscriptionServiceClient : Application.ITranscriptionS
 
     public async IAsyncEnumerable<Application.JobStatusUpdate> StreamJobStatusAsync(string jobId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
+        await foreach (var u in StreamJobStatusAsync(jobId, null, ct))
+            yield return u;
+    }
+
+    public async IAsyncEnumerable<Application.JobStatusUpdate> StreamJobStatusAsync(
+        string jobId,
+        IReadOnlyList<Application.ChunkVirtualModelEntry>? clientChunkVirtualModel,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
         await Task.CompletedTask;
         yield break;
     }
 
     public Task<Application.JobStatusUpdate?> GetJobStatusAsync(string agent04JobId, CancellationToken ct = default) =>
+        GetJobStatusAsync(agent04JobId, null, ct);
+
+    public Task<Application.JobStatusUpdate?> GetJobStatusAsync(
+        string agent04JobId,
+        IReadOnlyList<Application.ChunkVirtualModelEntry>? clientChunkVirtualModel,
+        CancellationToken ct) =>
         Task.FromResult<Application.JobStatusUpdate?>(null);
 
     public Task<Application.ChunkCommandResult> ChunkCommandAsync(string agent04JobId, Application.TranscriptionChunkAction action, int chunkIndex, string? jobDirectoryRelative = null, int splitParts = 0, int subChunkIndex = 0, CancellationToken ct = default) =>

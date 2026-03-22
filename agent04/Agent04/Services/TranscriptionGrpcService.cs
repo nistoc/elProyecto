@@ -171,7 +171,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         var job = _store.Get(request.JobId);
         if (job == null)
             throw new RpcException(new Status(StatusCode.NotFound, "Job not found"));
-        return Task.FromResult(ToResponse(job));
+        return Task.FromResult(ToResponse(job, request.ClientChunkVirtualModel));
     }
 
     public override async Task StreamJobStatus(StreamJobStatusRequest request, IServerStreamWriter<Agent04.Proto.JobStatusUpdate> responseStream, ServerCallContext context)
@@ -181,6 +181,9 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         var lastUpdated = "";
         var lastChunkSig = "";
         var lastFooter = "";
+        IReadOnlyList<ChunkVirtualModelEntry>? mergedVm = request.ClientChunkVirtualModel.Count > 0
+            ? request.ClientChunkVirtualModel.ToList()
+            : null;
         while (!context.CancellationToken.IsCancellationRequested)
         {
             var job = _store.Get(jobId);
@@ -191,8 +194,9 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             }
             var state = job.State.ToString();
             var updated = job.UpdatedAt.ToString("O");
-            var vm = BuildChunkVirtualModel(job.JobId, job.TotalChunks);
-            var chunkSig = ChunkVirtualModelSignature(vm);
+            var liveVm = BuildChunkVirtualModel(job.JobId, job.TotalChunks);
+            mergedVm = ChunkVirtualModelMerge.Merge(mergedVm, liveVm);
+            var chunkSig = ChunkVirtualModelSignature(mergedVm);
             var footer = _telemetryHub?.GetFooterHint(job.JobId) ?? "";
             if (state != lastState || updated != lastUpdated || chunkSig != lastChunkSig || footer != lastFooter)
             {
@@ -214,8 +218,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                     ErrorMessage = job.ErrorMessage ?? "",
                     TranscriptionFooterHint = footer
                 };
-                foreach (var e in vm)
-                    msg.ChunkVirtualModel.Add(e);
+                foreach (var e in mergedVm)
+                    msg.ChunkVirtualModel.Add(e.Clone());
                 await responseStream.WriteAsync(msg);
                 if (job.State is JobState.Failed or JobState.Cancelled)
                     return;
@@ -785,8 +789,19 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         return max < 0 ? 0 : max + 1;
     }
 
-    private JobStatusResponse ToResponse(JobStatus job)
+    private JobStatusResponse ToResponse(JobStatus job) =>
+        ToResponse(job, clientVmForMerge: null);
+
+    private JobStatusResponse ToResponse(
+        JobStatus job,
+        Google.Protobuf.Collections.RepeatedField<ChunkVirtualModelEntry>? clientVmForMerge)
     {
+        var liveVm = BuildChunkVirtualModel(job.JobId, job.TotalChunks);
+        IReadOnlyList<ChunkVirtualModelEntry>? prev = clientVmForMerge is { Count: > 0 }
+            ? clientVmForMerge
+            : null;
+        var mergedVm = ChunkVirtualModelMerge.Merge(prev, liveVm);
+
         var r = new JobStatusResponse
         {
             JobId = job.JobId,
@@ -804,8 +819,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             ErrorMessage = job.ErrorMessage ?? "",
             TranscriptionFooterHint = _telemetryHub?.GetFooterHint(job.JobId) ?? ""
         };
-        foreach (var e in BuildChunkVirtualModel(job.JobId, job.TotalChunks))
-            r.ChunkVirtualModel.Add(e);
+        foreach (var e in mergedVm)
+            r.ChunkVirtualModel.Add(e.Clone());
         return r;
     }
 

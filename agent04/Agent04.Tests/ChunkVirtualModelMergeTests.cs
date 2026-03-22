@@ -1,29 +1,33 @@
-using XtractManager.Features.Jobs.Application;
-using XtractManager.Features.Jobs.Infrastructure;
+using Agent04.Features.Transcription.Infrastructure;
+using Agent04.Proto;
 using Xunit;
 
-namespace XtractManager.Tests;
+namespace Agent04.Tests;
 
 public class ChunkVirtualModelMergeTests
 {
+    private static ChunkVirtualModelEntry VmMain(int index, string state, string? started = null, string? completed = null, string? log = null) =>
+        new()
+        {
+            ChunkIndex = index,
+            State = state,
+            StartedAt = started ?? "",
+            CompletedAt = completed ?? "",
+            TranscriptActivityLog = log ?? ""
+        };
+
     [Fact]
     public void Merge_preserves_cancelled_when_incoming_is_placeholder_pending()
     {
         var prev = new List<ChunkVirtualModelEntry>
         {
-            new()
-            {
-                Index = 0,
-                State = "Cancelled",
-                StartedAt = "2020-01-01T00:00:00Z",
-                CompletedAt = "2020-01-01T00:01:00Z",
-            },
-            new() { Index = 1, State = "Completed", CompletedAt = "2020-01-01T00:02:00Z" },
+            VmMain(0, "Cancelled", "2020-01-01T00:00:00Z", "2020-01-01T00:01:00Z"),
+            VmMain(1, "Completed", completed: "2020-01-01T00:02:00Z"),
         };
         var live = new List<ChunkVirtualModelEntry>
         {
-            new() { Index = 0, State = "Pending" },
-            new() { Index = 1, State = "Pending" },
+            VmMain(0, "Pending"),
+            VmMain(1, "Pending"),
         };
 
         var merged = ChunkVirtualModelMerge.Merge(prev, live);
@@ -34,17 +38,17 @@ public class ChunkVirtualModelMergeTests
     }
 
     [Fact]
-    public void Merge_takes_running_from_live_over_terminal_placeholder_conflict_unlikely_uses_live()
+    public void Merge_takes_running_from_live_over_cancelled_prev()
     {
         var prev = new List<ChunkVirtualModelEntry>
         {
-            new() { Index = 0, State = "Cancelled", CompletedAt = "2020-01-01T00:00:00Z" },
+            VmMain(0, "Cancelled", completed: "2020-01-01T00:00:00Z"),
         };
         var live = new List<ChunkVirtualModelEntry>
         {
             new()
             {
-                Index = 0,
+                ChunkIndex = 0,
                 State = "Running",
                 StartedAt = "2020-01-02T00:00:00Z",
             },
@@ -57,9 +61,9 @@ public class ChunkVirtualModelMergeTests
     }
 
     [Fact]
-    public void Merge_empty_incoming_returns_previous()
+    public void Merge_empty_incoming_returns_previous_cloned()
     {
-        var prev = new List<ChunkVirtualModelEntry> { new() { Index = 0, State = "Failed" } };
+        var prev = new List<ChunkVirtualModelEntry> { VmMain(0, "Failed") };
         var merged = ChunkVirtualModelMerge.Merge(prev, Array.Empty<ChunkVirtualModelEntry>());
         Assert.Single(merged);
         Assert.Equal("Failed", merged[0].State);
@@ -70,18 +74,9 @@ public class ChunkVirtualModelMergeTests
     {
         var prev = new List<ChunkVirtualModelEntry>
         {
-            new()
-            {
-                Index = 10,
-                State = "Running",
-                StartedAt = "2020-01-01T00:00:00Z",
-                TranscriptActivityLog = "line-a",
-            },
+            VmMain(10, "Running", "2020-01-01T00:00:00Z", log: "line-a"),
         };
-        var live = new List<ChunkVirtualModelEntry>
-        {
-            new() { Index = 10, State = "Pending" },
-        };
+        var live = new List<ChunkVirtualModelEntry> { VmMain(10, "Pending") };
 
         var merged = ChunkVirtualModelMerge.Merge(prev, live);
 
@@ -95,18 +90,18 @@ public class ChunkVirtualModelMergeTests
     {
         var prev = new List<ChunkVirtualModelEntry>
         {
-            new() { Index = 8, State = "Completed", CompletedAt = "2020-01-01T00:00:00Z" },
-            new() { Index = 9, State = "Running", StartedAt = "2020-01-01T00:01:00Z" },
+            VmMain(8, "Completed", completed: "2020-01-01T00:00:00Z"),
+            VmMain(9, "Running", "2020-01-01T00:01:00Z"),
         };
         var live = new List<ChunkVirtualModelEntry>
         {
-            new() { Index = 8, State = "Completed", CompletedAt = "2020-01-01T00:00:00Z" },
+            VmMain(8, "Completed", completed: "2020-01-01T00:00:00Z"),
         };
 
         var merged = ChunkVirtualModelMerge.Merge(prev, live);
 
         Assert.Equal(2, merged.Count);
-        Assert.Contains(merged, e => e.Index == 9 && e.State == "Running");
+        Assert.Contains(merged, e => e.ChunkIndex == 9 && e.State == "Running");
     }
 
     [Fact]
@@ -114,23 +109,11 @@ public class ChunkVirtualModelMergeTests
     {
         var prev = new List<ChunkVirtualModelEntry>
         {
-            new()
-            {
-                Index = 0,
-                State = "Running",
-                StartedAt = "2020-01-01T00:00:00Z",
-                TranscriptActivityLog = "a\nb",
-            },
+            VmMain(0, "Running", "2020-01-01T00:00:00Z", log: "a\nb"),
         };
         var live = new List<ChunkVirtualModelEntry>
         {
-            new()
-            {
-                Index = 0,
-                State = "Running",
-                StartedAt = "2020-01-01T00:00:00Z",
-                TranscriptActivityLog = "a\nb\nc",
-            },
+            VmMain(0, "Running", "2020-01-01T00:00:00Z", log: "a\nb\nc"),
         };
 
         var merged = ChunkVirtualModelMerge.Merge(prev, live);

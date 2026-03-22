@@ -1,12 +1,10 @@
-using XtractManager.Features.Jobs.Application;
+using Agent04.Proto;
 
-namespace XtractManager.Features.Jobs.Infrastructure;
+namespace Agent04.Features.Transcription.Infrastructure;
 
 /// <summary>
-/// Agent04 gRPC may emit Pending for chunk indices with no RENTGEN node. Replacing the stored VM with that
-/// response (e.g. after Retranscribe) would wipe real per-chunk states (Cancelled, Completed, …). Merge
-/// keeps prior terminal rows when the incoming row is only a Pending placeholder without timestamps.
-/// Also preserves <see cref="ChunkVirtualModelEntry.TranscriptActivityLog"/> and rows missing from the incoming list.
+/// Merges the orchestrator's last known VM with Rentgen-built rows. Prevents placeholder Pending rows from
+/// wiping terminal states when a chunk node is temporarily missing from the query scope.
 /// </summary>
 public static class ChunkVirtualModelMerge
 {
@@ -15,9 +13,9 @@ public static class ChunkVirtualModelMerge
         IReadOnlyList<ChunkVirtualModelEntry>? incoming)
     {
         if (incoming is not { Count: > 0 })
-            return previous ?? Array.Empty<ChunkVirtualModelEntry>();
+            return previous?.Count > 0 ? CloneList(previous) : Array.Empty<ChunkVirtualModelEntry>();
         if (previous is not { Count: > 0 })
-            return incoming;
+            return CloneList(incoming);
 
         var prevByKey = new Dictionary<string, ChunkVirtualModelEntry>(StringComparer.Ordinal);
         foreach (var e in previous)
@@ -37,21 +35,29 @@ public static class ChunkVirtualModelMerge
         {
             var k = Key(e);
             if (!consumed.Contains(k))
-                merged.Add(e);
+                merged.Add(e.Clone());
         }
 
         return merged;
     }
 
+    private static List<ChunkVirtualModelEntry> CloneList(IReadOnlyList<ChunkVirtualModelEntry> src)
+    {
+        var list = new List<ChunkVirtualModelEntry>(src.Count);
+        foreach (var e in src)
+            list.Add(e.Clone());
+        return list;
+    }
+
     private static string Key(ChunkVirtualModelEntry e) =>
-        e.IsSubChunk ? $"s:{e.ParentChunkIndex}:{e.SubChunkIndex}" : $"m:{e.Index}";
+        e.IsSubChunk ? $"s:{e.ParentChunkIndex}:{e.SubChunkIndex}" : $"m:{e.ChunkIndex}";
 
     private static ChunkVirtualModelEntry MergePair(ChunkVirtualModelEntry? prev, ChunkVirtualModelEntry live)
     {
         if (prev != null && IsWeakPlaceholder(live) && ShouldKeepPrevOverPlaceholder(prev))
-            return prev;
+            return prev.Clone();
 
-        var chosen = live;
+        var chosen = live.Clone();
         if (prev == null)
             return chosen;
 
@@ -59,22 +65,9 @@ public static class ChunkVirtualModelMerge
         if (log == chosen.TranscriptActivityLog)
             return chosen;
 
-        return CloneWithLog(chosen, log);
+        chosen.TranscriptActivityLog = log ?? "";
+        return chosen;
     }
-
-    private static ChunkVirtualModelEntry CloneWithLog(ChunkVirtualModelEntry src, string? log) =>
-        new()
-        {
-            Index = src.Index,
-            StartedAt = src.StartedAt,
-            CompletedAt = src.CompletedAt,
-            State = src.State,
-            ErrorMessage = src.ErrorMessage,
-            IsSubChunk = src.IsSubChunk,
-            ParentChunkIndex = src.ParentChunkIndex,
-            SubChunkIndex = src.SubChunkIndex,
-            TranscriptActivityLog = log
-        };
 
     private static bool IsWeakPlaceholder(ChunkVirtualModelEntry e)
     {

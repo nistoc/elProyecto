@@ -50,11 +50,18 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         }
     }
 
-    public async IAsyncEnumerable<Application.JobStatusUpdate> StreamJobStatusAsync(string jobId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    public IAsyncEnumerable<Application.JobStatusUpdate> StreamJobStatusAsync(string jobId, CancellationToken ct = default) =>
+        StreamJobStatusAsync(jobId, null, ct);
+
+    public async IAsyncEnumerable<Application.JobStatusUpdate> StreamJobStatusAsync(
+        string jobId,
+        IReadOnlyList<Application.ChunkVirtualModelEntry>? clientChunkVirtualModel,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
     {
         using var channel = GrpcChannel.ForAddress(_address);
         var client = new TranscriptionService.TranscriptionServiceClient(channel);
         var request = new StreamJobStatusRequest { JobId = jobId };
+        AppendClientChunkVirtualModel(request.ClientChunkVirtualModel, clientChunkVirtualModel);
         var stream = client.StreamJobStatus(request, cancellationToken: ct);
         while (await stream.ResponseStream.MoveNext(ct))
         {
@@ -75,13 +82,21 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         }
     }
 
-    public async Task<Application.JobStatusUpdate?> GetJobStatusAsync(string agent04JobId, CancellationToken ct = default)
+    public Task<Application.JobStatusUpdate?> GetJobStatusAsync(string agent04JobId, CancellationToken ct = default) =>
+        GetJobStatusAsync(agent04JobId, null, ct);
+
+    public async Task<Application.JobStatusUpdate?> GetJobStatusAsync(
+        string agent04JobId,
+        IReadOnlyList<Application.ChunkVirtualModelEntry>? clientChunkVirtualModel,
+        CancellationToken ct)
     {
         using var channel = GrpcChannel.ForAddress(_address);
         var client = new TranscriptionService.TranscriptionServiceClient(channel);
         try
         {
-            var resp = await client.GetJobStatusAsync(new GetJobStatusRequest { JobId = agent04JobId }, cancellationToken: ct)
+            var req = new GetJobStatusRequest { JobId = agent04JobId };
+            AppendClientChunkVirtualModel(req.ClientChunkVirtualModel, clientChunkVirtualModel);
+            var resp = await client.GetJobStatusAsync(req, cancellationToken: ct)
                 .ConfigureAwait(false);
             var vm = MapChunkVirtualModel(resp.ChunkVirtualModel);
             return new Application.JobStatusUpdate(
@@ -103,6 +118,30 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
             return null;
         }
     }
+
+    private static void AppendClientChunkVirtualModel(
+        RepeatedField<ChunkVirtualModelEntry> target,
+        IReadOnlyList<Application.ChunkVirtualModelEntry>? client)
+    {
+        if (client is not { Count: > 0 })
+            return;
+        foreach (var e in client)
+            target.Add(ToProtoChunkVirtualModelEntry(e));
+    }
+
+    private static ChunkVirtualModelEntry ToProtoChunkVirtualModelEntry(Application.ChunkVirtualModelEntry e) =>
+        new()
+        {
+            ChunkIndex = e.Index,
+            StartedAt = e.StartedAt ?? "",
+            CompletedAt = e.CompletedAt ?? "",
+            State = string.IsNullOrEmpty(e.State) ? "Pending" : e.State,
+            ErrorMessage = e.ErrorMessage ?? "",
+            IsSubChunk = e.IsSubChunk,
+            ParentChunkIndex = e.ParentChunkIndex,
+            SubChunkIndex = e.SubChunkIndex,
+            TranscriptActivityLog = e.TranscriptActivityLog ?? ""
+        };
 
     private static IReadOnlyList<Application.ChunkVirtualModelEntry>? MapChunkVirtualModel(
         RepeatedField<ChunkVirtualModelEntry> entries)

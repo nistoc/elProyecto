@@ -4,8 +4,7 @@ option csharp_namespace = "Agent04.Proto";
 
 package agent04.transcription;
 
-// VM policy (chunk groups RPC, phase 2): grouped file metadata only from Agent04; ChunkVirtualModel rows for Stats stay merged
-// in Agent05 (ChunkVirtualModelMerge + snapshot) until phase 7 — see docs/PROJECT_ARTIFACT_SERVICE.md.
+// VM: GetJobStatus / StreamJobStatus accept client_chunk_virtual_model; server merges with Rentgen VM — see docs/CHUNK_VM_MERGE.md.
 
 service TranscriptionService {
   rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse);
@@ -16,7 +15,7 @@ service TranscriptionService {
   rpc ChunkCommand(ChunkCommandRequest) returns (ChunkCommandResponse);
   /// Enqueue chunk indices for the next pipeline run (writes pending_chunks.json under the job artifact root).
   rpc EnqueueTranscriptionWork(EnqueueTranscriptionWorkRequest) returns (EnqueueTranscriptionWorkResponse);
-  /// Chunk / split artifact grouping for Stats (file metadata only; VM rows stay in Agent05 until phase 7).
+  /// Chunk / split artifact grouping for Stats (file metadata only; VM comes from GetJobStatus / stream).
   rpc GetChunkArtifactGroups(GetChunkArtifactGroupsRequest) returns (GetChunkArtifactGroupsResponse);
 }
 
@@ -35,6 +34,7 @@ message SubmitJobResponse {
 
 message GetJobStatusRequest {
   string job_id = 1;
+  repeated ChunkVirtualModelEntry client_chunk_virtual_model = 2;
 }
 
 /// Per-chunk row from the in-process virtual model (RENTGEN / INodeStore): stable timestamps across refresh.
@@ -86,6 +86,7 @@ message QueryJobsResponse {
 
 message StreamJobStatusRequest {
   string job_id = 1;
+  repeated ChunkVirtualModelEntry client_chunk_virtual_model = 2;
 }
 
 message JobStatusUpdate {

@@ -25,7 +25,7 @@ todos:
     status: completed
   - id: phase-7-merge-migrate
     content: "Фаза 7: перенос инвариантов ChunkVirtualModelMerge в Agent04 по шагам + финальный аудит остатка в Agent05"
-    status: pending
+    status: completed
   - id: phase-8-cleanup-agent05
     content: "Фаза 8: удалить дубли Scanner/TS группировки когда контракт стабилен"
     status: pending
@@ -174,6 +174,8 @@ isProject: false
 - Перенос инвариантов из `[ChunkVirtualModelMerge.cs](agent05-ui-control/API/Features/Jobs/Infrastructure/ChunkVirtualModelMerge.cs)` в Agent04 по одному (плейсхолдеры, лог, orphan rows).
 - **DoD:** документ «что осталось в Merge» в коде или `docs/`; тесты merge перенесены/дублированы.
 
+**Сделано (фаза 7):** `ChunkVirtualModelMerge` в Agent04 (`Features/Transcription/Infrastructure/ChunkVirtualModelMerge.cs`); proto `client_chunk_virtual_model` в `GetJobStatusRequest` и `StreamJobStatusRequest`; `TranscriptionGrpcService` мержит на сервере (стрим накапливает merged state за соединение). Agent05 удалён `ChunkVirtualModelMerge`; `ITranscriptionServiceClient` перегрузки с передачей снимка VM; `TranscriptionGrpcClient` заполняет proto; `TranscriptionRefinerPipeline` и `JobsController.MergeAgent04LiveIntoSnapshotAsync` пишут VM из ответа без локального merge. Документ [CHUNK_VM_MERGE.md](agent04/docs/CHUNK_VM_MERGE.md), обновлён [PROJECT_ARTIFACT_SERVICE.md](agent04/docs/PROJECT_ARTIFACT_SERVICE.md). Тесты: [ChunkVirtualModelMergeTests.cs](agent04/Agent04.Tests/ChunkVirtualModelMergeTests.cs). **Остаток в Agent05:** enricher диска (`JobSnapshotDiskEnricher`), UI `mergeChunkGroupVm` для групп без VM в `GetChunkArtifactGroups`.
+
 ### Фаза 8 — Вычистка дублей (фаза C)
 
 - Удалить или упростить `[JobProjectFilesScanner](agent05-ui-control/API/Features/Jobs/Infrastructure/JobProjectFilesScanner.cs)` и `[chunkArtifactGroups.ts](agent05-ui-control/UI/src/utils/chunkArtifactGroups.ts)` только после стабильного контракта.
@@ -197,7 +199,7 @@ isProject: false
 | Merge split       | `[agent04/Agent04/Features/Transcription/Infrastructure/SplitChunkMergeIntegrator.cs](agent04/Agent04/Features/Transcription/Infrastructure/SplitChunkMergeIntegrator.cs)`   |
 | Референс групп UI | `[agent05-ui-control/UI/src/utils/chunkArtifactGroups.ts](agent05-ui-control/UI/src/utils/chunkArtifactGroups.ts)`                                                           |
 | Референс сканера  | `[agent05-ui-control/API/Features/Jobs/Infrastructure/JobProjectFilesScanner.cs](agent05-ui-control/API/Features/Jobs/Infrastructure/JobProjectFilesScanner.cs)`             |
-| Merge снимка      | `[agent05-ui-control/API/Features/Jobs/Infrastructure/ChunkVirtualModelMerge.cs](agent05-ui-control/API/Features/Jobs/Infrastructure/ChunkVirtualModelMerge.cs)`             |
+| Merge VM (Rentgen + снимок клиента) | `[agent04/Agent04/Features/Transcription/Infrastructure/ChunkVirtualModelMerge.cs](agent04/Agent04/Features/Transcription/Infrastructure/ChunkVirtualModelMerge.cs)` + [CHUNK_VM_MERGE.md](agent04/docs/CHUNK_VM_MERGE.md) |
 
 
 ## API сгруппированных файлов: сначала Agent04, потом Agent05

@@ -4,8 +4,18 @@ public interface ITranscriptionServiceClient
 {
     Task<SubmitJobResult> SubmitJobAsync(string configPath, string inputFilePath, IReadOnlyList<string>? tags, CancellationToken ct = default);
     IAsyncEnumerable<JobStatusUpdate> StreamJobStatusAsync(string jobId, CancellationToken ct = default);
-    /// <summary>Live VM + footer from Agent04 (for post-completion retranscribe / operator actions).</summary>
+    /// <param name="clientChunkVirtualModel">Last known VM from the job snapshot; Agent04 merges with Rentgen and returns the result.</param>
+    IAsyncEnumerable<JobStatusUpdate> StreamJobStatusAsync(
+        string jobId,
+        IReadOnlyList<ChunkVirtualModelEntry>? clientChunkVirtualModel,
+        CancellationToken ct);
+    /// <summary>Live VM + footer from Agent04.</summary>
     Task<JobStatusUpdate?> GetJobStatusAsync(string agent04JobId, CancellationToken ct = default);
+    /// <summary>Live VM merged on Agent04 when <paramref name="clientChunkVirtualModel"/> is provided.</summary>
+    Task<JobStatusUpdate?> GetJobStatusAsync(
+        string agent04JobId,
+        IReadOnlyList<ChunkVirtualModelEntry>? clientChunkVirtualModel,
+        CancellationToken ct);
     /// <param name="jobDirectoryRelative">Xtract job folder name under workspace (single segment); pass for chunk cancel paths under per-job artifacts.</param>
     Task<ChunkCommandResult> ChunkCommandAsync(
         string agent04JobId,
