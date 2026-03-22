@@ -1,6 +1,7 @@
 import { I18nProvider, useI18n } from './contexts/I18nContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { useJob, type StepId } from './hooks/useJob';
+import { useJobChunkArtifactGroups } from './hooks/useJobChunkArtifactGroups';
 import { useJobProjectFiles } from './hooks/useJobProjectFiles';
 import { StepCard } from './components/StepCard';
 import { UploadCard } from './components/UploadCard';
@@ -39,6 +40,7 @@ function AppContent() {
   } = useJob();
 
   const jobFiles = useJobProjectFiles(jobId, jobSnapshotRevision);
+  const jobChunkGroups = useJobChunkArtifactGroups(jobId, jobSnapshotRevision);
 
   const steps: { id: StepId; title: string }[] = [
     { id: 'transcriber', title: t('transcriber') },
@@ -159,12 +161,13 @@ function AppContent() {
                           files={jobFiles.data}
                           filesLoading={jobFiles.loading}
                           filesError={jobFiles.error}
+                          chunkArtifactGroups={jobChunkGroups.data}
                           locale={locale}
                           t={t}
                           refreshJobSnapshot={refreshJobSnapshot}
-                          artifactGroupsRefreshKey={jobSnapshotRevision}
                           onProjectFilesChanged={async () => {
                             await jobFiles.reload();
+                            jobChunkGroups.reload();
                             await refreshJobSnapshot();
                           }}
                         />
@@ -177,6 +180,7 @@ function AppContent() {
                           t={t}
                           filesRefreshKey={jobSnapshotRevision}
                           managedFiles={jobFiles}
+                          managedChunkGroups={jobChunkGroups}
                           hideChunkSections
                         />
                       </>
@@ -216,6 +220,7 @@ function AppContent() {
                       job={job}
                       t={t}
                       variant="refiner"
+                      chunkArtifactGroups={jobChunkGroups.data}
                     />
                   </>
                 ) : (
@@ -236,7 +241,12 @@ function AppContent() {
                     onClearLogs={clearLogsForStep}
                   />
                 )}
-                <ResultSection jobId={jobId} job={job} t={t} />
+                <ResultSection
+                  jobId={jobId}
+                  job={job}
+                  t={t}
+                  chunkArtifactGroups={jobChunkGroups.data}
+                />
               </div>
             )}
 

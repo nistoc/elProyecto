@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { JobSnapshot, JobProjectFiles } from '../types';
 import { fetchJobFiles, jobProjectFileContentUrl } from '../api';
+import type { ChunkArtifactGroup } from '../utils/chunkArtifactGroups';
 import { ProjectFilesView } from './ProjectFilesPanel';
 
 export type ResultSectionVariant = 'result' | 'refiner';
@@ -11,6 +12,8 @@ interface ResultSectionProps {
   t: (key: string) => string;
   /** Refiner tab uses the same metadata, quick links, and transcript list as Result. */
   variant?: ResultSectionVariant;
+  /** From `useJobChunkArtifactGroups` in App; omits split transcripts already under chunk groups. */
+  chunkArtifactGroups?: ChunkArtifactGroup[] | null;
 }
 
 function findByName(files: { name: string; relativePath: string }[], name: string) {
@@ -68,6 +71,7 @@ export function ResultSection({
   job,
   t,
   variant = 'result',
+  chunkArtifactGroups = null,
 }: ResultSectionProps) {
   const copyFilename = () => {
     if (job?.originalFilename) {
@@ -189,6 +193,7 @@ export function ResultSection({
           mode="transcripts"
           t={t}
           onFilesMutated={reloadProjectFiles}
+          chunkArtifactGroups={chunkArtifactGroups}
         />
       )}
 

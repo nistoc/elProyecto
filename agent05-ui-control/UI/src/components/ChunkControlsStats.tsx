@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   deleteJobSubChunk,
-  fetchJobChunkArtifactGroups,
   postJobChunkAction,
   type ChunkActionName,
   type PostChunkActionOptions,
@@ -105,10 +104,6 @@ function SubChunkVmTelemetry({
   retranscribeEnabled,
   onCancelSub,
   onRetranscribeSub,
-  onSkipSub,
-  onSplitParent,
-  skipEnabled,
-  splitEnabled,
 }: {
   vm: ChunkVirtualModelEntry;
   locale: 'en' | 'ru' | 'es';
@@ -120,12 +115,8 @@ function SubChunkVmTelemetry({
   readOnly: boolean;
   cancelEnabled: boolean;
   retranscribeEnabled: boolean;
-  skipEnabled: boolean;
-  splitEnabled: boolean;
   onCancelSub: () => void;
   onRetranscribeSub: () => void;
-  onSkipSub: () => void;
-  onSplitParent: () => void;
 }) {
   const hasTelemetry = vmRowHasTelemetry(vm);
   const stateLabel = labelForChunkState(vm.state, t);
@@ -195,27 +186,11 @@ function SubChunkVmTelemetry({
             </button>
             <button
               type="button"
-              disabled={busy || readOnly || !skipEnabled}
-              title={t('chunkSkip')}
-              onClick={onSkipSub}
-            >
-              {t('chunkSkip')}
-            </button>
-            <button
-              type="button"
               disabled={busy || readOnly || !retranscribeEnabled}
               title={t('chunkRetranscribe')}
               onClick={onRetranscribeSub}
             >
               {t('chunkRetranscribe')}
-            </button>
-            <button
-              type="button"
-              disabled={busy || readOnly || !splitEnabled}
-              title={t('chunkSplitTitle')}
-              onClick={onSplitParent}
-            >
-              {t('chunkSplit')}
             </button>
           </div>
         </div>
@@ -241,8 +216,8 @@ export interface ChunkControlsStatsProps {
   onProjectFilesChanged?: () => void | Promise<void>;
   /** Poll GET /api/jobs/:id while any VM row is Running (retranscribe / HTTP in flight). */
   refreshJobSnapshot?: () => Promise<void>;
-  /** Bumps when SSE/job snapshot updates — refetch chunk-artifact-groups for fresh Rentgen VM on groups. */
-  artifactGroupsRefreshKey?: number;
+  /** From `useJobChunkArtifactGroups` in App; null until first GET .../chunk-artifact-groups completes. */
+  chunkArtifactGroups: ChunkArtifactGroup[] | null;
 }
 
 export function ChunkControlsStats({
@@ -255,7 +230,7 @@ export function ChunkControlsStats({
   t,
   onProjectFilesChanged,
   refreshJobSnapshot,
-  artifactGroupsRefreshKey = 0,
+  chunkArtifactGroups: agent04ArtifactGroups,
 }: ChunkControlsStatsProps) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -264,10 +239,6 @@ export function ChunkControlsStats({
     relativePath: string;
     name: string;
   } | null>(null);
-  /** From Agent04 via GET .../chunk-artifact-groups; null while loading. */
-  const [agent04ArtifactGroups, setAgent04ArtifactGroups] = useState<
-    ChunkArtifactGroup[] | null
-  >(null);
 
   const openEditor = (f: JobProjectFile) =>
     setEditTarget({ relativePath: f.relativePath, name: f.name });
@@ -304,27 +275,6 @@ export function ChunkControlsStats({
     }, vmSnapshotPollMs);
     return () => window.clearInterval(id);
   }, [hasRunningVm, refreshJobSnapshot, jobId, vmSnapshotPollMs]);
-
-  useEffect(() => {
-    setAgent04ArtifactGroups(null);
-  }, [jobId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const { groups } = await fetchJobChunkArtifactGroups(jobId);
-        if (!cancelled) setAgent04ArtifactGroups(groups ?? []);
-      } catch {
-        if (!cancelled) setAgent04ArtifactGroups([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Intentionally omit `files`: new object after GET .../files retriggered this effect with the same
-    // artifactGroupsRefreshKey → duplicate Agent04 calls and flicker. Groups refresh via revision/SSE/poll.
-  }, [jobId, artifactGroupsRefreshKey]);
 
   const artifactGroupsLoading = agent04ArtifactGroups === null;
 
@@ -419,7 +369,6 @@ export function ChunkControlsStats({
               job.chunks?.completed?.includes(g.index) ?? false;
             const diskCompleteSignal =
               artifactComplete || chunkSnapshotCompleted;
-            const showArtifactDone = !hasVmTelemetry && diskCompleteSignal;
 
             const chunkMainRunning = vmIsRunning(vm?.state);
             const stateLabel = (() => {
@@ -456,28 +405,22 @@ export function ChunkControlsStats({
               vmStateNorm(vm.state) === 'pending';
             const showRetryMainRetranscribe =
               canPostDoneChunkOps &&
-              !readOnly &&
               !chunkMainRunning &&
               !showCancelledSplitRetranscribe &&
               !liveInteractive &&
-              (hasVmTelemetry || showArtifactDone || chunkVmPending);
+              (hasVmTelemetry || chunkVmPending);
             const showRunningOnlyCancel =
-              transcriberRunning && total > 0 && vmIsRunning(vm?.state);
+              total > 0 &&
+              vmIsRunning(vm?.state) &&
+              canPostDoneChunkOps;
             const hasSplitArtifacts = chunkGroupHasBlockingSplitArtifacts(g);
             const mainCancelEnabled =
-              live && chunkMainRunning && !readOnly;
-            const mainSkipEnabled = live && !readOnly;
+              chunkMainRunning && !readOnly && canPostDoneChunkOps;
             const mainRetranscribeEnabled =
               !readOnly &&
               !hasSplitArtifacts &&
-              (liveInteractive ||
-                showCancelledSplitRetranscribe ||
-                showRetryMainRetranscribe);
-            const mainSplitEnabled =
-              !readOnly &&
-              !hasSplitArtifacts &&
-              canPostDoneChunkOps &&
-              (liveInteractive || showCancelledSplitRetranscribe);
+              (liveInteractive || showCancelledSplitRetranscribe || showRetryMainRetranscribe);
+            const mainSplitEnabled = mainRetranscribeEnabled;
             const showRebuildSplitMerged =
               g.subChunks.length > 0 && canPostDoneChunkOps && !readOnly;
             const rebuildSplitMergedEnabled =
@@ -570,14 +513,6 @@ export function ChunkControlsStats({
                         </button>
                         <button
                           type="button"
-                          disabled={busy || !mainSkipEnabled}
-                          title={t('chunkSkip')}
-                          onClick={() => void runAction('skip', g.index)}
-                        >
-                          {t('chunkSkip')}
-                        </button>
-                        <button
-                          type="button"
                           disabled={busy || !mainRetranscribeEnabled}
                           title={
                             hasSplitArtifacts
@@ -622,14 +557,6 @@ export function ChunkControlsStats({
                     />
                   </div>
                 </div>
-
-                {showArtifactDone && (
-                  <div className="chunk-stats__artifact-done">
-                    <span className="chunk-stats__artifact-done-label">
-                      {t('chunkStatsArtifactCompleted')}
-                    </span>
-                  </div>
-                )}
 
                 {(g.audioFiles.length > 0 || g.jsonFiles.length > 0) && (
                   <div
@@ -707,7 +634,6 @@ export function ChunkControlsStats({
                         const subIdxResolved =
                           s.subIndex ?? s.vmRow?.subChunkIndex ?? null;
                         const subCancelEnabled =
-                          live &&
                           subVmRunning &&
                           canCancelRunningSubChunk &&
                           subIdxResolved != null &&
@@ -752,8 +678,6 @@ export function ChunkControlsStats({
                               readOnly={readOnly}
                               cancelEnabled={subCancelEnabled}
                               retranscribeEnabled={subRetranscribeEnabled}
-                              skipEnabled={mainSkipEnabled}
-                              splitEnabled={mainSplitEnabled}
                               onCancelSub={() => {
                                 if (subIdxResolved == null) return;
                                 void runAction('cancel', g.index, {
@@ -766,10 +690,6 @@ export function ChunkControlsStats({
                                   subChunkIndex: subIdxResolved,
                                 });
                               }}
-                              onSkipSub={() =>
-                                void runAction('skip', g.index)
-                              }
-                              onSplitParent={() => void runSplit(g.index)}
                             />
                           )}
                           {!s.vmRow &&
@@ -970,18 +890,6 @@ export function ChunkControlsStats({
         .chunk-stats__stem {
           font-weight: 500;
           color: var(--color-text-secondary);
-        }
-        .chunk-stats__artifact-done {
-          margin-bottom: 0.35rem;
-          padding: 0.35rem 0.5rem;
-          border-radius: 6px;
-          border: 1px solid var(--color-border);
-          background: color-mix(in srgb, var(--color-info) 12%, var(--color-surface));
-          font-size: 0.8125rem;
-          color: var(--color-heading);
-        }
-        .chunk-stats__artifact-done-label {
-          font-weight: 600;
         }
         .chunk-stats__vm {
           margin-bottom: 0.35rem;

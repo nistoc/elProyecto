@@ -177,6 +177,37 @@ public class ChunkActionsControllerTests
     }
 
     [Fact]
+    public async Task PostChunkAction_cancel_when_status_done_calls_client()
+    {
+        var store = new InMemoryJobStore();
+        var id = await store.CreateAsync(new JobCreateInput("x.m4a", null));
+        await store.UpdateAsync(id, s =>
+        {
+            s.Phase = "idle";
+            s.Status = "done";
+            s.Agent04JobId = "a04-done";
+        });
+        var grpc = new RecordingTranscriptionClient();
+        var controller = new JobsController(
+            store,
+            new StubJobWorkspace(),
+            MockPipeline.Instance,
+            MockBroadcaster.Instance,
+            grpc,
+            NullLogger<JobsController>.Instance);
+
+        var result = await controller.PostChunkAction(
+            id,
+            new ChunkActionRequest { Action = "cancel", ChunkIndex = 1 },
+            CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.True(Assert.IsType<ChunkActionResponse>(ok.Value).Ok);
+        Assert.Single(grpc.ChunkCalls);
+        Assert.Equal(TranscriptionChunkAction.Cancel, grpc.ChunkCalls[0].Action);
+    }
+
+    [Fact]
     public async Task PostChunkAction_wrong_phase_returns_conflict_and_does_not_call_client()
     {
         var store = new InMemoryJobStore();
@@ -253,7 +284,7 @@ public class ChunkActionsControllerTests
 
         var result = await controller.PostChunkAction(
             jobId,
-            new ChunkActionRequest { Action = "skip", ChunkIndex = 1 },
+            new ChunkActionRequest { Action = "cancel", ChunkIndex = 1 },
             CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -261,7 +292,7 @@ public class ChunkActionsControllerTests
         Assert.False(body.Ok);
         Assert.Equal("not_implemented", body.Message);
         Assert.Single(grpc.ChunkCalls);
-        Assert.Equal(TranscriptionChunkAction.Skip, grpc.ChunkCalls[0].Action);
+        Assert.Equal(TranscriptionChunkAction.Cancel, grpc.ChunkCalls[0].Action);
     }
 
     [Fact]

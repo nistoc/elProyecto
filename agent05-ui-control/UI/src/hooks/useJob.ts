@@ -78,7 +78,7 @@ export function useJob(): {
   setJobId: (id: string | null) => void;
   setActiveStep: (step: StepId) => void;
   setFile: (f: File | null) => void;
-  /** Increments when job snapshot updates over SSE; pass to ProjectFilesPanel as filesRefreshKey. */
+  /** Increments when job snapshot updates over SSE; pass as filesRefreshKey / chunk-groups refresh in App. */
   jobSnapshotRevision: number;
   /** GET /api/jobs/:id (disk-enriched VM); use after chunk-actions so sub-chunk rows refresh without full reload. */
   refreshJobSnapshot: () => Promise<void>;
@@ -103,7 +103,7 @@ export function useJob(): {
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Bumps on each SSE snapshot so ProjectFilesPanel refetches /api/jobs/:id/files (disk artifacts). */
+  /** Bumps on each SSE snapshot so project files + chunk-artifact-groups refetch (disk artifacts). */
   const [jobSnapshotRevision, setJobSnapshotRevision] = useState(0);
   const logBuffer = useLogBuffer();
   const unsubscribeRef = useRef<(() => void) | null>(null);

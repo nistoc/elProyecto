@@ -15,6 +15,7 @@ export interface JobProjectFilesState {
 /**
  * Fetches GET /api/jobs/:id/files when jobId / filesRefreshKey changes.
  * Use one instance in App for Transcriber and pass the same state to Stats + ProjectFilesPanel.
+ * Chunk-artifact-groups: see `useJobChunkArtifactGroups` (shared with Stats, files panel, Result).
  */
 export function useJobProjectFiles(
   jobId: string | null,

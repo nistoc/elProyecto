@@ -201,7 +201,6 @@ export async function deleteJob(id: string): Promise<void> {
 
 export type ChunkActionName =
   | 'cancel'
-  | 'skip'
   | 'retranscribe'
   | 'split'
   | 'transcribe_sub'

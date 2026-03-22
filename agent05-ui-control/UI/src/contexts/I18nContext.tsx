@@ -119,8 +119,6 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsVmBlockTitle: 'Transcription (VM)',
     chunkStatsStartedAt: 'Started',
     chunkStatsCompletedAt: 'Finished',
-    chunkStatsArtifactCompleted:
-      'Completed (audio + JSON on disk; no Agent04 VM timeline for this job).',
     chunkCancelChunk: 'Cancel chunk',
     chunkSkip: 'Skip',
     chunkRetranscribe: 'Retranscribe',
@@ -269,8 +267,6 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsVmBlockTitle: 'Транскрипция (VM)',
     chunkStatsStartedAt: 'Начало',
     chunkStatsCompletedAt: 'Завершение',
-    chunkStatsArtifactCompleted:
-      'Завершено (есть пары аудио + JSON; для этого job нет VM-таймлайна Agent04).',
     chunkCancelChunk: 'Отменить чанк',
     chunkSkip: 'Пропустить',
     chunkRetranscribe: 'Перетранскрибировать',
@@ -419,8 +415,6 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsVmBlockTitle: 'Transcripción (MV)',
     chunkStatsStartedAt: 'Inicio',
     chunkStatsCompletedAt: 'Fin',
-    chunkStatsArtifactCompleted:
-      'Completado (audio + JSON en disco; sin línea de tiempo VM de Agent04 para este trabajo).',
     chunkCancelChunk: 'Cancelar fragmento',
     chunkSkip: 'Omitir',
     chunkRetranscribe: 'Retranscribir',

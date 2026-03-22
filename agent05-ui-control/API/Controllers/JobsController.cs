@@ -441,7 +441,7 @@ public class JobsController : ControllerBase
         };
     }
 
-    /// <summary>Forward chunk operator action to Agent04. Actions: cancel, skip, retranscribe, split, transcribe_sub, rebuild_combined, rebuild_split_merged (see body.action).</summary>
+    /// <summary>Forward chunk operator action to Agent04. Actions: cancel, retranscribe, split, transcribe_sub, rebuild_combined, rebuild_split_merged (see body.action).</summary>
     [HttpPost("{id}/chunk-actions")]
     public async Task<ActionResult<ChunkActionResponse>> PostChunkAction(
         string id,
@@ -449,7 +449,7 @@ public class JobsController : ControllerBase
         CancellationToken ct = default)
     {
         if (body == null || string.IsNullOrWhiteSpace(body.Action))
-            return BadRequest(new { error = "action is required (cancel | skip | retranscribe | split | transcribe_sub | rebuild_combined | rebuild_split_merged)" });
+            return BadRequest(new { error = "action is required (cancel | retranscribe | split | transcribe_sub | rebuild_combined | rebuild_split_merged)" });
         if (body.ChunkIndex < 0)
             return BadRequest(new { error = "chunkIndex must be >= 0" });
 
@@ -461,14 +461,25 @@ public class JobsController : ControllerBase
 
         var action = ParseChunkAction(body.Action.Trim());
         if (action == null)
-            return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "skip", "retranscribe", "split", "transcribe_sub", "rebuild_combined", "rebuild_split_merged" } });
+            return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "retranscribe", "split", "transcribe_sub", "rebuild_combined", "rebuild_split_merged" } });
 
         var allowAfterDone = action == TranscriptionChunkAction.Split
             || action == TranscriptionChunkAction.TranscribeSub
             || action == TranscriptionChunkAction.Retranscribe
             || action == TranscriptionChunkAction.RebuildCombined
             || action == TranscriptionChunkAction.RebuildSplitMerged;
-        if (!allowAfterDone && (job.Phase != "transcriber" || job.Status != "running"))
+        if (action == TranscriptionChunkAction.Cancel)
+        {
+            var st = job.Status ?? "";
+            var running = string.Equals(st, "running", StringComparison.OrdinalIgnoreCase);
+            var doneLike = string.Equals(st, "done", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(st, "completed", StringComparison.OrdinalIgnoreCase);
+            if (!running && !doneLike)
+                return Conflict(new { error = "cancel requires status running, done, or completed" });
+            if (running && !string.Equals(job.Phase, "transcriber", StringComparison.OrdinalIgnoreCase))
+                return Conflict(new { error = "this action requires phase=transcriber and status=running" });
+        }
+        else if (!allowAfterDone && (job.Phase != "transcriber" || job.Status != "running"))
             return Conflict(new { error = "this action requires phase=transcriber and status=running" });
         if (allowAfterDone
             && !string.Equals(job.Status, "running", StringComparison.OrdinalIgnoreCase)
@@ -533,7 +544,6 @@ public class JobsController : ControllerBase
         a.ToLowerInvariant() switch
         {
             "cancel" => TranscriptionChunkAction.Cancel,
-            "skip" => TranscriptionChunkAction.Skip,
             "retranscribe" => TranscriptionChunkAction.Retranscribe,
             "split" => TranscriptionChunkAction.Split,
             "transcribe_sub" => TranscriptionChunkAction.TranscribeSub,

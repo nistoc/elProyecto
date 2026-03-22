@@ -41,11 +41,10 @@ public interface ITranscriptionServiceClient
         CancellationToken ct = default);
 }
 
-/// <summary>Aligns with agent04.proto ChunkCommandAction numeric values.</summary>
+/// <summary>Aligns with agent04.proto ChunkCommandAction numeric values (2 reserved — removed SKIP).</summary>
 public enum TranscriptionChunkAction
 {
     Cancel = 1,
-    Skip = 2,
     Retranscribe = 3,
     Split = 4,
     TranscribeSub = 5,

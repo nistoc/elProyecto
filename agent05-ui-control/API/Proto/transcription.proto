@@ -108,7 +108,8 @@ message JobStatusUpdate {
 enum ChunkCommandAction {
   CHUNK_COMMAND_ACTION_UNSPECIFIED = 0;
   CHUNK_COMMAND_ACTION_CANCEL = 1;
-  CHUNK_COMMAND_ACTION_SKIP = 2;
+  reserved 2;
+  reserved "CHUNK_COMMAND_ACTION_SKIP";
   CHUNK_COMMAND_ACTION_RETRANSCRIBE = 3;
   CHUNK_COMMAND_ACTION_SPLIT = 4;
   /// Transcribe one operator split sub-file under split_chunks/chunk_{chunk_index}/sub_chunks/ (writes results/sub_chunk_XX_result.json).

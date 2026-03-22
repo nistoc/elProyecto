@@ -402,7 +402,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             || request.Action == ChunkCommandAction.Retranscribe
             || request.Action == ChunkCommandAction.RebuildCombined
             || request.Action == ChunkCommandAction.DeleteSubChunk
-            || request.Action == ChunkCommandAction.RebuildSplitMerged;
+            || request.Action == ChunkCommandAction.RebuildSplitMerged
+            || request.Action == ChunkCommandAction.Cancel;
         var job = _store.Get(request.JobId);
         if (job == null && allowCompleted && !string.IsNullOrWhiteSpace(request.JobDirectoryRelative))
         {
@@ -436,7 +437,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             throw new RpcException(new Status(StatusCode.FailedPrecondition, $"Job is not running (state={job.State})"));
         if (allowCompleted && job.State != JobState.Running && job.State != JobState.Completed)
             throw new RpcException(new Status(StatusCode.FailedPrecondition,
-                $"Split / transcribe_sub / retranscribe / rebuild_combined / rebuild_split_merged / delete_sub_chunk require job Running or Completed (state={job.State})"));
+                $"Split / transcribe_sub / retranscribe / rebuild_combined / rebuild_split_merged / delete_sub_chunk / cancel require job Running or Completed (state={job.State})"));
 
         switch (request.Action)
         {
@@ -459,11 +460,6 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 cm.MarkCancelled(request.ChunkIndex);
                 RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "cancel");
                 return new ChunkCommandResponse { Ok = true, Message = "cancel_requested" };
-            case ChunkCommandAction.Skip:
-                if (request.ChunkIndex < 0)
-                    throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
-                RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "skip");
-                return new ChunkCommandResponse { Ok = false, Message = "not_implemented" };
             case ChunkCommandAction.Retranscribe:
                 if (request.ChunkIndex < 0)
                     throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));

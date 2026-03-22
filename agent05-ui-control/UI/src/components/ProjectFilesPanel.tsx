@@ -5,8 +5,13 @@ import {
   fetchJobFileText,
   putJobFileContent,
 } from '../api';
+import type { JobChunkArtifactGroupsState } from '../hooks/useJobChunkArtifactGroups';
 import type { JobProjectFilesState } from '../hooks/useJobProjectFiles';
 import type { JobProjectFile, JobProjectFiles } from '../types';
+import {
+  splitChunksForProjectFilesOrphansOnly,
+  type ChunkArtifactGroup,
+} from '../utils/chunkArtifactGroups';
 import { JobAudioWavePlayer } from './JobAudioWavePlayer';
 
 export type ProjectFilesMode = 'full' | 'transcripts';
@@ -268,6 +273,8 @@ interface ProjectFilesViewProps {
   onFilesMutated?: () => void;
   /** Hide chunks + chunk JSON (shown in Chunk controls Stats). */
   hideChunkSections?: boolean;
+  /** When set, split-chunk rows under these parent indices are omitted here (they appear under Chunk controls). */
+  chunkArtifactGroups?: ChunkArtifactGroup[] | null;
 }
 
 /** Renders structured file lists (no fetch). */
@@ -278,6 +285,7 @@ export function ProjectFilesView({
   t,
   onFilesMutated,
   hideChunkSections = false,
+  chunkArtifactGroups = null,
 }: ProjectFilesViewProps) {
   const [editTarget, setEditTarget] = useState<{
     relativePath: string;
@@ -287,7 +295,11 @@ export function ProjectFilesView({
   const openEditor = (f: JobProjectFile) =>
     setEditTarget({ relativePath: f.relativePath, name: f.name });
 
-  const splitTranscripts = data.splitChunks.filter((x) => x.isTranscript);
+  const splitChunksForPanel = splitChunksForProjectFilesOrphansOnly(
+    data.splitChunks,
+    chunkArtifactGroups
+  );
+  const splitTranscripts = splitChunksForPanel.filter((x) => x.isTranscript);
 
   const body =
     mode === 'transcripts' ? (
@@ -364,7 +376,7 @@ export function ProjectFilesView({
         <Section
           title={t('sectionSplitChunks')}
           jobId={jobId}
-          items={data.splitChunks}
+          items={splitChunksForPanel}
           t={t}
           onEditText={openEditor}
         />
@@ -396,6 +408,8 @@ interface ProjectFilesPanelProps {
   filesRefreshKey?: number;
   /** When set, file list state comes from parent (shared with Chunk controls Stats). */
   managedFiles?: JobProjectFilesState;
+  /** When set, chunk-artifact-groups from parent (single fetch with Chunk controls). */
+  managedChunkGroups?: JobChunkArtifactGroupsState;
   hideChunkSections?: boolean;
 }
 
@@ -405,6 +419,7 @@ export function ProjectFilesPanel({
   t,
   filesRefreshKey = 0,
   managedFiles,
+  managedChunkGroups,
   hideChunkSections = false,
 }: ProjectFilesPanelProps) {
   const [data, setData] = useState<JobProjectFiles | null>(null);
@@ -467,6 +482,12 @@ export function ProjectFilesPanel({
   const effectiveLoading = managedFiles?.loading ?? loading;
   const effectiveRefreshing = managedFiles?.refreshing ?? refreshing;
   const reloadFiles = managedFiles?.reload ?? (() => setReloadKey((k) => k + 1));
+  const reloadChunkGroups = managedChunkGroups?.reload;
+
+  const refreshFilesAndGroups = () => {
+    reloadFiles();
+    reloadChunkGroups?.();
+  };
 
   const showFullSpinner = effectiveLoading && !effectiveData && !effectiveErr;
 
@@ -482,14 +503,14 @@ export function ProjectFilesPanel({
           <div className="pf-jobdir-spacer" aria-hidden />
         )}
         <div className="pf-toolbar-actions">
-          {effectiveRefreshing && (
+          {(effectiveRefreshing || managedChunkGroups?.refreshing) && (
             <span className="pf-refresh-hint">{t('loadingFiles')}</span>
           )}
           <button
             type="button"
             className="pf-refresh-files"
-            onClick={() => reloadFiles()}
-            disabled={effectiveRefreshing}
+            onClick={() => refreshFilesAndGroups()}
+            disabled={effectiveRefreshing || !!managedChunkGroups?.refreshing}
           >
             {t('refresh')}
           </button>
@@ -533,8 +554,9 @@ export function ProjectFilesPanel({
         data={effectiveData}
         mode={mode}
         t={t}
-        onFilesMutated={() => reloadFiles()}
+        onFilesMutated={() => refreshFilesAndGroups()}
         hideChunkSections={hideChunkSections}
+        chunkArtifactGroups={managedChunkGroups?.data ?? null}
       />
     </>
   );
