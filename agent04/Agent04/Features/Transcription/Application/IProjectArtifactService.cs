@@ -1,3 +1,5 @@
+using Agent04.Features.Transcription.Domain;
+
 namespace Agent04.Features.Transcription.Application;
 
 /// <summary>
@@ -59,4 +61,44 @@ public interface IProjectArtifactService
         string artifactRoot,
         int totalChunksHint,
         CancellationToken ct);
+
+    // --- Phase 4: transcription outputs + operator split (facade over existing writers / ffmpeg) ---
+
+    void InitializeJobMarkdownOutput(string mdPath);
+
+    void ResetJobTranscriptionSpeakerMap();
+
+    void AppendJobMarkdownSegments(string mdPath, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard);
+
+    void FinalizeJobMarkdownOutput(string mdPath);
+
+    void SaveJobCombinedTranscriptionJson(string jsonPath, IReadOnlyList<TranscriptionResult> results);
+
+    void SaveJobPerChunkTranscriptionJson(string chunkBasename, IReadOnlyDictionary<string, object?> response, string outputDir);
+
+    void WriteSubChunkTranscriptionResult(string resultsDir, int subChunkIndex, TranscriptionResult result);
+
+    /// <summary>Operator split: writes <c>split_chunks/chunk_N/sub_chunks/*_sub_XX.*</c> from main chunk audio.</summary>
+    Task<(bool Ok, string Message)> TryOperatorSplitAsync(
+        string artifactRoot,
+        int chunkIndex,
+        int splitParts,
+        CancellationToken ct);
+
+    // --- Phase 5: delete sub-chunk bundle ---
+
+    /// <summary>
+    /// Deletes sub-chunk audio under <c>sub_chunks/</c>, <c>results/sub_chunk_XX_result.json</c>, stale <c>chunk_N_merged.*</c>,
+    /// cancel flag under <c>.agent04_chunk_cancel</c>, and the sub-chunk row in <c>transcription_work_state.json</c>.
+    /// Edge cases: if <paramref name="isSubChunkRunningAsync"/> returns true, returns <c>(false, "sub_chunk_running")</c> and does not delete.
+    /// If work state is missing or the row is absent, disk files are still removed (idempotent). Merged files are always removed so UI does not keep a stale merged view.
+    /// </summary>
+    Task<(bool Ok, string Message)> TryDeleteSubChunkArtifactsAsync(
+        string artifactRoot,
+        string agent04JobId,
+        int parentChunkIndex,
+        int subChunkIndex,
+        string? splitChunksDir,
+        CancellationToken ct,
+        Func<ValueTask<bool>>? isSubChunkRunningAsync = null);
 }

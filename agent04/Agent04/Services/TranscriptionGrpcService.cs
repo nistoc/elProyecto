@@ -28,7 +28,6 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
     private readonly IConfiguration _configuration;
     private readonly IJobArtifactRootRegistry _artifactRootRegistry;
     private readonly IProjectArtifactService _projectArtifactService;
-    private readonly IAudioUtils _audioUtils;
     private readonly INodeModel? _nodeModel;
     private readonly INodeQuery? _nodeQuery;
     private readonly IHttpClientFactory? _httpClientFactory;
@@ -44,7 +43,6 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         IConfiguration configuration,
         IJobArtifactRootRegistry artifactRootRegistry,
         IProjectArtifactService projectArtifactService,
-        IAudioUtils audioUtils,
         INodeModel? nodeModel = null,
         INodeQuery? nodeQuery = null,
         IHttpClientFactory? httpClientFactory = null,
@@ -59,7 +57,6 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         _configuration = configuration;
         _artifactRootRegistry = artifactRootRegistry;
         _projectArtifactService = projectArtifactService;
-        _audioUtils = audioUtils;
         _nodeModel = nodeModel;
         _nodeQuery = nodeQuery;
         _httpClientFactory = httpClientFactory;
@@ -345,7 +342,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             request.Action == ChunkCommandAction.Split
             || request.Action == ChunkCommandAction.TranscribeSub
             || request.Action == ChunkCommandAction.Retranscribe
-            || request.Action == ChunkCommandAction.RebuildCombined;
+            || request.Action == ChunkCommandAction.RebuildCombined
+            || request.Action == ChunkCommandAction.DeleteSubChunk;
         var job = _store.Get(request.JobId);
         if (job == null && allowCompleted && !string.IsNullOrWhiteSpace(request.JobDirectoryRelative))
         {
@@ -379,7 +377,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             throw new RpcException(new Status(StatusCode.FailedPrecondition, $"Job is not running (state={job.State})"));
         if (allowCompleted && job.State != JobState.Running && job.State != JobState.Completed)
             throw new RpcException(new Status(StatusCode.FailedPrecondition,
-                $"Split / transcribe_sub / retranscribe / rebuild_combined require job Running or Completed (state={job.State})"));
+                $"Split / transcribe_sub / retranscribe / rebuild_combined / delete_sub_chunk require job Running or Completed (state={job.State})"));
 
         switch (request.Action)
         {
@@ -425,6 +423,11 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                     throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
                 RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "transcribe_sub");
                 return await ExecuteTranscribeSubChunkAsync(request, context.CancellationToken).ConfigureAwait(false);
+            case ChunkCommandAction.DeleteSubChunk:
+                if (request.ChunkIndex < 0)
+                    throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
+                RecordSubChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, request.SubChunkIndex, "delete_sub_chunk");
+                return await ExecuteDeleteSubChunkAsync(request, context.CancellationToken).ConfigureAwait(false);
             default:
                 return new ChunkCommandResponse { Ok = false, Message = "unknown_action" };
         }
@@ -611,9 +614,28 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
 
     private async Task<ChunkCommandResponse> ExecuteOperatorSplitAsync(ChunkCommandRequest request, CancellationToken ct)
     {
-        var parts = request.SplitParts;
-        if (parts < 2)
-            return new ChunkCommandResponse { Ok = false, Message = "split_parts must be >= 2" };
+        string artifactRoot;
+        try
+        {
+            artifactRoot = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
+        }
+        catch (RpcException ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = ex.Status.Detail };
+        }
+
+        var (ok, message) = await _projectArtifactService
+            .TryOperatorSplitAsync(artifactRoot, request.ChunkIndex, request.SplitParts, ct)
+            .ConfigureAwait(false);
+        if (ok)
+            _logger.LogInformation("Operator split ok: job {JobId} chunk {Chunk}", request.JobId, request.ChunkIndex);
+        return new ChunkCommandResponse { Ok = ok, Message = message };
+    }
+
+    private async Task<ChunkCommandResponse> ExecuteDeleteSubChunkAsync(ChunkCommandRequest request, CancellationToken ct)
+    {
+        if (request.SubChunkIndex < 0)
+            return new ChunkCommandResponse { Ok = false, Message = "sub_chunk_index must be >= 0" };
 
         string artifactRoot;
         try
@@ -625,38 +647,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             return new ChunkCommandResponse { Ok = false, Message = ex.Status.Detail };
         }
 
-        var chunksDir = Path.Combine(artifactRoot, "chunks");
-        if (!Directory.Exists(chunksDir))
-            return new ChunkCommandResponse { Ok = false, Message = "chunks directory not found under job workspace" };
-
-        static bool IsAudioChunk(string p)
-        {
-            var e = Path.GetExtension(p);
-            return e.Equals(".wav", StringComparison.OrdinalIgnoreCase)
-                   || e.Equals(".m4a", StringComparison.OrdinalIgnoreCase)
-                   || e.Equals(".mp3", StringComparison.OrdinalIgnoreCase)
-                   || e.Equals(".flac", StringComparison.OrdinalIgnoreCase)
-                   || e.Equals(".ogg", StringComparison.OrdinalIgnoreCase);
-        }
-
-        var files = Directory.GetFiles(chunksDir)
-            .Where(IsAudioChunk)
-            .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (request.ChunkIndex >= files.Count)
-            return new ChunkCommandResponse { Ok = false, Message = $"chunk_index {request.ChunkIndex} out of range (found {files.Count} chunk files)" };
-
-        var inputPath = files[request.ChunkIndex];
-        var ffmpeg = _audioUtils.WhichOr(_configuration["Agent04:FfmpegPath"], "ffmpeg") ?? "ffmpeg";
-        var ffprobe = _audioUtils.WhichOr(_configuration["Agent04:FfprobePath"], "ffprobe") ?? "ffprobe";
-
-        var (durSec, _) = _audioUtils.GetDurationAndSize(ffprobe, inputPath);
-        if (durSec <= 0)
-            return new ChunkCommandResponse { Ok = false, Message = "could not read audio duration (ffprobe)" };
-
-        var splitChunksDir = "split_chunks";
-        var overlapSec = 1.0;
+        string? splitChunksDir = null;
         var configRel = (_configuration["Agent04:ConfigPath"] ?? "config/default.json").Trim()
             .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var configPathFull = ResolveConfigFullPath(_workspaceRoot.RootPath, configRel);
@@ -666,51 +657,34 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             {
                 var cfg = await TranscriptionConfig.FromFileAsync(configPathFull, ct).ConfigureAwait(false);
                 splitChunksDir = cfg.SplitChunksDir;
-                overlapSec = cfg.ChunkOverlapSec;
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Operator split: optional transcription config not loaded from {Path}", configPathFull);
+                _logger.LogDebug(ex, "delete_sub_chunk: optional config not loaded from {Path}", configPathFull);
             }
         }
 
-        var ext = Path.GetExtension(inputPath);
-        var baseName = Path.GetFileNameWithoutExtension(inputPath);
-        var outRoot = Path.Combine(artifactRoot, splitChunksDir, $"chunk_{request.ChunkIndex}", "sub_chunks");
-        Directory.CreateDirectory(outRoot);
+        var (ok, msg) = await _projectArtifactService.TryDeleteSubChunkArtifactsAsync(
+            artifactRoot,
+            request.JobId,
+            request.ChunkIndex,
+            request.SubChunkIndex,
+            splitChunksDir,
+            ct,
+            () => new ValueTask<bool>(IsSubChunkNodeRunning(request.JobId, request.ChunkIndex, request.SubChunkIndex))).ConfigureAwait(false);
 
-        IReadOnlyList<OperatorChunkSplitPlanner.Segment> plan;
-        try
-        {
-            plan = OperatorChunkSplitPlanner.PlanEqualSegmentsWithOverlap(durSec, parts, overlapSec);
-        }
-        catch (Exception ex)
-        {
-            return new ChunkCommandResponse { Ok = false, Message = ex.Message };
-        }
+        if (!ok && string.Equals(msg, "sub_chunk_running", StringComparison.Ordinal))
+            throw new RpcException(new Status(StatusCode.FailedPrecondition, msg));
 
-        try
-        {
-            await Task.Run(() =>
-            {
-                for (var k = 0; k < plan.Count; k++)
-                {
-                    var seg = plan[k];
-                    var outName = $"{baseName}_sub_{k:D2}{ext}";
-                    var outPath = Path.Combine(outRoot, outName);
-                    _audioUtils.ExtractAudioSegmentCopyOrReencode(ffmpeg, inputPath, seg.StartSec, seg.DurationSec, outPath);
-                }
-            }, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Operator split failed for job {JobId} chunk {Chunk}", request.JobId, request.ChunkIndex);
-            return new ChunkCommandResponse { Ok = false, Message = ex.Message };
-        }
+        return new ChunkCommandResponse { Ok = ok, Message = msg };
+    }
 
-        _logger.LogInformation("Operator split ok: job {JobId} chunk {Chunk} -> {Parts} parts under {Dir}",
-            request.JobId, request.ChunkIndex, parts, outRoot);
-        return new ChunkCommandResponse { Ok = true, Message = "split_ok" };
+    private bool IsSubChunkNodeRunning(string agent04JobId, int parentChunkIndex, int subChunkIndex)
+    {
+        if (_nodeQuery == null) return false;
+        var nodeId = $"{agent04JobId}:transcribe:chunk-{parentChunkIndex}:sub-{subChunkIndex}";
+        var node = _nodeQuery.GetNodeByScopeAndId(agent04JobId, nodeId);
+        return node?.Status == JobState.Running;
     }
 
     /// <summary>

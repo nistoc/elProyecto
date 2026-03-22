@@ -1,6 +1,9 @@
+using Agent04.Application;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Infrastructure;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -8,6 +11,14 @@ namespace Agent04.Tests;
 
 public class ProjectArtifactServiceTests
 {
+    private sealed class TestHostEnvironment : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = "Test";
+        public string ApplicationName { get; set; } = "Test";
+        public string ContentRootPath { get; set; } = Path.GetTempPath();
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
     private static ProjectArtifactService CreateService(
         IJobArtifactRootRegistry registry,
         IConfiguration? configuration = null)
@@ -17,6 +28,10 @@ public class ProjectArtifactServiceTests
             registry,
             configuration,
             new PerJobCancellationManagerFactory(),
+            new AudioUtils(),
+            new TranscriptionOutputWriter(NullLogger<TranscriptionOutputWriter>.Instance),
+            new WorkspaceRoot(Path.GetTempPath()),
+            new TestHostEnvironment(),
             NullLogger<ProjectArtifactService>.Instance);
     }
 

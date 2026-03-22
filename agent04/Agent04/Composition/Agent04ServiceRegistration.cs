@@ -46,13 +46,14 @@ public static class Agent04ServiceRegistration
 
         services.AddSingleton<ICancellationManagerFactory, PerJobCancellationManagerFactory>();
         services.AddSingleton<IJobArtifactRootRegistry, JobArtifactRootRegistry>();
-        services.AddSingleton<IProjectArtifactService, ProjectArtifactService>();
 
         services.AddSingleton<ITranscriptionOutputWriter>(sp =>
         {
             var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger<TranscriptionOutputWriter>();
             return new TranscriptionOutputWriter(logger);
         });
+
+        services.AddSingleton<IProjectArtifactService, ProjectArtifactService>();
 
         services.AddSingleton<ITranscriptionClient>(sp =>
         {
@@ -76,7 +77,6 @@ public static class Agent04ServiceRegistration
             sp.GetRequiredService<IAudioUtils>(),
             sp.GetRequiredService<ITranscriptionCache>(),
             sp.GetRequiredService<ITranscriptionClient>(),
-            sp.GetRequiredService<ITranscriptionOutputWriter>(),
             sp.GetRequiredService<ITranscriptionMerger>(),
             sp.GetRequiredService<IProjectArtifactService>(),
             sp.GetRequiredService<INodeModel>(),

@@ -19,7 +19,9 @@
 | `TryLoadWorkStateAsync`, `SaveWorkStateAsync`, `UpsertWorkStateChunkAsync`, `UpsertWorkStateSubChunkAsync` | 3 | Фасад над `TranscriptionWorkStateFile` (модели — `TranscriptionWorkStateDocument` в Application). |
 | `WritePendingChunkIndicesAsync`, `TryLoadAndConsumePendingChunksAsync` | 3 | Очередь `pending_chunks.json`. |
 | `GetCancellationManager` | 3 | Фабрика `.agent04_chunk_cancel` (делегирование `ICancellationManagerFactory`). |
-| Запись артефактов пайплайна (делегирование существующим writer’ам) | 4 | Split, sub-chunk results, transcript outputs — единая точка входа. |
-| `DeleteSubChunkArtifacts` | 5 | Удаление файлов субчанка + согласованный work state / merged. |
+| `InitializeJobMarkdownOutput`, `AppendJobMarkdownSegments`, `FinalizeJobMarkdownOutput`, `SaveJobCombinedTranscriptionJson`, `SaveJobPerChunkTranscriptionJson`, `ResetJobTranscriptionSpeakerMap` | 4 | Фасад над `ITranscriptionOutputWriter` (пайплайн / `RebuildCombined`). |
+| `WriteSubChunkTranscriptionResult` | 4 | Делегирование `SubChunkResultWriter`. |
+| `TryOperatorSplitAsync` | 4 | Операторский split (ffmpeg-сегменты в `sub_chunks/`). |
+| `TryDeleteSubChunkArtifactsAsync` | 5 | Удаление audio/results, `chunk_N_merged.*`, cancel flag, строка work state (`TranscriptionWorkStateFile.TryRemoveSubChunkRowAsync`). gRPC: `ChunkCommand` + **DELETE_SUB_CHUNK**. |
 
 Имена методов 3–5 уточняются при реализации; в таблице зафиксированы обязанности из плана миграции.

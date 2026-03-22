@@ -68,7 +68,6 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
     private readonly IAudioUtils _audioUtils;
     private readonly ITranscriptionCache _cache;
     private readonly ITranscriptionClient _client;
-    private readonly ITranscriptionOutputWriter _output;
     private readonly ITranscriptionMerger _merger;
     private readonly IProjectArtifactService _artifacts;
     private readonly INodeModel? _nodeModel;
@@ -78,7 +77,6 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         IAudioUtils audioUtils,
         ITranscriptionCache cache,
         ITranscriptionClient client,
-        ITranscriptionOutputWriter output,
         ITranscriptionMerger merger,
         IProjectArtifactService projectArtifacts,
         INodeModel? nodeModel = null,
@@ -87,7 +85,6 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         _audioUtils = audioUtils;
         _cache = cache;
         _client = client;
-        _output = output;
         _merger = merger;
         _artifacts = projectArtifacts;
         _nodeModel = nodeModel;
@@ -166,8 +163,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         EnsureDirectoryFor(mdPath);
         EnsureDirectoryFor(jsonPath);
 
-        _output.InitializeMarkdown(mdPath);
-        _output.ResetSpeakerMap();
+        _artifacts.InitializeJobMarkdownOutput(mdPath);
+        _artifacts.ResetJobTranscriptionSpeakerMap();
 
         var cacheDirFull = Path.Combine(artifactRoot, config.CacheDir);
         EnsureDirectoryFor(cacheDirFull);
@@ -254,10 +251,10 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                     {
                         var perChunkRel = config.Get<string>("per_chunk_json_dir") ?? "chunks_json";
                         var perChunkDirFull = Path.Combine(artifactRoot, perChunkRel);
-                        _output.SavePerChunkJson(Path.GetFileName(chunkInfos[idx].Path), r.RawResponse, perChunkDirFull);
+                        _artifacts.SaveJobPerChunkTranscriptionJson(Path.GetFileName(chunkInfos[idx].Path), r.RawResponse, perChunkDirFull);
                     }
 
-                    _output.AppendSegmentsToMarkdown(mdPath, r.Segments, r.Offset, r.EmitGuard);
+                    _artifacts.AppendJobMarkdownSegments(mdPath, r.Segments, r.Offset, r.EmitGuard);
                 }
 
                 nextAppendIndex++;
@@ -421,7 +418,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         StepStart(jobId ?? "", "merge", "phase");
         UpdateProgress(JobState.Running, 90, "Merging", totalChunks, totalChunks, null, null, null);
-        _output.FinalizeMarkdown(mdPath);
+        _artifacts.FinalizeJobMarkdownOutput(mdPath);
         var sortedResults = new List<TranscriptionResult>();
         for (var i = 0; i < totalChunks; i++)
         {
@@ -429,7 +426,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 sortedResults.Add(chunkResults[i]!);
         }
 
-        _output.SaveCombinedJson(jsonPath, sortedResults);
+        _artifacts.SaveJobCombinedTranscriptionJson(jsonPath, sortedResults);
         StepComplete(jobId ?? "", "merge", JobState.Completed);
 
         UpdateProgress(JobState.Completed, 100, "Completed", totalChunks, totalChunks, mdPath, jsonPath, null);
@@ -787,7 +784,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 0,
                 clientResult.Segments,
                 clientResult.RawResponse);
-            SubChunkResultWriter.Save(resultsDir, subChunkIndex, tr);
+            _artifacts.WriteSubChunkTranscriptionResult(resultsDir, subChunkIndex, tr);
             var completed = DateTimeOffset.UtcNow;
             if (nodeModel != null)
                 CompleteStep(nodeModel, agentJobId, transcribeParent, localKey, JobState.Completed);
@@ -1053,7 +1050,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         var perChunkRel = config.Get<string>("per_chunk_json_dir") ?? "chunks_json";
         var perChunkDirFull = Path.Combine(artifactRoot, perChunkRel);
-        _output.SavePerChunkJson(Path.GetFileName(targetChunk.Path), newResult.RawResponse, perChunkDirFull);
+        _artifacts.SaveJobPerChunkTranscriptionJson(Path.GetFileName(targetChunk.Path), newResult.RawResponse, perChunkDirFull);
 
         _logger?.LogInformation(
             "Retranscribed main chunk {Index}; updated per-chunk JSON under {Dir}",
@@ -1137,12 +1134,12 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             merged.Add(loaded);
         }
 
-        _output.InitializeMarkdown(mdPath);
-        _output.ResetSpeakerMap();
+        _artifacts.InitializeJobMarkdownOutput(mdPath);
+        _artifacts.ResetJobTranscriptionSpeakerMap();
         foreach (var r in merged)
-            _output.AppendSegmentsToMarkdown(mdPath, r.Segments, r.Offset, r.EmitGuard);
-        _output.FinalizeMarkdown(mdPath);
-        _output.SaveCombinedJson(jsonPath, merged);
+            _artifacts.AppendJobMarkdownSegments(mdPath, r.Segments, r.Offset, r.EmitGuard);
+        _artifacts.FinalizeJobMarkdownOutput(mdPath);
+        _artifacts.SaveJobCombinedTranscriptionJson(jsonPath, merged);
         _logger?.LogInformation("rebuild_combined: wrote {Md} and {Json}", mdPath, jsonPath);
     }
 

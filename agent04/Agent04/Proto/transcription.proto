@@ -113,6 +113,8 @@ enum ChunkCommandAction {
   CHUNK_COMMAND_ACTION_TRANSCRIBE_SUB = 5;
   /// Rebuild combined transcript.md + openai_response.json from per-chunk JSON only (chunk_index ignored).
   CHUNK_COMMAND_ACTION_REBUILD_COMBINED = 6;
+  /// Remove one operator-split sub-chunk (audio, result json, merged split, cancel flag, work-state row). chunk_index = parent, sub_chunk_index = sub.
+  CHUNK_COMMAND_ACTION_DELETE_SUB_CHUNK = 7;
 }
 
 message ChunkCommandRequest {
@@ -123,7 +125,7 @@ message ChunkCommandRequest {
   string job_directory_relative = 4;
   /// For SPLIT: number of sub-chunks (>= 2). Ignored if 0 or unset.
   int32 split_parts = 5;
-  /// For TRANSCRIBE_SUB: 0-based sub-chunk index (matches _sub_XX in filename).
+  /// For TRANSCRIBE_SUB / DELETE_SUB_CHUNK: 0-based sub-chunk index (matches _sub_XX in filename).
   int32 sub_chunk_index = 6;
 }
 

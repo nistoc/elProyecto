@@ -80,6 +80,37 @@ public static class TranscriptionWorkStateFile
         }
     }
 
+    /// <summary>
+    /// Removes the sub-chunk row matching <paramref name="parentChunkIndex"/> / <paramref name="subChunkIndex"/>.
+    /// If the file is missing or no row matches, returns true (idempotent).
+    /// </summary>
+    public static async Task<bool> TryRemoveSubChunkRowAsync(
+        string artifactRoot,
+        int parentChunkIndex,
+        int subChunkIndex,
+        CancellationToken ct)
+    {
+        var path = ResolvePath(artifactRoot);
+        if (!File.Exists(path))
+            return true;
+
+        var doc = await TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
+        if (doc == null)
+            return false;
+        if (doc.Chunks is not { Count: > 0 })
+            return true;
+
+        var n = doc.Chunks.RemoveAll(c =>
+            c.IsSubChunk
+            && c.ParentChunkIndex == parentChunkIndex
+            && c.SubChunkIndex == subChunkIndex);
+        if (n == 0)
+            return true;
+
+        await SaveAsync(artifactRoot, doc, ct).ConfigureAwait(false);
+        return true;
+    }
+
     /// <summary>Merge main-chunk row and write atomically.</summary>
     public static Task UpsertChunkAsync(
         string artifactRoot,
