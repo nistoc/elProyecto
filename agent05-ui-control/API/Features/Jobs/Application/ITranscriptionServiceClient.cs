@@ -26,11 +26,12 @@ public interface ITranscriptionServiceClient
         int subChunkIndex = 0,
         CancellationToken ct = default);
 
-    /// <summary>Chunk/split artifact grouping from Agent04 (file metadata; VM merged in Agent05 UI).</summary>
+    /// <summary>Chunk/split artifact grouping from Agent04. VM is merged on Agent04 when <paramref name="clientChunkVirtualModel"/> is provided; UI still overlays weak rows from snapshot.</summary>
     Task<ChunkArtifactGroupsResult?> GetChunkArtifactGroupsAsync(
         string agent04JobId,
         string jobDirectoryRelative,
         int totalChunks,
+        IReadOnlyList<ChunkVirtualModelEntry>? clientChunkVirtualModel = null,
         CancellationToken ct = default);
 
     /// <summary>Structured file tree from Agent04 (null if unavailable — caller may fall back to local scan).</summary>

@@ -121,4 +121,44 @@ public class ChunkVirtualModelMergeTests
         Assert.Single(merged);
         Assert.Equal("a\nb\nc", merged[0].TranscriptActivityLog);
     }
+
+    [Fact]
+    public void Merge_work_state_before_client_live_keeps_rentgen_when_live_strong()
+    {
+        var work = new List<ChunkVirtualModelEntry>
+        {
+            VmMain(0, "Completed", "2020-01-01T00:00:00Z", "2020-01-01T00:01:00Z"),
+        };
+        var clientLive = new List<ChunkVirtualModelEntry>
+        {
+            new()
+            {
+                ChunkIndex = 0,
+                State = "Completed",
+                StartedAt = "2020-02-01T00:00:00Z",
+                CompletedAt = "2020-02-01T00:02:00Z",
+            },
+        };
+
+        var merged = ChunkVirtualModelMerge.Merge(work, clientLive);
+
+        Assert.Single(merged);
+        Assert.Equal("2020-02-01T00:00:00Z", merged[0].StartedAt);
+    }
+
+    [Fact]
+    public void Merge_work_state_before_client_live_fills_when_live_is_placeholder()
+    {
+        var work = new List<ChunkVirtualModelEntry>
+        {
+            VmMain(0, "Completed", "2020-01-01T00:00:00Z", "2020-01-01T00:01:00Z"),
+        };
+        var clientLive = new List<ChunkVirtualModelEntry> { VmMain(0, "Pending") };
+
+        var merged = ChunkVirtualModelMerge.Merge(work, clientLive);
+
+        Assert.Single(merged);
+        Assert.Equal("Completed", merged[0].State);
+        Assert.Equal("2020-01-01T00:00:00Z", merged[0].StartedAt);
+    }
 }

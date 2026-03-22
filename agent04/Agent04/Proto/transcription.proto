@@ -195,6 +195,8 @@ message GetChunkArtifactGroupsRequest {
   string job_directory_relative = 2;
   /// If > 0, group rows are 0..total_chunks-1. If 0, total_chunks is read from transcription_work_state.json; if still 0, indices come from chunk files + split_chunks only.
   int32 total_chunks = 3;
+  /// Last known VM from the job snapshot (Xtract); merged with Rentgen live VM then transcription_work_state (disk) so Pending placeholders do not hide completed timings.
+  repeated ChunkVirtualModelEntry client_chunk_virtual_model = 4;
 }
 
 message GetChunkArtifactGroupsResponse {

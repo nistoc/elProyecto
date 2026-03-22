@@ -235,10 +235,11 @@ public class JobsController : ControllerBase
         var scopeJobId = job != null && !string.IsNullOrWhiteSpace(job.Agent04JobId)
             ? job.Agent04JobId.Trim()
             : id;
+        var clientVm = job?.Chunks?.ChunkVirtualModel;
         try
         {
             var result = await _transcription
-                .GetChunkArtifactGroupsAsync(scopeJobId, id, totalChunks, ct)
+                .GetChunkArtifactGroupsAsync(scopeJobId, id, totalChunks, clientVm, ct)
                 .ConfigureAwait(false);
             if (result == null)
                 return StatusCode(502, new { error = "agent04_chunk_groups_unavailable" });

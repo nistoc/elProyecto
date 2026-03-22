@@ -192,20 +192,22 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         string agent04JobId,
         string jobDirectoryRelative,
         int totalChunks,
+        IReadOnlyList<Application.ChunkVirtualModelEntry>? clientChunkVirtualModel = null,
         CancellationToken ct = default)
     {
         using var channel = GrpcChannel.ForAddress(_address);
         var client = new TranscriptionService.TranscriptionServiceClient(channel);
         try
         {
-            var response = await client.GetChunkArtifactGroupsAsync(
-                new GetChunkArtifactGroupsRequest
-                {
-                    JobId = agent04JobId,
-                    JobDirectoryRelative = jobDirectoryRelative ?? "",
-                    TotalChunks = totalChunks
-                },
-                cancellationToken: ct).ResponseAsync.ConfigureAwait(false);
+            var req = new GetChunkArtifactGroupsRequest
+            {
+                JobId = agent04JobId,
+                JobDirectoryRelative = jobDirectoryRelative ?? "",
+                TotalChunks = totalChunks
+            };
+            AppendClientChunkVirtualModel(req.ClientChunkVirtualModel, clientChunkVirtualModel);
+            var response = await client.GetChunkArtifactGroupsAsync(req, cancellationToken: ct)
+                .ResponseAsync.ConfigureAwait(false);
             var groups = response.Groups.Select(MapChunkGroup).ToList();
             return new Application.ChunkArtifactGroupsResult { Groups = groups };
         }

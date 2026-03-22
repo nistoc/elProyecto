@@ -320,7 +320,18 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
 
         var job = _store.Get(request.JobId);
         var totalHint = request.TotalChunks > 0 ? request.TotalChunks : job?.TotalChunks ?? 0;
-        var vm = BuildChunkVirtualModel(request.JobId, totalHint);
+        var liveVm = BuildChunkVirtualModel(request.JobId, totalHint);
+        IReadOnlyList<ChunkVirtualModelEntry>? clientPrev = request.ClientChunkVirtualModel.Count > 0
+            ? request.ClientChunkVirtualModel.ToList()
+            : null;
+        var mergedClientLive = ChunkVirtualModelMerge.Merge(clientPrev, liveVm);
+
+        var workState = await _projectArtifactService
+            .TryLoadWorkStateAsync(artifactRoot, context.CancellationToken)
+            .ConfigureAwait(false);
+        var workVm = ChunkVirtualModelFromWorkState.Build(workState);
+        var vm = ChunkVirtualModelMerge.Merge(workVm, mergedClientLive);
+
         ChunkArtifactGroupVirtualModelBinder.ApplyToResponse(resp, vm);
 
         return resp;

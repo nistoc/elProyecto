@@ -93,9 +93,44 @@ export function chunkGroupAllSubResultsPresentForMerge(
   return g.subChunks.every(subChunkGroupHasMergeResultJson);
 }
 
+/** Mirrors Agent04 ChunkVirtualModelMerge.IsWeakPlaceholder for UI fallback. */
+export function isWeakPlaceholderVm(row: ChunkVirtualModelEntry): boolean {
+  const s = (row.state ?? '').trim();
+  if (s.length !== 0 && s.toLowerCase() !== 'pending') return false;
+  const started = (row.startedAt ?? '').trim();
+  const completed = (row.completedAt ?? '').trim();
+  if (started || completed) return false;
+  return true;
+}
+
+function shouldPreferSnapshotVm(snapshot: ChunkVirtualModelEntry): boolean {
+  const sl = (snapshot.state ?? '').trim().toLowerCase();
+  if (sl === 'completed' || sl === 'failed' || sl === 'cancelled') return true;
+  if (sl === 'running') return true;
+  if ((snapshot.startedAt ?? '').trim() || (snapshot.completedAt ?? '').trim()) return true;
+  if ((snapshot.transcriptActivityLog ?? '').trim()) return true;
+  return false;
+}
+
 /**
- * Fills vmRow from the job snapshot only where the API omitted it (e.g. Rentgen node missing).
- * When Agent04 sends main_virtual_model / sub_virtual_model, those win.
+ * Prefer server VM when it carries real telemetry; if the server sent a Pending shell without dates,
+ * use the snapshot row when it is more informative (same policy as Agent04 merge).
+ */
+export function mergeVmRowPreferInformative(
+  serverRow: ChunkVirtualModelEntry | null | undefined,
+  snapshotRow: ChunkVirtualModelEntry | null | undefined
+): ChunkVirtualModelEntry | null {
+  const srv = serverRow ?? null;
+  const snap = snapshotRow ?? null;
+  if (!srv) return snap;
+  if (!snap) return srv;
+  if (isWeakPlaceholderVm(srv) && shouldPreferSnapshotVm(snap)) return snap;
+  return srv;
+}
+
+/**
+ * Fills vmRow from the job snapshot where the API omitted it or sent a weak Pending placeholder.
+ * Strong server rows (Rentgen / merged Agent04) win.
  */
 export function overlayVmFromJobWhenMissing(
   groups: ChunkArtifactGroup[],
@@ -104,10 +139,13 @@ export function overlayVmFromJobWhenMissing(
   const vm = job.chunks?.chunkVirtualModel;
   return groups.map((g) => ({
     ...g,
-    vmRow: g.vmRow ?? findMainChunkVmRow(vm, g.index),
+    vmRow: mergeVmRowPreferInformative(g.vmRow, findMainChunkVmRow(vm, g.index)),
     subChunks: (g.subChunks ?? []).map((sc) => ({
       ...sc,
-      vmRow: sc.vmRow ?? findSubChunkVmRow(vm, g.index, sc.subIndex ?? null),
+      vmRow: mergeVmRowPreferInformative(
+        sc.vmRow,
+        findSubChunkVmRow(vm, g.index, sc.subIndex ?? null)
+      ),
     })),
   }));
 }

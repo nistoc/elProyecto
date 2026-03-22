@@ -38,6 +38,7 @@ public sealed class StubTranscriptionServiceClient : Application.ITranscriptionS
         string agent04JobId,
         string jobDirectoryRelative,
         int totalChunks,
+        IReadOnlyList<Application.ChunkVirtualModelEntry>? clientChunkVirtualModel = null,
         CancellationToken ct = default) =>
         Task.FromResult<Application.ChunkArtifactGroupsResult?>(
             new Application.ChunkArtifactGroupsResult { Groups = Array.Empty<Application.ChunkArtifactGroupJson>() });

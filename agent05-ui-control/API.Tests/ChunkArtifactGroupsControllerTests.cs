@@ -83,6 +83,8 @@ public class ChunkArtifactGroupsControllerTests
         Assert.True(g0.TryGetProperty("vmRow", out var vmEl));
         Assert.Equal("Running", vmEl.GetProperty("state").GetString());
         Assert.Equal(0, vmEl.GetProperty("index").GetInt32());
+        Assert.Single(transcription.GetChunkArtifactGroupsCalls);
+        Assert.Null(transcription.GetChunkArtifactGroupsCalls[0].ClientVm);
     }
 
     [Fact]
@@ -113,6 +115,55 @@ public class ChunkArtifactGroupsControllerTests
         Assert.Equal(jobId, call.Agent04JobId);
         Assert.Equal(jobId, call.JobDirectoryRelative);
         Assert.Equal(0, call.TotalChunks);
+        Assert.Null(call.ClientVm);
+    }
+
+    [Fact]
+    public async Task GetChunkArtifactGroups_PassesChunkVirtualModel_ToTranscriptionClient()
+    {
+        var store = new InMemoryJobStore();
+        var jobId = await store.CreateAsync(new JobCreateInput("a.wav", null));
+        await store.UpdateAsync(jobId, s =>
+        {
+            s.Agent04JobId = "grpc-job-1";
+            s.Chunks = new ChunkState
+            {
+                Total = 3,
+                ChunkVirtualModel =
+                [
+                    new ChunkVirtualModelEntry
+                    {
+                        Index = 0,
+                        State = "Completed",
+                        StartedAt = "2020-01-01T00:00:00Z",
+                        CompletedAt = "2020-01-01T00:10:00Z",
+                    },
+                ],
+            };
+        });
+
+        var ws = new StubJobWorkspace();
+        Directory.CreateDirectory(ws.GetJobDirectoryPath(jobId));
+
+        var transcription = new RecordingTranscriptionClient
+        {
+            NextChunkGroups = new ChunkArtifactGroupsResult { Groups = [] },
+        };
+
+        var controller = new JobsController(
+            store,
+            ws,
+            MockPipeline.Instance,
+            MockBroadcaster.Instance,
+            transcription,
+            NullLogger<JobsController>.Instance);
+
+        await controller.GetChunkArtifactGroups(jobId, CancellationToken.None);
+        Assert.Single(transcription.GetChunkArtifactGroupsCalls);
+        var call = transcription.GetChunkArtifactGroupsCalls[0];
+        Assert.NotNull(call.ClientVm);
+        Assert.Single(call.ClientVm!);
+        Assert.Equal("Completed", call.ClientVm![0].State);
     }
 
     private static class MockPipeline
