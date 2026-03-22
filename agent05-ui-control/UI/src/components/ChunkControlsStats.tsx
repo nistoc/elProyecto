@@ -14,10 +14,8 @@ import type {
 } from '../types';
 import type { ChunkArtifactGroup } from '../utils/chunkArtifactGroups';
 import {
-  buildChunkGroups,
   chunkArtifactsTranscriptionComplete,
   chunkGroupHasBlockingSplitArtifacts,
-  chunkHasBlockingSplitArtifacts,
   overlayVmFromJobWhenMissing,
 } from '../utils/chunkArtifactGroups';
 import {
@@ -246,16 +244,6 @@ export interface ChunkControlsStatsProps {
   artifactGroupsRefreshKey?: number;
 }
 
-const emptyFiles: JobProjectFiles = {
-  original: [],
-  transcripts: [],
-  chunks: [],
-  chunkJson: [],
-  intermediate: [],
-  converted: [],
-  splitChunks: [],
-};
-
 export function ChunkControlsStats({
   jobId,
   job,
@@ -275,7 +263,7 @@ export function ChunkControlsStats({
     relativePath: string;
     name: string;
   } | null>(null);
-  /** From Agent04 via GET .../chunk-artifact-groups; null = use file-based buildChunkGroups. */
+  /** From Agent04 via GET .../chunk-artifact-groups; null while loading. */
   const [agent04ArtifactGroups, setAgent04ArtifactGroups] = useState<
     ChunkArtifactGroup[] | null
   >(null);
@@ -313,35 +301,32 @@ export function ChunkControlsStats({
   }, [hasRunningVm, refreshJobSnapshot]);
 
   useEffect(() => {
-    const aid = job.agent04JobId?.trim();
-    if (!aid) {
-      setAgent04ArtifactGroups(null);
-      return;
-    }
     let cancelled = false;
+    setAgent04ArtifactGroups(null);
     void (async () => {
       try {
         const { groups } = await fetchJobChunkArtifactGroups(jobId);
         if (!cancelled) setAgent04ArtifactGroups(groups ?? []);
       } catch {
-        if (!cancelled) setAgent04ArtifactGroups(null);
+        if (!cancelled) setAgent04ArtifactGroups([]);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [jobId, job.agent04JobId, files, artifactGroupsRefreshKey]);
+  }, [jobId, artifactGroupsRefreshKey, files]);
+
+  const artifactGroupsLoading = agent04ArtifactGroups === null;
 
   const total = job.chunks?.total ?? 0;
   const readOnly =
     job.status === 'failed' && (vmAll?.length ?? 0) > 0;
   const live = transcriberRunning && total > 0;
 
-  const fileData = files ?? emptyFiles;
-  const groups =
-    agent04ArtifactGroups != null
-      ? overlayVmFromJobWhenMissing(agent04ArtifactGroups, job)
-      : buildChunkGroups(job, fileData);
+  const groups = overlayVmFromJobWhenMissing(
+    agent04ArtifactGroups ?? [],
+    job
+  );
   const showList = groups.length > 0;
   const anyVmTelemetry = groups.some((g) => vmRowHasTelemetry(g.vmRow));
 
@@ -397,15 +382,19 @@ export function ChunkControlsStats({
       {showList && anyVmTelemetry && (
         <p className="chunk-stats__hint">{t('chunkVmTimerNote')}</p>
       )}
-      {filesLoading && !showList && (
-        <p className="chunk-stats__status">{t('chunkStatsLoadingFiles')}</p>
+      {(filesLoading || artifactGroupsLoading) && !showList && (
+        <p className="chunk-stats__status">
+          {filesLoading
+            ? t('chunkStatsLoadingFiles')
+            : t('chunkStatsLoadingGroups')}
+        </p>
       )}
       {filesError && (
         <p className="chunk-stats__status chunk-stats__status--err">
           {filesError}
         </p>
       )}
-      {!filesLoading && !showList && (
+      {!filesLoading && !artifactGroupsLoading && !showList && (
         <p className="chunk-stats__status">{t('chunkStatsEmpty')}</p>
       )}
       {showList && (
@@ -465,10 +454,7 @@ export function ChunkControlsStats({
               (hasVmTelemetry || showArtifactDone || chunkVmPending);
             const showRunningOnlyCancel =
               transcriberRunning && total > 0 && vmIsRunning(vm?.state);
-            const hasSplitArtifacts =
-              agent04ArtifactGroups != null
-                ? chunkGroupHasBlockingSplitArtifacts(g)
-                : chunkHasBlockingSplitArtifacts(fileData, g.index);
+            const hasSplitArtifacts = chunkGroupHasBlockingSplitArtifacts(g);
             const mainCancelEnabled =
               live && chunkMainRunning && !readOnly;
             const mainSkipEnabled = live && !readOnly;

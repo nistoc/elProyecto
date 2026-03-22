@@ -193,40 +193,36 @@ public class JobsController : ControllerBase
             _logger.LogDebug("GetProjectFiles({Id}): archive job (directory only)", id);
         }
 
+        var scopeJobId = job != null && !string.IsNullOrWhiteSpace(job.Agent04JobId)
+            ? job.Agent04JobId.Trim()
+            : id;
+        var remote = await _transcription
+            .GetProjectFilesAsync(scopeJobId, id, ct)
+            .ConfigureAwait(false);
         JobProjectFiles files;
-        if (job != null && !string.IsNullOrWhiteSpace(job.Agent04JobId))
+        if (remote != null)
         {
-            var remote = await _transcription
-                .GetProjectFilesAsync(job.Agent04JobId.Trim(), id, ct)
-                .ConfigureAwait(false);
-            if (remote != null)
-            {
-                files = remote;
-                _logger.LogDebug(
-                    "GetProjectFiles({Id}): from Agent04, original={O}, chunks={C}",
-                    id,
-                    files.Original.Count,
-                    files.Chunks.Count);
-            }
-            else
-            {
-                files = JobProjectFilesScanner.Scan(jobDir);
-                _logger.LogDebug(
-                    "GetProjectFiles({Id}): gRPC unavailable, local scan jobDir={Path}",
-                    id,
-                    jobDir);
-            }
+            files = remote;
+            _logger.LogDebug(
+                "GetProjectFiles({Id}): from Agent04 scope={Scope}, original={O}, chunks={C}",
+                id,
+                scopeJobId,
+                files.Original.Count,
+                files.Chunks.Count);
         }
         else
         {
             files = JobProjectFilesScanner.Scan(jobDir);
-            _logger.LogDebug("GetProjectFiles({Id}): jobDir={Path}, original={O}, chunks={C}", id, jobDir, files.Original.Count, files.Chunks.Count);
+            _logger.LogDebug(
+                "GetProjectFiles({Id}): gRPC unavailable, local scan jobDir={Path}",
+                id,
+                jobDir);
         }
 
         return Ok(new { files, jobDir });
     }
 
-    /// <summary>Chunk/split artifact groups from Agent04 (file metadata); UI merges <c>chunkVirtualModel</c> from the job snapshot.</summary>
+    /// <summary>Chunk/split artifact groups from Agent04 (file metadata). Uses <c>Agent04JobId</c> when set; otherwise resolves artifacts by Xtract job folder <paramref name="id"/> (archives). UI merges <c>chunkVirtualModel</c> from the job snapshot.</summary>
     [HttpGet("{id}/chunk-artifact-groups")]
     public async Task<ActionResult> GetChunkArtifactGroups(string id, CancellationToken ct = default)
     {
@@ -234,14 +230,15 @@ public class JobsController : ControllerBase
         var jobDir = _workspace.GetJobDirectoryPath(id);
         if (job == null && !Directory.Exists(jobDir))
             return NotFound();
-        if (job == null || string.IsNullOrWhiteSpace(job.Agent04JobId))
-            return Conflict(new { error = "agent04_job_id not available" });
 
-        var totalChunks = job.Chunks?.Total ?? 0;
+        var totalChunks = job?.Chunks?.Total ?? 0;
+        var scopeJobId = job != null && !string.IsNullOrWhiteSpace(job.Agent04JobId)
+            ? job.Agent04JobId.Trim()
+            : id;
         try
         {
             var result = await _transcription
-                .GetChunkArtifactGroupsAsync(job.Agent04JobId.Trim(), id, totalChunks, ct)
+                .GetChunkArtifactGroupsAsync(scopeJobId, id, totalChunks, ct)
                 .ConfigureAwait(false);
             if (result == null)
                 return StatusCode(502, new { error = "agent04_chunk_groups_unavailable" });

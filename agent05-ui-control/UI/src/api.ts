@@ -69,10 +69,6 @@ export async function fetchJobChunkArtifactGroups(
     `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/chunk-artifact-groups`
   );
   if (r.status === 404) throw new Error(`HTTP ${r.status}: job not found`);
-  if (r.status === 409) {
-    const text = await r.text();
-    throw new Error(text || 'agent04_job_id not available');
-  }
   if (!r.ok) {
     const text = await r.text();
     let msg = text || `HTTP ${r.status}`;

@@ -33,6 +33,8 @@ internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient
 {
     public List<(string Agent04JobId, TranscriptionChunkAction Action, int ChunkIndex, string? JobDirectoryRelative, int SplitParts, int SubChunkIndex)> ChunkCalls { get; } = new();
 
+    public List<(string Agent04JobId, string JobDirectoryRelative, int TotalChunks)> GetChunkArtifactGroupsCalls { get; } = new();
+
     public ChunkCommandResult? NextChunkResult { get; set; } = new(true, "cancel_requested");
 
     public Task<ChunkCommandResult> ChunkCommandAsync(
@@ -87,8 +89,11 @@ internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient
         string agent04JobId,
         string jobDirectoryRelative,
         int totalChunks,
-        CancellationToken ct = default) =>
-        Task.FromResult(NextChunkGroups);
+        CancellationToken ct = default)
+    {
+        GetChunkArtifactGroupsCalls.Add((agent04JobId, jobDirectoryRelative, totalChunks));
+        return Task.FromResult(NextChunkGroups);
+    }
 
     public Task<JobProjectFiles?> GetProjectFilesAsync(
         string agent04JobId,

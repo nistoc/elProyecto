@@ -86,24 +86,33 @@ public class ChunkArtifactGroupsControllerTests
     }
 
     [Fact]
-    public async Task GetChunkArtifactGroups_WithoutAgent04Id_Returns409()
+    public async Task GetChunkArtifactGroups_WithoutAgent04Id_UsesXtractIdAsGrpcScope()
     {
         var store = new InMemoryJobStore();
         var jobId = await store.CreateAsync(new JobCreateInput("a.wav", null));
         var ws = new StubJobWorkspace();
         Directory.CreateDirectory(ws.GetJobDirectoryPath(jobId));
 
+        var transcription = new RecordingTranscriptionClient
+        {
+            NextChunkGroups = new ChunkArtifactGroupsResult { Groups = [] }
+        };
+
         var controller = new JobsController(
             store,
             ws,
             MockPipeline.Instance,
             MockBroadcaster.Instance,
-            new RecordingTranscriptionClient(),
+            transcription,
             NullLogger<JobsController>.Instance);
 
         var result = await controller.GetChunkArtifactGroups(jobId, CancellationToken.None);
-        var conflict = Assert.IsType<ConflictObjectResult>(result);
-        Assert.NotNull(conflict.Value);
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Single(transcription.GetChunkArtifactGroupsCalls);
+        var call = transcription.GetChunkArtifactGroupsCalls[0];
+        Assert.Equal(jobId, call.Agent04JobId);
+        Assert.Equal(jobId, call.JobDirectoryRelative);
+        Assert.Equal(0, call.TotalChunks);
     }
 
     private static class MockPipeline
