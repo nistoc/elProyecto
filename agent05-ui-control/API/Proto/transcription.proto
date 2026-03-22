@@ -99,6 +99,7 @@ enum ChunkCommandAction {
   CHUNK_COMMAND_ACTION_SKIP = 2;
   CHUNK_COMMAND_ACTION_RETRANSCRIBE = 3;
   CHUNK_COMMAND_ACTION_SPLIT = 4;
+  CHUNK_COMMAND_ACTION_TRANSCRIBE_SUB = 5;
 }
 
 message ChunkCommandRequest {
@@ -109,6 +110,7 @@ message ChunkCommandRequest {
   string job_directory_relative = 4;
   /// For SPLIT: number of sub-chunks (>= 2). Ignored if 0 or unset.
   int32 split_parts = 5;
+  int32 sub_chunk_index = 6;
 }
 
 message ChunkCommandResponse {

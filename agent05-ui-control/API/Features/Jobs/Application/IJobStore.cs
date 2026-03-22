@@ -98,6 +98,12 @@ public sealed class ChunkVirtualModelEntry
     public string State { get; set; } = "Pending";
     /// <summary>Agent04 step error (optional); from proto chunk_virtual_model.error_message.</summary>
     public string? ErrorMessage { get; set; }
+    /// <summary>True for split sub-chunk rows (see proto <c>is_sub_chunk</c>).</summary>
+    public bool IsSubChunk { get; set; }
+    /// <summary>Parent chunk index when <see cref="IsSubChunk"/>; otherwise 0.</summary>
+    public int ParentChunkIndex { get; set; }
+    /// <summary>Sub index within parent when <see cref="IsSubChunk"/>; otherwise 0.</summary>
+    public int SubChunkIndex { get; set; }
 }
 
 public class SplitJob

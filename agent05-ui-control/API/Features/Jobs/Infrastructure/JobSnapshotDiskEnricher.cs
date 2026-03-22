@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -42,7 +43,10 @@ public static class JobSnapshotDiskEnricher
                 || snap.Chunks.ChunkVirtualModel is not { Count: > 0 };
 
             if (!needsChunks)
+            {
+                TryMergeSubChunkVirtualModelFromDisk(snap, jobDirectoryPath, logger);
                 return;
+            }
 
             var artifactRoot = ResolveArtifactRoot(jobDirectoryPath);
             var statePath = Path.Combine(artifactRoot, TranscriptionWorkStateFileName);
@@ -136,6 +140,79 @@ public static class JobSnapshotDiskEnricher
     private static string ResolveArtifactRoot(string jobDirectoryPath) =>
         Path.GetFullPath(jobDirectoryPath);
 
+    /// <summary>
+    /// Live jobs often have a non-empty <see cref="ChunkState.ChunkVirtualModel"/> from SSE without sub-chunk rows.
+    /// Work state on disk is authoritative for sub-chunk progress; merge those rows without replacing main-chunk VM.
+    /// </summary>
+    private static void TryMergeSubChunkVirtualModelFromDisk(JobSnapshot snap, string jobDirectoryPath, ILogger logger)
+    {
+        try
+        {
+            var artifactRoot = ResolveArtifactRoot(jobDirectoryPath);
+            var statePath = Path.Combine(artifactRoot, TranscriptionWorkStateFileName);
+            if (!File.Exists(statePath))
+                return;
+
+            string json;
+            try
+            {
+                json = File.ReadAllText(statePath);
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Could not read {File} for sub-chunk VM merge (job {JobId})", statePath, snap.Id);
+                return;
+            }
+
+            var doc = JsonSerializer.Deserialize<TranscriptionWorkStateDocument>(json, JsonOptions);
+            if (doc?.Chunks is not { Count: > 0 })
+                return;
+
+            var subRows = doc.Chunks.Where(c => c.IsSubChunk).ToList();
+            if (subRows.Count == 0)
+                return;
+
+            snap.Chunks ??= new ChunkState();
+            var vm = snap.Chunks.ChunkVirtualModel?.ToList() ?? new List<ChunkVirtualModelEntry>();
+
+            foreach (var c in subRows)
+            {
+                var existing = vm.FirstOrDefault(e =>
+                    e.IsSubChunk
+                    && e.ParentChunkIndex == c.ParentChunkIndex
+                    && e.SubChunkIndex == c.SubChunkIndex);
+                if (existing != null)
+                {
+                    existing.Index = c.Index;
+                    existing.State = string.IsNullOrEmpty(c.State) ? "Pending" : c.State;
+                    existing.StartedAt = c.StartedAt;
+                    existing.CompletedAt = c.CompletedAt;
+                    existing.ErrorMessage = c.ErrorMessage;
+                }
+                else
+                {
+                    vm.Add(new ChunkVirtualModelEntry
+                    {
+                        Index = c.Index,
+                        State = string.IsNullOrEmpty(c.State) ? "Pending" : c.State,
+                        StartedAt = c.StartedAt,
+                        CompletedAt = c.CompletedAt,
+                        ErrorMessage = c.ErrorMessage,
+                        IsSubChunk = true,
+                        ParentChunkIndex = c.ParentChunkIndex,
+                        SubChunkIndex = c.SubChunkIndex
+                    });
+                }
+            }
+
+            snap.Chunks.ChunkVirtualModel = vm;
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Sub-chunk VM merge from disk failed for job {JobId}", snap.Id);
+        }
+    }
+
     private static void ApplyWorkStateDocument(JobSnapshot snap, TranscriptionWorkStateDocument doc)
     {
         snap.Chunks ??= new ChunkState();
@@ -144,9 +221,22 @@ public static class JobSnapshotDiskEnricher
         var rows = doc.Chunks;
         if (rows is not { Count: > 0 }) return;
         if (snap.Chunks.Total <= 0)
-            snap.Chunks.Total = rows.Max(c => c.Index) + 1;
+        {
+            var mains = rows.Where(r => !r.IsSubChunk).ToList();
+            if (mains.Count > 0)
+                snap.Chunks.Total = mains.Max(c => c.Index) + 1;
+            else
+            {
+                var subs = rows.Where(r => r.IsSubChunk).ToList();
+                snap.Chunks.Total = subs.Count > 0 ? subs.Max(c => c.ParentChunkIndex) + 1 : rows.Max(c => c.Index) + 1;
+            }
+        }
+
         var vm = new List<ChunkVirtualModelEntry>(rows.Count);
-        foreach (var c in rows.OrderBy(x => x.Index))
+        foreach (var c in rows
+                     .OrderBy(x => x.Index)
+                     .ThenBy(x => x.IsSubChunk)
+                     .ThenBy(x => x.SubChunkIndex))
         {
             vm.Add(new ChunkVirtualModelEntry
             {
@@ -154,7 +244,10 @@ public static class JobSnapshotDiskEnricher
                 State = string.IsNullOrEmpty(c.State) ? "Pending" : c.State,
                 StartedAt = c.StartedAt,
                 CompletedAt = c.CompletedAt,
-                ErrorMessage = c.ErrorMessage
+                ErrorMessage = c.ErrorMessage,
+                IsSubChunk = c.IsSubChunk,
+                ParentChunkIndex = c.ParentChunkIndex,
+                SubChunkIndex = c.SubChunkIndex
             });
         }
         snap.Chunks.ChunkVirtualModel = vm;
@@ -210,6 +303,9 @@ public static class JobSnapshotDiskEnricher
         public string? StartedAt { get; set; }
         public string? CompletedAt { get; set; }
         public string? ErrorMessage { get; set; }
+        public bool IsSubChunk { get; set; }
+        public int ParentChunkIndex { get; set; }
+        public int SubChunkIndex { get; set; }
     }
 
     private sealed class XtractUiState

@@ -12,6 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole(options =>
 {
+    options.SingleLine = true;
     options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ ";
     options.UseUtcTimestamp = true;
 });

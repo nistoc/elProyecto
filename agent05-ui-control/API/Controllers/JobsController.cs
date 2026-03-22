@@ -88,6 +88,35 @@ public class JobsController : ControllerBase
         }
     }
 
+    private async Task PublishEnrichedSnapshotAsync(string jobId, CancellationToken ct)
+    {
+        var jobSnap = await _store.GetAsync(jobId, ct);
+        if (jobSnap == null) return;
+        jobSnap.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(jobId);
+        var snapshotJson = JsonSerializer.Serialize(new { type = "snapshot", payload = jobSnap }, ApiJson.CamelCase);
+        _broadcaster.Publish(jobId, snapshotJson);
+    }
+
+    private void ScheduleTranscribeSubFollowUpSnapshots(string jobId)
+    {
+        foreach (var ms in new[] { 600, 2000, 6000, 20000, 60000 })
+        {
+            var delayMs = ms;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(delayMs).ConfigureAwait(false);
+                    await PublishEnrichedSnapshotAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Follow-up snapshot after transcribe_sub for job {JobId}", jobId);
+                }
+            });
+        }
+    }
+
     private static ProblemDetails ToProblemDetails(string detail) =>
         new() { Title = "Bad Request", Status = 400, Detail = detail };
 
@@ -260,29 +289,59 @@ public class JobsController : ControllerBase
         CancellationToken ct = default)
     {
         if (body == null || string.IsNullOrWhiteSpace(body.Action))
-            return BadRequest(new { error = "action is required (cancel | skip | retranscribe | split)" });
+            return BadRequest(new { error = "action is required (cancel | skip | retranscribe | split | transcribe_sub)" });
         if (body.ChunkIndex < 0)
             return BadRequest(new { error = "chunkIndex must be >= 0" });
 
         var job = await _store.GetAsync(id, ct);
         if (job == null)
             return NotFound();
-        if (job.Phase != "transcriber" || job.Status != "running")
-            return Conflict(new { error = "chunk actions are only allowed while phase=transcriber and status=running" });
         if (string.IsNullOrWhiteSpace(job.Agent04JobId))
             return Conflict(new { error = "Agent04 job id not available yet; wait for transcription to start" });
 
         var action = ParseChunkAction(body.Action.Trim());
         if (action == null)
-            return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "skip", "retranscribe", "split" } });
+            return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "skip", "retranscribe", "split", "transcribe_sub" } });
+
+        var allowAfterDone = action == TranscriptionChunkAction.Split
+            || action == TranscriptionChunkAction.TranscribeSub
+            || action == TranscriptionChunkAction.Retranscribe;
+        if (!allowAfterDone && (job.Phase != "transcriber" || job.Status != "running"))
+            return Conflict(new { error = "this action requires phase=transcriber and status=running" });
+        if (allowAfterDone
+            && !string.Equals(job.Status, "running", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(job.Status, "done", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(job.Status, "completed", StringComparison.OrdinalIgnoreCase))
+            return Conflict(new { error = "split / transcribe_sub / retranscribe require status running, done, or completed" });
 
         if (action == TranscriptionChunkAction.Split && (body.SplitParts is null || body.SplitParts < 2))
             return BadRequest(new { error = "split requires splitParts >= 2" });
+        if (action == TranscriptionChunkAction.TranscribeSub && (body.SubChunkIndex is null || body.SubChunkIndex < 0))
+            return BadRequest(new { error = "transcribe_sub requires subChunkIndex >= 0" });
+        if (action == TranscriptionChunkAction.Cancel && body.SubChunkIndex is int badSub && badSub < 0)
+            return BadRequest(new { error = "subChunkIndex must be >= 0 when provided for cancel" });
 
         try
         {
             var splitParts = body.SplitParts ?? 0;
-            var result = await _transcription.ChunkCommandAsync(job.Agent04JobId!, action.Value, body.ChunkIndex, id, splitParts, ct);
+            var subChunkIndexForGrpc = action == TranscriptionChunkAction.Cancel
+                ? (body.SubChunkIndex is { } csi && csi >= 0 ? csi : -1)
+                : (body.SubChunkIndex ?? 0);
+            var result = await _transcription.ChunkCommandAsync(
+                job.Agent04JobId!,
+                action.Value,
+                body.ChunkIndex,
+                id,
+                splitParts,
+                subChunkIndexForGrpc,
+                ct);
+            if (result.Ok)
+            {
+                await PublishEnrichedSnapshotAsync(id, ct);
+                if (string.Equals(result.Message, "transcribe_sub_started", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(result.Message, "retranscribe_started", StringComparison.OrdinalIgnoreCase))
+                    ScheduleTranscribeSubFollowUpSnapshots(id);
+            }
             return Ok(new ChunkActionResponse(result.Ok, result.Message));
         }
         catch (RpcException ex)
@@ -305,6 +364,7 @@ public class JobsController : ControllerBase
             "skip" => TranscriptionChunkAction.Skip,
             "retranscribe" => TranscriptionChunkAction.Retranscribe,
             "split" => TranscriptionChunkAction.Split,
+            "transcribe_sub" => TranscriptionChunkAction.TranscribeSub,
             _ => null
         };
 
@@ -380,6 +440,8 @@ public sealed class ChunkActionRequest
     public string Action { get; set; } = "";
     public int ChunkIndex { get; set; }
     public int? SplitParts { get; set; }
+    /// <summary>For transcribe_sub: 0-based sub-chunk index (parent chunk = <see cref="ChunkIndex"/>).</summary>
+    public int? SubChunkIndex { get; set; }
 }
 
 public record ChunkActionResponse(bool Ok, string Message);

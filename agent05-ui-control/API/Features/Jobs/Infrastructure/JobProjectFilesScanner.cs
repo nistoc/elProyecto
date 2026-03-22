@@ -16,6 +16,7 @@ public static class JobProjectFilesScanner
     private static readonly Regex FirstDigits = new(@"\d+", RegexOptions.Compiled);
     private static readonly Regex SubChunkIndex = new(@"_sub_(\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex SubChunkResult = new(@"sub_chunk_(\d+)_result\.json$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex ChunkMerged = new(@"^chunk_(\d+)_merged\.(json|md)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public static JobProjectFiles Scan(string jobDir)
     {
@@ -138,6 +139,20 @@ public static class JobProjectFilesScanner
                         f.IsTranscript = false;
                         list.Add(f);
                     }
+                }
+
+                // agent01: split_chunks/chunk_N/chunk_N_merged.json|.md at folder root
+                foreach (var fi in EnumerateFilesSorted(dir.FullName))
+                {
+                    var mm = ChunkMerged.Match(fi.Name);
+                    if (!mm.Success || !int.TryParse(mm.Groups[1].Value, out var mergedFor) || mergedFor != parentIdx)
+                        continue;
+                    var mf = ToProjectFile(fi, RelPathUnderJob(jobDir, fi.FullName));
+                    mf.ParentIndex = parentIdx;
+                    mf.SubIndex = null;
+                    mf.HasTranscript = true;
+                    mf.IsTranscript = true;
+                    list.Add(mf);
                 }
             }
         }
