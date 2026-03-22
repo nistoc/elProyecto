@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Console;
 using TranslationImprover.Application;
 using TranslationImprover.Composition;
 
@@ -17,6 +18,14 @@ foreach (var p in envPaths)
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.ClearProviders();
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.SingleLine = true;
+    options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ ";
+    options.UseUtcTimestamp = true;
+});
 
 // Graceful shutdown: при остановке (Ctrl+C) хост завершится за ShutdownTimeout и процесс освободит порт
 builder.Host.ConfigureHostOptions(o => o.ShutdownTimeout = TimeSpan.FromSeconds(5));
