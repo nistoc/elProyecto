@@ -9,6 +9,12 @@ public interface IJobStatusStore
     void Update(string jobId, JobStatusUpdate update);
     JobStatus? Get(string jobId);
     IReadOnlyList<JobStatus> List(JobListFilter? filter = null);
+
+    /// <summary>
+    /// Ensures a Completed row exists for disk-only jobs (process restart): ChunkCommand retranscribe/split/etc.
+    /// Does not replace an existing row; may set <see cref="JobStatus.TotalChunks"/> when it was 0.
+    /// </summary>
+    void EnsureDiskBackedCompletedJob(string jobId, int totalChunks);
 }
 
 public sealed class JobStatusUpdate

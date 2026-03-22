@@ -38,14 +38,26 @@ public interface ITranscriptionPipeline
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Re-run API transcription for one main pipeline chunk and rebuild combined md/json from
-    /// <c>chunks_json</c> siblings + fresh result for <paramref name="chunkIndex"/>.
+    /// Re-run API transcription for one main pipeline chunk. Updates per-chunk JSON, cache manifest, and work state.
+    /// When <c>chunks/</c> contains <c>_part_NNN</c> audio, uses that file for <paramref name="chunkIndex"/> (not config root input).
+    /// Does not rebuild combined markdown or combined JSON (separate refiner flow).
     /// </summary>
     Task RetranscribeMainChunkAsync(
         TranscriptionConfig config,
         string artifactRoot,
         string agentJobId,
         int chunkIndex,
+        INodeModel? nodeModel,
+        CancellationToken cancellationToken = default,
+        IJobStatusStore? statusStore = null);
+
+    /// <summary>
+    /// Rebuild combined markdown and combined JSON from <c>chunks_json</c> only (no API calls).
+    /// </summary>
+    Task RebuildCombinedOutputsFromPerChunkJsonAsync(
+        TranscriptionConfig config,
+        string artifactRoot,
+        string agentJobId,
         INodeModel? nodeModel,
         CancellationToken cancellationToken = default);
 }

@@ -13,6 +13,8 @@ const messages: Record<Locale, Record<string, string>> = {
     appTitle: 'XtractManager',
     statusBarAriaLabel: 'Status bar',
     statusBarDefaultMessage: 'No notifications yet.',
+    statusBarDebugTitle:
+      'Last Agent04 VM merge (API). Copy this line when reporting sync issues between Agent04 and the UI.',
     clear: 'Clear',
     upload: 'Upload',
     transcriber: 'Transcriber',
@@ -96,10 +98,15 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsSubChunkPrefix: 'Sub-chunk',
     chunkStatsSplitMerged: 'Merged split (chunk)',
     chunkStatsSubChunkRunning: 'Sub-chunk transcription in progress (cancel from Agent04 / pipeline when supported).',
+    chunkStatsSubChunkRunningNoCancel: 'Sub-chunk transcription in progress.',
     chunkTranscribeSub: 'Transcribe sub-chunk',
     chunkTranscribeSubTitle: 'Send this sub-chunk audio to Agent04 (writes results/sub_chunk_XX_result.json)',
     chunkStatsVmStatus: 'VM status',
     chunkStatsTranscriptionActive: 'Transcription in progress — you can cancel this chunk',
+    chunkStatsTranscriptionActiveNoCancel: 'Transcription in progress',
+    chunkRebuildCombined: 'Rebuild combined MD + JSON',
+    chunkRebuildCombinedHint:
+      'Rebuild transcript.md and openai_response.json from per-chunk JSON (no new API calls).',
     chunkStatsCancelChunk: 'Cancel chunk',
     chunkStatsEmpty: 'No chunk rows yet (upload audio and run transcription, or open a job with chunk artifacts).',
     chunkStatsLoadingFiles: 'Loading project files…',
@@ -147,6 +154,8 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkPanelViewOnlyDisk:
       'View-only: data from disk / API snapshot. Chunk actions are disabled (no live Agent04 session).',
     chunkVmColError: 'Detail',
+    chunkVmActivityLog: 'Activity',
+    chunkVmActivityLogEmpty: 'No log lines yet.',
     chunkSplitPartsPrompt: 'Split into how many parts? (integer, minimum 2)',
     chunkSplitPartsInvalid: 'Enter an integer ≥ 2.',
     chunkSplitTitle:
@@ -156,6 +165,8 @@ const messages: Record<Locale, Record<string, string>> = {
     appTitle: 'XtractManager',
     statusBarAriaLabel: 'Строка состояния',
     statusBarDefaultMessage: 'Пока нет уведомлений.',
+    statusBarDebugTitle:
+      'Последний merge VM с Agent04 (API). Скопируйте строку при разборе рассинхрона UI и Agent04.',
     clear: 'Очистить',
     upload: 'Загрузка',
     transcriber: 'Транскрайбер',
@@ -240,11 +251,16 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsSplitMerged: 'Слитый результат сплита (чанк)',
     chunkStatsSubChunkRunning:
       'Идёт транскрипция субчанка (отмена — из Agent04 / пайплайна, когда будет поддержка).',
+    chunkStatsSubChunkRunningNoCancel: 'Идёт транскрипция субчанка.',
     chunkTranscribeSub: 'Транскрибировать субчанк',
     chunkTranscribeSubTitle:
       'Отправить аудио субчанка в Agent04 (пишет results/sub_chunk_XX_result.json)',
     chunkStatsVmStatus: 'Статус VM',
     chunkStatsTranscriptionActive: 'Идёт транскрипция — можно отменить этот чанк',
+    chunkStatsTranscriptionActiveNoCancel: 'Идёт транскрипция',
+    chunkRebuildCombined: 'Собрать общий MD + JSON',
+    chunkRebuildCombinedHint:
+      'Пересобрать transcript.md и openai_response.json из chunks_json (без новых запросов к API).',
     chunkStatsCancelChunk: 'Отменить чанк',
     chunkStatsEmpty: 'Пока нет строк по чанкам (загрузите аудио и запустите транскрипцию или откройте job с артефактами).',
     chunkStatsLoadingFiles: 'Загрузка файлов проекта…',
@@ -292,6 +308,8 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkPanelViewOnlyDisk:
       'Только просмотр: данные с диска / снимок API. Действия с чанками отключены (нет живой сессии Agent04).',
     chunkVmColError: 'Деталь',
+    chunkVmActivityLog: 'Журнал',
+    chunkVmActivityLogEmpty: 'Пока нет записей.',
     chunkSplitPartsPrompt: 'На сколько частей разбить? (целое число, минимум 2)',
     chunkSplitPartsInvalid: 'Введите целое число ≥ 2.',
     chunkSplitTitle:
@@ -301,6 +319,8 @@ const messages: Record<Locale, Record<string, string>> = {
     appTitle: 'XtractManager',
     statusBarAriaLabel: 'Barra de estado',
     statusBarDefaultMessage: 'Sin notificaciones por ahora.',
+    statusBarDebugTitle:
+      'Última fusión VM con Agent04 (API). Copie esta línea si informa problemas de sincronización con la UI.',
     clear: 'Limpiar',
     upload: 'Subir',
     transcriber: 'Transcriptor',
@@ -385,11 +405,16 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsSplitMerged: 'Fusión del split (fragmento)',
     chunkStatsSubChunkRunning:
       'Transcripción del subfragmento en curso (cancelar vía Agent04 / pipeline cuando exista).',
+    chunkStatsSubChunkRunningNoCancel: 'Transcripción del subfragmento en curso.',
     chunkTranscribeSub: 'Transcribir subfragmento',
     chunkTranscribeSubTitle:
       'Enviar audio del subfragmento a Agent04 (escribe results/sub_chunk_XX_result.json)',
     chunkStatsVmStatus: 'Estado VM',
     chunkStatsTranscriptionActive: 'Transcripción en curso — puede cancelar este fragmento',
+    chunkStatsTranscriptionActiveNoCancel: 'Transcripción en curso',
+    chunkRebuildCombined: 'Reconstruir MD + JSON combinados',
+    chunkRebuildCombinedHint:
+      'Reconstruir transcript.md y openai_response.json desde JSON por fragmento (sin nuevas llamadas a la API).',
     chunkStatsCancelChunk: 'Cancelar fragmento',
     chunkStatsEmpty: 'Aún no hay filas por fragmento (suba audio y ejecute la transcripción o abra un trabajo con artefactos).',
     chunkStatsLoadingFiles: 'Cargando archivos del proyecto…',
@@ -437,6 +462,8 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkPanelViewOnlyDisk:
       'Solo lectura: datos del disco / instantánea de la API. Las acciones de fragmentos están desactivadas (sin sesión viva de Agent04).',
     chunkVmColError: 'Detalle',
+    chunkVmActivityLog: 'Actividad',
+    chunkVmActivityLogEmpty: 'Aún no hay entradas.',
     chunkSplitPartsPrompt:
       '¿En cuántas partes dividir? (entero, mínimo 2)',
     chunkSplitPartsInvalid: 'Introduzca un entero ≥ 2.',

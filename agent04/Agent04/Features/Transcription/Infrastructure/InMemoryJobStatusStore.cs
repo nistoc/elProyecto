@@ -42,6 +42,33 @@ public sealed class InMemoryJobStatusStore : IJobStatusStore
 
     public JobStatus? Get(string jobId) => _jobs.TryGetValue(jobId, out var j) ? j : null;
 
+    public void EnsureDiskBackedCompletedJob(string jobId, int totalChunks)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+            return;
+        var now = DateTimeOffset.UtcNow;
+        var t = Math.Max(0, totalChunks);
+        if (_jobs.TryAdd(
+                jobId,
+                new JobStatus
+                {
+                    JobId = jobId,
+                    State = JobState.Completed,
+                    TotalChunks = t,
+                    ProcessedChunks = t,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                }))
+            return;
+
+        if (_jobs.TryGetValue(jobId, out var existing) && t > 0 && existing.TotalChunks <= 0)
+        {
+            existing.TotalChunks = t;
+            existing.ProcessedChunks = t;
+            existing.UpdatedAt = now;
+        }
+    }
+
     public IReadOnlyList<JobStatus> List(JobListFilter? filter)
     {
         var list = _jobs.Values.AsEnumerable();

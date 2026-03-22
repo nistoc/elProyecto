@@ -52,6 +52,13 @@ public sealed class CachingJobStatusStore : IJobStatusStore
         return job;
     }
 
+    public void EnsureDiskBackedCompletedJob(string jobId, int totalChunks)
+    {
+        _inner.EnsureDiskBackedCompletedJob(jobId, totalChunks);
+        _cache.Remove(JobKeyPrefix + jobId);
+        Interlocked.Increment(ref _listGeneration);
+    }
+
     public IReadOnlyList<JobStatus> List(JobListFilter? filter)
     {
         var gen = Volatile.Read(ref _listGeneration);

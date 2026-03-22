@@ -71,6 +71,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
     private readonly ITranscriptionOutputWriter _output;
     private readonly ITranscriptionMerger _merger;
     private readonly ICancellationManagerFactory _cancellationFactory;
+    private readonly INodeModel? _nodeModel;
     private readonly ILogger<TranscriptionPipeline>? _logger;
 
     public TranscriptionPipeline(
@@ -80,6 +81,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         ITranscriptionOutputWriter output,
         ITranscriptionMerger merger,
         ICancellationManagerFactory cancellationFactory,
+        INodeModel? nodeModel = null,
         ILogger<TranscriptionPipeline>? logger = null)
     {
         _audioUtils = audioUtils;
@@ -88,7 +90,19 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         _output = output;
         _merger = merger;
         _cancellationFactory = cancellationFactory;
+        _nodeModel = nodeModel;
         _logger = logger;
+    }
+
+    private void AppendTranscriptActivityForChunk(string? agentJobId, int chunkIndex, int? subChunkIndex, string message)
+    {
+        if (_nodeModel == null || string.IsNullOrEmpty(agentJobId) || chunkIndex < 0)
+            return;
+        var line = $"{DateTimeOffset.UtcNow:o} {message}";
+        var nodeId = subChunkIndex is >= 0
+            ? $"{agentJobId}:transcribe:chunk-{chunkIndex}:sub-{subChunkIndex.Value}"
+            : $"{agentJobId}:transcribe:chunk-{chunkIndex}";
+        _nodeModel.AppendTranscriptActivityLog(nodeId, line);
     }
 
     public async Task<(string MdPath, string JsonPath)> ProcessFileAsync(
@@ -520,6 +534,13 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         if (rawResponse == null)
         {
+            if (cancellation.ClearChunkCancelFlag(index))
+            {
+                _logger?.LogInformation(
+                    "Removed stale cancel_{ChunkIndex}.flag before HTTP transcribe (under job .agent04_chunk_cancel); a previous cancel left it on disk.",
+                    index);
+            }
+
             var options = new TranscriptionClientOptions
             {
                 Language = config.Language,
@@ -537,7 +558,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 cancellation,
                 index,
                 transcribeCts,
-                stopPolling.Token);
+                stopPolling.Token,
+                _logger);
             TranscriptionClientResult result;
             try
             {
@@ -557,6 +579,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             }
 
             rawResponse = result.RawResponse;
+            AppendTranscriptActivityForChunk(agentJobId, index, null, "Transcribe HTTP OK");
             if (manifestGate != null)
                 await manifestGate.WaitAsync(ct);
             try
@@ -621,7 +644,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         ICancellationManager cancellation,
         int chunkIndex,
         CancellationTokenSource cancelTranscription,
-        CancellationToken stopPollingToken)
+        CancellationToken stopPollingToken,
+        ILogger? pollLogger = null)
     {
         try
         {
@@ -630,6 +654,9 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 await Task.Delay(200, stopPollingToken).ConfigureAwait(false);
                 if (cancellation.IsCancelled(chunkIndex))
                 {
+                    pollLogger?.LogWarning(
+                        "Chunk {ChunkIndex}: cancel_N.flag is set under job .agent04_chunk_cancel — cancelling in-flight HTTP transcribe (operator Cancel or stale file).",
+                        chunkIndex);
                     cancelTranscription.Cancel();
                     return;
                 }
@@ -646,7 +673,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         int parentChunkIndex,
         int subChunkIndex,
         CancellationTokenSource cancelTranscription,
-        CancellationToken stopPollingToken)
+        CancellationToken stopPollingToken,
+        ILogger? pollLogger = null)
     {
         try
         {
@@ -655,6 +683,10 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 await Task.Delay(200, stopPollingToken).ConfigureAwait(false);
                 if (cancellation.IsSubChunkCancelled(parentChunkIndex, subChunkIndex))
                 {
+                    pollLogger?.LogWarning(
+                        "Sub-chunk parent={Parent} sub={Sub}: cancel_sub flag set — cancelling in-flight HTTP transcribe.",
+                        parentChunkIndex,
+                        subChunkIndex);
                     cancelTranscription.Cancel();
                     return;
                 }
@@ -708,6 +740,14 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             ct).ConfigureAwait(false);
 
         var cancelMgr = _cancellationFactory.Get(agentJobId, artifactRoot);
+        if (cancelMgr.ClearSubChunkCancelFlag(parentChunkIndex, subChunkIndex))
+        {
+            _logger?.LogInformation(
+                "Removed stale cancel_sub_{Parent}_{Sub}.flag before sub-chunk HTTP transcribe.",
+                parentChunkIndex,
+                subChunkIndex);
+        }
+
         using var userCancelCts = new CancellationTokenSource();
         using var transcribeCts = CancellationTokenSource.CreateLinkedTokenSource(ct, userCancelCts.Token);
         using var stopPolling = new CancellationTokenSource();
@@ -717,7 +757,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 parentChunkIndex,
                 subChunkIndex,
                 userCancelCts,
-                stopPolling.Token),
+                stopPolling.Token,
+                _logger),
             CancellationToken.None);
 
         try
@@ -730,10 +771,16 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 ResponseFormat = config.Get<string>("response_format"),
                 ChunkingStrategy = config.Get<string>("chunking_strategy"),
                 ChunkIndex = parentChunkIndex,
+                SubChunkIndex = subChunkIndex,
                 AgentJobId = agentJobId,
                 ParallelWorkersConfigured = parallelConfigured
             };
             var clientResult = await _client.TranscribeAsync(audioPath, options, transcribeCts.Token).ConfigureAwait(false);
+            AppendTranscriptActivityForChunk(
+                agentJobId,
+                parentChunkIndex,
+                subChunkIndex,
+                "Transcribe HTTP OK (sub-chunk)");
             var tr = new TranscriptionResult(
                 Path.GetFileName(audioPath),
                 0,
@@ -823,54 +870,102 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         string agentJobId,
         int chunkIndex,
         INodeModel? nodeModel,
-        CancellationToken ct)
+        CancellationToken ct,
+        IJobStatusStore? statusStore = null)
     {
-        var files = config.GetFiles();
-        if (files.Count == 0)
-            throw new InvalidOperationException("config has no input file entry");
-        var rel = files[0].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var inputPath = Path.Combine(artifactRoot, rel);
-        if (!File.Exists(inputPath))
-            throw new FileNotFoundException("Input audio not found under artifact root", inputPath);
-
-        var workingPath = await ConvertToWavIfNeededAsync(config, inputPath, artifactRoot, ct).ConfigureAwait(false);
-        var baseName = Path.GetFileNameWithoutExtension(Path.GetFileName(inputPath));
-        var mdRel = ResolveOutputPattern(config.MdOutputPath, baseName, agentJobId);
-        var jsonRel = ResolveOutputPattern(config.RawJsonOutputPath, baseName, agentJobId);
-        var mdPath = Path.Combine(artifactRoot, mdRel);
-        var jsonPath = Path.Combine(artifactRoot, jsonRel);
-        EnsureDirectoryFor(mdPath);
-        EnsureDirectoryFor(jsonPath);
-
-        var splitWorkdirFull = Path.Combine(artifactRoot, config.SplitWorkdir);
-        var chunkInfos = await PrepareChunksAsync(config, workingPath, splitWorkdirFull, ct).ConfigureAwait(false);
-        var total = chunkInfos.Count;
-        if (chunkIndex < 0 || chunkIndex >= total)
-            throw new ArgumentOutOfRangeException(nameof(chunkIndex));
-
         if (config.Get<bool?>("save_per_chunk_json") != true)
-            throw new InvalidOperationException("retranscribe requires save_per_chunk_json=true and existing chunks_json for other chunks");
+            throw new InvalidOperationException("retranscribe requires save_per_chunk_json=true");
 
         var cacheDirFull = Path.Combine(artifactRoot, config.CacheDir);
         EnsureDirectoryFor(cacheDirFull);
-        var manifestPath = Path.Combine(cacheDirFull, baseName + ".manifest.json");
+
+        var chunksDir = Path.Combine(artifactRoot, "chunks");
+        var indexMap = TranscriptionChunkOnDiskReader.MapPartIndexToAudioPath(chunksDir);
+
+        ChunkInfo targetChunk;
+        int total;
+        string baseName;
+        string manifestPath;
+
+        if (indexMap.Count > 0)
+        {
+            if (!indexMap.TryGetValue(chunkIndex, out var diskAudioPath) || !File.Exists(diskAudioPath))
+            {
+                throw new InvalidOperationException(
+                    $"chunks/ has split audio but no file for main chunk index {chunkIndex} (expected name containing _part_{chunkIndex}).");
+            }
+
+            var inferredTotal = indexMap.Keys.Max() + 1;
+            var workState = await TranscriptionWorkStateFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
+            total = workState?.TotalChunks is { } ws && ws > 0
+                ? Math.Max(ws, inferredTotal)
+                : inferredTotal;
+            if (chunkIndex < 0 || chunkIndex >= total)
+                throw new ArgumentOutOfRangeException(nameof(chunkIndex));
+
+            targetChunk = new ChunkInfo(diskAudioPath, 0, 0);
+            var chunkFileName = Path.GetFileName(diskAudioPath);
+            baseName = TranscriptionChunkOnDiskReader.ManifestStemFromChunkFileName(chunkFileName);
+            var preferredManifest = Path.Combine(cacheDirFull, baseName + ".manifest.json");
+            manifestPath = TranscriptionChunkOnDiskReader.TryResolveManifestJsonPath(artifactRoot, config.CacheDir, baseName)
+                             ?? preferredManifest;
+            if (Directory.Exists(cacheDirFull))
+            {
+                string[] manifests;
+                try
+                {
+                    manifests = Directory.GetFiles(cacheDirFull, "*.manifest.json");
+                }
+                catch
+                {
+                    manifests = Array.Empty<string>();
+                }
+
+                if (manifests.Length > 1 && !File.Exists(preferredManifest))
+                {
+                    _logger?.LogWarning(
+                        "Several .manifest.json files in cache and none named {Expected}; using {Chosen} for retranscribe.",
+                        Path.GetFileName(preferredManifest),
+                        Path.GetFileName(manifestPath));
+                }
+            }
+        }
+        else
+        {
+            var files = config.GetFiles();
+            if (files.Count == 0)
+                throw new InvalidOperationException("config has no input file entry and chunks/ has no split audio");
+            var rel = files[0].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var inputPath = Path.Combine(artifactRoot, rel);
+            if (!File.Exists(inputPath))
+                throw new FileNotFoundException("Input audio not found under artifact root", inputPath);
+
+            var workingPath = await ConvertToWavIfNeededAsync(config, inputPath, artifactRoot, ct).ConfigureAwait(false);
+            baseName = Path.GetFileNameWithoutExtension(Path.GetFileName(inputPath));
+            var splitWorkdirFull = Path.Combine(artifactRoot, config.SplitWorkdir);
+            var chunkInfos = await PrepareChunksAsync(config, workingPath, splitWorkdirFull, ct).ConfigureAwait(false);
+            total = chunkInfos.Count;
+            if (chunkIndex < 0 || chunkIndex >= total)
+                throw new ArgumentOutOfRangeException(nameof(chunkIndex));
+            targetChunk = chunkInfos[chunkIndex];
+            manifestPath = Path.Combine(cacheDirFull, baseName + ".manifest.json");
+        }
+
+        statusStore?.Update(
+            agentJobId,
+            new JobStatusUpdate
+            {
+                State = JobState.Running,
+                ProgressPercent = 0,
+                CurrentPhase = "Retranscribing",
+                TotalChunks = total,
+                ProcessedChunks = 0
+            });
+
         var manifest = await _cache.LoadManifestAsync(manifestPath, ct).ConfigureAwait(false);
-        var targetBasename = Path.GetFileName(chunkInfos[chunkIndex].Path);
+        var targetBasename = Path.GetFileName(targetChunk.Path);
         manifest.Chunks.Remove(targetBasename);
         await _cache.SaveManifestAsync(manifestPath, manifest, ct).ConfigureAwait(false);
-
-        var merged = new TranscriptionResult[total];
-        for (var i = 0; i < total; i++)
-        {
-            if (i == chunkIndex)
-                continue;
-            var loaded = await TryLoadPerChunkTranscriptionResultAsync(config, artifactRoot, chunkInfos[i], ct)
-                .ConfigureAwait(false);
-            if (loaded == null)
-                throw new InvalidOperationException(
-                    $"Missing or invalid chunks_json for chunk {i}; cannot retranscribe chunk {chunkIndex} alone.");
-            merged[i] = loaded;
-        }
 
         var transcribeParent = agentJobId + ":transcribe";
         var localKey = "chunk-" + chunkIndex;
@@ -902,7 +997,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         {
             newResult = await ProcessChunkAsync(
                 config,
-                chunkInfos[chunkIndex],
+                targetChunk,
                 chunkIndex,
                 total,
                 manifest,
@@ -929,10 +1024,18 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 ex.Message,
                 false,
                 ct).ConfigureAwait(false);
+            statusStore?.Update(
+                agentJobId,
+                new JobStatusUpdate
+                {
+                    State = JobState.Completed,
+                    CurrentPhase = "",
+                    TotalChunks = total,
+                    ProcessedChunks = total
+                });
             throw;
         }
 
-        merged[chunkIndex] = newResult;
         var completedAt = DateTimeOffset.UtcNow;
         if (nodeModel != null)
             CompleteStep(nodeModel, agentJobId, transcribeParent, localKey, JobState.Completed);
@@ -950,15 +1053,116 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         var perChunkRel = config.Get<string>("per_chunk_json_dir") ?? "chunks_json";
         var perChunkDirFull = Path.Combine(artifactRoot, perChunkRel);
-        _output.SavePerChunkJson(Path.GetFileName(chunkInfos[chunkIndex].Path), newResult.RawResponse, perChunkDirFull);
+        _output.SavePerChunkJson(Path.GetFileName(targetChunk.Path), newResult.RawResponse, perChunkDirFull);
+
+        _logger?.LogInformation(
+            "Retranscribed main chunk {Index}; updated per-chunk JSON under {Dir}",
+            chunkIndex,
+            perChunkDirFull);
+
+        statusStore?.Update(
+            agentJobId,
+            new JobStatusUpdate
+            {
+                State = JobState.Completed,
+                CurrentPhase = "",
+                TotalChunks = total,
+                ProcessedChunks = total
+            });
+    }
+
+    /// <inheritdoc />
+    public async Task RebuildCombinedOutputsFromPerChunkJsonAsync(
+        TranscriptionConfig config,
+        string artifactRoot,
+        string agentJobId,
+        INodeModel? nodeModel,
+        CancellationToken ct)
+    {
+        _ = nodeModel;
+        if (config.Get<bool?>("save_per_chunk_json") != true)
+            throw new InvalidOperationException("rebuild_combined requires save_per_chunk_json=true");
+
+        var baseName = ResolveCombinedOutputBaseName(config, artifactRoot);
+        var mdRel = ResolveOutputPattern(config.MdOutputPath, baseName, agentJobId);
+        var jsonRel = ResolveOutputPattern(config.RawJsonOutputPath, baseName, agentJobId);
+        var mdPath = Path.Combine(artifactRoot, mdRel);
+        var jsonPath = Path.Combine(artifactRoot, jsonRel);
+        EnsureDirectoryFor(mdPath);
+        EnsureDirectoryFor(jsonPath);
+
+        var chunksDir = Path.Combine(artifactRoot, "chunks");
+        var indexMap = TranscriptionChunkOnDiskReader.MapPartIndexToAudioPath(chunksDir);
+        IReadOnlyList<ChunkInfo> chunkInfos;
+        int total;
+
+        if (indexMap.Count > 0)
+        {
+            var inferredTotal = indexMap.Keys.Max() + 1;
+            var workState = await TranscriptionWorkStateFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
+            total = workState?.TotalChunks is int ws && ws > 0 ? Math.Max(ws, inferredTotal) : inferredTotal;
+            var list = new List<ChunkInfo>(total);
+            for (var i = 0; i < total; i++)
+            {
+                if (!indexMap.TryGetValue(i, out var p))
+                    throw new InvalidOperationException($"rebuild_combined: missing audio under chunks/ for index {i}.");
+                list.Add(new ChunkInfo(p, 0, 0));
+            }
+
+            chunkInfos = list;
+        }
+        else
+        {
+            var files = config.GetFiles();
+            if (files.Count == 0)
+                throw new InvalidOperationException("rebuild_combined: config has no input file and chunks/ has no split audio.");
+            var rel = files[0].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var inputPath = Path.Combine(artifactRoot, rel);
+            if (!File.Exists(inputPath))
+                throw new FileNotFoundException("rebuild_combined: input audio not found", inputPath);
+            var workingPath = await ConvertToWavIfNeededAsync(config, inputPath, artifactRoot, ct).ConfigureAwait(false);
+            var splitWorkdirFull = Path.Combine(artifactRoot, config.SplitWorkdir);
+            var list = await PrepareChunksAsync(config, workingPath, splitWorkdirFull, ct).ConfigureAwait(false);
+            chunkInfos = list;
+            total = list.Count;
+        }
+
+        var merged = new List<TranscriptionResult>();
+        for (var i = 0; i < total; i++)
+        {
+            var loaded = await TryLoadPerChunkTranscriptionResultAsync(config, artifactRoot, chunkInfos[i], ct)
+                .ConfigureAwait(false);
+            if (loaded == null)
+                throw new InvalidOperationException($"rebuild_combined: missing or invalid chunks_json for chunk {i}.");
+            merged.Add(loaded);
+        }
 
         _output.InitializeMarkdown(mdPath);
         _output.ResetSpeakerMap();
         foreach (var r in merged)
             _output.AppendSegmentsToMarkdown(mdPath, r.Segments, r.Offset, r.EmitGuard);
         _output.FinalizeMarkdown(mdPath);
-        _output.SaveCombinedJson(jsonPath, merged.ToList());
-        _logger?.LogInformation("Retranscribed main chunk {Index}; rebuilt {Md} and {Json}", chunkIndex, mdPath, jsonPath);
+        _output.SaveCombinedJson(jsonPath, merged);
+        _logger?.LogInformation("rebuild_combined: wrote {Md} and {Json}", mdPath, jsonPath);
+    }
+
+    private static string ResolveCombinedOutputBaseName(TranscriptionConfig config, string artifactRoot)
+    {
+        var files = config.GetFiles();
+        if (files.Count > 0)
+        {
+            var rel = files[0].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var inputPath = Path.Combine(artifactRoot, rel);
+            if (File.Exists(inputPath))
+                return Path.GetFileNameWithoutExtension(Path.GetFileName(inputPath));
+        }
+
+        var map = TranscriptionChunkOnDiskReader.MapPartIndexToAudioPath(Path.Combine(artifactRoot, "chunks"));
+        if (map.TryGetValue(0, out var p0))
+            return TranscriptionChunkOnDiskReader.ManifestStemFromChunkFileName(Path.GetFileName(p0));
+
+        throw new InvalidOperationException(
+            "rebuild_combined: cannot infer output base name (config input missing under job root and no chunks/_part_* audio).");
     }
 
     private async Task<TranscriptionResult?> TryLoadPerChunkTranscriptionResultAsync(

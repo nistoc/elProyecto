@@ -186,6 +186,7 @@ function AppContent() {
                           chunkOperatorIndex={chunkOperatorIndex}
                           locale={locale}
                           t={t}
+                          refreshJobSnapshot={refreshJobSnapshot}
                           onProjectFilesChanged={async () => {
                             await jobFiles.reload();
                             await refreshJobSnapshot();
@@ -282,7 +283,24 @@ function AppContent() {
       </div>
 
       <footer className="status-bar" role="status" aria-label={t('statusBarAriaLabel')}>
-        <span className="status-bar__text">{t('statusBarDefaultMessage')}</span>
+        <span
+          className={
+            job?.transcriptionFooterHint?.trim()
+              ? 'status-bar__text status-bar__text--hint'
+              : 'status-bar__text'
+          }
+          title={job?.transcriptionFooterHint?.trim() || undefined}
+        >
+          {job?.transcriptionFooterHint?.trim() || t('statusBarDefaultMessage')}
+        </span>
+        {job?.transcriptionSyncDebug?.trim() ? (
+          <span
+            className="status-bar__debug"
+            title={t('statusBarDebugTitle')}
+          >
+            {job.transcriptionSyncDebug.trim()}
+          </span>
+        ) : null}
       </footer>
 
       <style>{`
@@ -363,14 +381,15 @@ function AppContent() {
         .status-bar {
           flex-shrink: 0;
           display: flex;
-          align-items: center;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0.25rem;
           min-height: 1.75rem;
           padding: 0.35rem 1rem;
           border-top: 1px solid var(--color-border);
           background: var(--color-surface-sunken);
           color: var(--color-text-secondary);
           font-size: 0.75rem;
-          gap: 0.75rem;
         }
         .status-bar__text {
           flex: 1;
@@ -378,6 +397,17 @@ function AppContent() {
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+        }
+        .status-bar__text--hint {
+          color: var(--color-warning, #b8860b);
+        }
+        .status-bar__debug {
+          font-family: ui-monospace, monospace;
+          font-size: 0.62rem;
+          line-height: 1.3;
+          color: var(--color-text-muted);
+          word-break: break-all;
+          white-space: normal;
         }
         .steps-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
         .step-content { margin-top: 0.5rem; }

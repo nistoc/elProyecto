@@ -93,13 +93,51 @@ public class JobsController : ControllerBase
         var jobSnap = await _store.GetAsync(jobId, ct);
         if (jobSnap == null) return;
         jobSnap.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(jobId);
+        await MergeAgent04LiveIntoSnapshotAsync(jobSnap, ct).ConfigureAwait(false);
         var snapshotJson = JsonSerializer.Serialize(new { type = "snapshot", payload = jobSnap }, ApiJson.CamelCase);
         _broadcaster.Publish(jobId, snapshotJson);
     }
 
+    /// <summary>
+    /// Fills <see cref="JobSnapshot.Chunks.ChunkVirtualModel"/> and footer from Agent04 after main job Completed (retranscribe, long HTTP).
+    /// </summary>
+    private async Task MergeAgent04LiveIntoSnapshotAsync(JobSnapshot snap, CancellationToken ct)
+    {
+        var agentId = snap.Agent04JobId?.Trim();
+        if (string.IsNullOrEmpty(agentId))
+            return;
+        try
+        {
+            var live = await _transcription.GetJobStatusAsync(agentId, ct).ConfigureAwait(false);
+            if (live == null)
+                return;
+            if (live.ChunkVirtualModel is { Count: > 0 })
+            {
+                snap.Chunks ??= new ChunkState();
+                var prevVm = snap.Chunks.ChunkVirtualModel;
+                var prevCount = prevVm?.Count ?? 0;
+                var merged = ChunkVirtualModelMerge.Merge(prevVm, live.ChunkVirtualModel);
+                snap.Chunks.ChunkVirtualModel = merged;
+                snap.TranscriptionSyncDebug =
+                    $"{DateTime.UtcNow:O} liveVm={live.ChunkVirtualModel.Count} prevVm={prevCount} mergedVm={merged.Count} " +
+                    $"footer={(string.IsNullOrWhiteSpace(live.TranscriptionFooterHint) ? 0 : 1)}";
+            }
+            else
+                snap.TranscriptionSyncDebug =
+                    $"{DateTime.UtcNow:O} liveVm=0 prevVm={(snap.Chunks?.ChunkVirtualModel?.Count ?? 0)} mergedVm=skip";
+
+            if (!string.IsNullOrWhiteSpace(live.TranscriptionFooterHint))
+                snap.TranscriptionFooterHint = live.TranscriptionFooterHint;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "MergeAgent04LiveIntoSnapshotAsync failed for Xtract job (Agent04 {AgentId})", agentId);
+        }
+    }
+
     private void ScheduleTranscribeSubFollowUpSnapshots(string jobId)
     {
-        foreach (var ms in new[] { 600, 2000, 6000, 20000, 60000 })
+        foreach (var ms in new[] { 600, 2000, 6000, 15000, 30000, 60000, 120000 })
         {
             var delayMs = ms;
             _ = Task.Run(async () =>
@@ -289,7 +327,7 @@ public class JobsController : ControllerBase
         CancellationToken ct = default)
     {
         if (body == null || string.IsNullOrWhiteSpace(body.Action))
-            return BadRequest(new { error = "action is required (cancel | skip | retranscribe | split | transcribe_sub)" });
+            return BadRequest(new { error = "action is required (cancel | skip | retranscribe | split | transcribe_sub | rebuild_combined)" });
         if (body.ChunkIndex < 0)
             return BadRequest(new { error = "chunkIndex must be >= 0" });
 
@@ -305,7 +343,8 @@ public class JobsController : ControllerBase
 
         var allowAfterDone = action == TranscriptionChunkAction.Split
             || action == TranscriptionChunkAction.TranscribeSub
-            || action == TranscriptionChunkAction.Retranscribe;
+            || action == TranscriptionChunkAction.Retranscribe
+            || action == TranscriptionChunkAction.RebuildCombined;
         if (!allowAfterDone && (job.Phase != "transcriber" || job.Status != "running"))
             return Conflict(new { error = "this action requires phase=transcriber and status=running" });
         if (allowAfterDone
@@ -339,7 +378,8 @@ public class JobsController : ControllerBase
             {
                 await PublishEnrichedSnapshotAsync(id, ct);
                 if (string.Equals(result.Message, "transcribe_sub_started", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(result.Message, "retranscribe_started", StringComparison.OrdinalIgnoreCase))
+                    || string.Equals(result.Message, "retranscribe_started", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(result.Message, "rebuild_combined_started", StringComparison.OrdinalIgnoreCase))
                     ScheduleTranscribeSubFollowUpSnapshots(id);
             }
             return Ok(new ChunkActionResponse(result.Ok, result.Message));
@@ -365,6 +405,7 @@ public class JobsController : ControllerBase
             "retranscribe" => TranscriptionChunkAction.Retranscribe,
             "split" => TranscriptionChunkAction.Split,
             "transcribe_sub" => TranscriptionChunkAction.TranscribeSub,
+            "rebuild_combined" => TranscriptionChunkAction.RebuildCombined,
             _ => null
         };
 
@@ -375,6 +416,7 @@ public class JobsController : ControllerBase
         if (job == null)
             return NotFound();
         job.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(id);
+        await MergeAgent04LiveIntoSnapshotAsync(job, ct).ConfigureAwait(false);
         _logger.LogDebug("Get({Id}): JobDirectoryPath={Path}, Chunks={Chunks}, Result={Result}, MdOutputPath={Md}",
             id, job.JobDirectoryPath, job.Chunks != null ? "set" : "null", job.Result != null ? "set" : "null", job.MdOutputPath ?? "null");
         return Ok(job);

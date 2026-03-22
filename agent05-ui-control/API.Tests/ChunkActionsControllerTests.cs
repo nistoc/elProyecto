@@ -62,6 +62,9 @@ internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient
         await Task.CompletedTask;
         yield break;
     }
+
+    public Task<JobStatusUpdate?> GetJobStatusAsync(string agent04JobId, CancellationToken ct = default) =>
+        Task.FromResult<JobStatusUpdate?>(null);
 }
 
 public class ChunkActionsControllerTests

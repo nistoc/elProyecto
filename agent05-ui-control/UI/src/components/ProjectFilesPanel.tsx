@@ -189,6 +189,10 @@ export function FileRow({
   onEditText?: (f: JobProjectFile) => void;
 }) {
   const url = jobProjectFileContentUrl(jobId, f.relativePath);
+  const nameTitle =
+    f.kind === 'text' && onEditText
+      ? `${f.relativePath}\n${t('doubleClickToEdit')}`
+      : f.relativePath;
   return (
     <li className="pf-file">
       <div
@@ -205,11 +209,21 @@ export function FileRow({
         }}
       >
         <div className="pf-file-name-row">
-          <span className="pf-file-name" title={f.relativePath}>
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="pf-file-name"
+            title={nameTitle}
+            aria-label={`${t('openFile')}: ${f.name}`}
+            onDoubleClick={(e) => {
+              if (f.kind !== 'text' || !onEditText) return;
+              e.preventDefault();
+              e.stopPropagation();
+              onEditText(f);
+            }}
+          >
             {f.name}
-          </span>
-          <a href={url} target="_blank" rel="noreferrer" className="pf-open">
-            {t('openFile')}
           </a>
           {f.kind === 'text' && onEditText && (
             <button
@@ -589,20 +603,38 @@ const styles = `
     min-width: 0;
   }
   .pf-file-name-row .pf-file-name {
-    flex: 1 1 auto;
     min-width: 0;
   }
-  .pf-file-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  a.pf-file-name {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-link);
+    text-decoration: none;
+  }
+  a.pf-file-name:hover {
+    text-decoration: underline;
+  }
   .pf-file-meta { color: var(--color-text-secondary); font-size: 0.75rem; }
-  .pf-file-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+  .pf-file-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    flex: 0 0 auto;
+    min-width: min(800px, 100%);
+  }
   .pf-wave {
     position: relative;
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    width: min(100%, 800px);
+    width: 800px;
     min-width: 280px;
-    max-width: 800px;
+    flex: 0 0 auto;
+    transition: none;
     --pf-wave-line: var(--color-border-strong);
     --pf-wave-fill: color-mix(in srgb, var(--color-primary) 50%, var(--color-surface-sunken));
     --pf-wave-playhead: var(--color-primary);
@@ -646,6 +678,7 @@ const styles = `
     background: var(--color-surface-sunken);
     overflow: hidden;
     touch-action: none;
+    transition: none;
   }
   .pf-wave__cursor-time {
     position: absolute;
@@ -674,6 +707,7 @@ const styles = `
     width: 100%;
     height: 40px;
     vertical-align: top;
+    transition: none;
   }
   .pf-wave__overlay {
     position: absolute;
@@ -687,8 +721,7 @@ const styles = `
     pointer-events: none;
   }
   .pf-wave__overlay--err { color: var(--color-error-muted); }
-  .pf-open, .pf-edit { font-size: 0.75rem; }
-  .pf-open { color: var(--color-link); }
+  .pf-edit { font-size: 0.75rem; }
   .pf-edit {
     padding: 0.15rem 0.4rem;
     border: 1px solid var(--color-border-strong);

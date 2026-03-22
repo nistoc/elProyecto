@@ -154,7 +154,11 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                 }
 
                 if (update.ChunkVirtualModel is { Count: > 0 })
-                    s.Chunks.ChunkVirtualModel = update.ChunkVirtualModel;
+                    s.Chunks.ChunkVirtualModel = ChunkVirtualModelMerge.Merge(
+                        s.Chunks.ChunkVirtualModel,
+                        update.ChunkVirtualModel);
+                if (!string.IsNullOrWhiteSpace(update.TranscriptionFooterHint))
+                    s.TranscriptionFooterHint = update.TranscriptionFooterHint;
                 if (update.State == "Completed")
                 {
                     s.Phase = "awaiting_refiner";

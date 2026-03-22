@@ -35,21 +35,14 @@ public static class Agent04ServiceRegistration
             return new TranscriptionCache(cacheDir, logger);
         });
 
-        services.AddSingleton<ITranscriptionMerger, TranscriptionMerger>();
-        services.AddSingleton<ITranscriptionPipeline, TranscriptionPipeline>();
-        services.AddSingleton<IOutboundJobNotifier, NoOpOutboundJobNotifier>();
-
-        services.AddSingleton<InMemoryJobStatusStore>();
-        services.AddSingleton<IJobStatusStore>(sp =>
-            new CachingJobStatusStore(
-                sp.GetRequiredService<InMemoryJobStatusStore>(),
-                sp.GetRequiredService<IMemoryCache>()));
-
-        services.AddSingleton<IJobQueryService, JobQueryService>();
-
         services.AddSingleton<InMemoryNodeStore>();
         services.AddSingleton<INodeModel>(sp => sp.GetRequiredService<InMemoryNodeStore>());
         services.AddSingleton<INodeQuery>(sp => sp.GetRequiredService<InMemoryNodeStore>());
+
+        services.AddSingleton<ITranscriptionMerger, TranscriptionMerger>();
+        services.AddSingleton<TranscriptionTelemetryHub>();
+        services.AddSingleton<ITranscriptionDiagnosticsSink>(sp =>
+            new TranscriptionDiagnosticsSink(sp.GetService<INodeModel>(), sp.GetRequiredService<TranscriptionTelemetryHub>()));
 
         services.AddSingleton<ICancellationManagerFactory, PerJobCancellationManagerFactory>();
         services.AddSingleton<IJobArtifactRootRegistry, JobArtifactRootRegistry>();
@@ -74,8 +67,28 @@ public static class Agent04ServiceRegistration
             var model = config["model"]?.ToString() ?? "gpt-4o-transcribe-diarize";
             var fallback = config.GetSection("fallback_models").Get<string[]>() ?? new[] { "gpt-4o-mini-transcribe", "whisper-1" };
             var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger<OpenAITranscriptionClient>();
-            return new OpenAITranscriptionClient(http, apiKey, model, fallback, logger);
+            var sink = sp.GetService<ITranscriptionDiagnosticsSink>();
+            return new OpenAITranscriptionClient(http, apiKey, model, fallback, logger, sink);
         });
+
+        services.AddSingleton<ITranscriptionPipeline>(sp => new TranscriptionPipeline(
+            sp.GetRequiredService<IAudioUtils>(),
+            sp.GetRequiredService<ITranscriptionCache>(),
+            sp.GetRequiredService<ITranscriptionClient>(),
+            sp.GetRequiredService<ITranscriptionOutputWriter>(),
+            sp.GetRequiredService<ITranscriptionMerger>(),
+            sp.GetRequiredService<ICancellationManagerFactory>(),
+            sp.GetRequiredService<INodeModel>(),
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger<TranscriptionPipeline>()));
+        services.AddSingleton<IOutboundJobNotifier, NoOpOutboundJobNotifier>();
+
+        services.AddSingleton<InMemoryJobStatusStore>();
+        services.AddSingleton<IJobStatusStore>(sp =>
+            new CachingJobStatusStore(
+                sp.GetRequiredService<InMemoryJobStatusStore>(),
+                sp.GetRequiredService<IMemoryCache>()));
+
+        services.AddSingleton<IJobQueryService, JobQueryService>();
 
         return services;
     }

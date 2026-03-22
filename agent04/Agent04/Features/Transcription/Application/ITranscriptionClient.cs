@@ -25,6 +25,8 @@ public sealed class TranscriptionClientOptions
     public string? ChunkingStrategy { get; set; }
     /// <summary>Optional. For structured logs (chunk index in parallel transcription).</summary>
     public int? ChunkIndex { get; set; }
+    /// <summary>Optional. Sub-chunk index when transcribing split_chunks sub-file (parent index is <see cref="ChunkIndex"/>).</summary>
+    public int? SubChunkIndex { get; set; }
     /// <summary>Optional. Agent04 job id for logs.</summary>
     public string? AgentJobId { get; set; }
     /// <summary>Optional. Configured <c>parallel_transcription_workers</c> for logs.</summary>

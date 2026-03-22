@@ -17,6 +17,7 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
     private readonly string _model;
     private readonly IReadOnlyList<string> _fallbackModels;
     private readonly ILogger<OpenAITranscriptionClient>? _logger;
+    private readonly ITranscriptionDiagnosticsSink? _diagnosticsSink;
     private int _transcriptionHttpInFlight;
 
     public OpenAITranscriptionClient(
@@ -24,13 +25,15 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
         string apiKey,
         string model,
         IReadOnlyList<string>? fallbackModels = null,
-        ILogger<OpenAITranscriptionClient>? logger = null)
+        ILogger<OpenAITranscriptionClient>? logger = null,
+        ITranscriptionDiagnosticsSink? diagnosticsSink = null)
     {
         _httpClient = httpClient;
         _apiKey = apiKey;
         _model = model;
         _fallbackModels = fallbackModels ?? new[] { "gpt-4o-mini-transcribe", "whisper-1" };
         _logger = logger;
+        _diagnosticsSink = diagnosticsSink;
     }
 
     public async Task<TranscriptionClientResult> TranscribeAsync(string audioPath, TranscriptionClientOptions options, CancellationToken cancellationToken = default)
@@ -52,7 +55,16 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
                     try
                     {
                         if (attempt > 0)
+                        {
                             _logger?.LogInformation("Retry attempt {Attempt}/3 for model {Model}", attempt + 1, model);
+                            _diagnosticsSink?.OnTranscriptionHttpRetryAttemptStarting(
+                                options.AgentJobId,
+                                options.ChunkIndex ?? -1,
+                                options.SubChunkIndex,
+                                Path.GetFileName(audioPath),
+                                attempt + 1,
+                                model);
+                        }
 
                         var raw = await SendRequestAsync(audioPath, model, language, prompt, temperature, responseFormat, chunkingStrategy, options, cancellationToken);
                         var dict = RawToDictionary(raw);
@@ -62,19 +74,43 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
                     catch (Exception ex) when (cancellationToken.IsCancellationRequested && ex is OperationCanceledException)
                     {
                         _logger?.LogInformation(ex,
-                            "Transcription cancelled (job/chunk token) on model {Model}; skipping remaining models and variations",
-                            model);
+                            "Transcription HTTP aborted (cancellation token fired) on model {Model}, chunkIndex={ChunkIndex}, agentJobId={AgentJobId}. "
+                            + "Typical causes: operator Cancel (cancel_N.flag), gRPC/client deadline, or job shutdown — see Agent04 logs for \"cancel_N.flag\" / \"stale cancel\".",
+                            model,
+                            options.ChunkIndex,
+                            options.AgentJobId ?? "");
                         throw;
                     }
                     catch (Exception ex)
                     {
                         lastErr = ex;
                         var msg = ex.ToString();
-                        if (msg.Contains("500", StringComparison.Ordinal) || msg.Contains("InternalServerError", StringComparison.Ordinal))
+                        var parsed = TryParseHttpStatusFromException(ex, out var httpCode, out var httpBrief);
+                        var looksServer500 = (parsed && httpCode >= 500)
+                            || msg.Contains("500", StringComparison.Ordinal)
+                            || msg.Contains("InternalServerError", StringComparison.Ordinal);
+                        if (looksServer500)
                         {
                             isServer500 = true;
                             if (attempt < 2)
                             {
+                                var codeForUi = parsed ? httpCode : 500;
+                                var cat = Enum.IsDefined(typeof(HttpStatusCode), codeForUi)
+                                    ? ClassifyStatus((HttpStatusCode)codeForUi)
+                                    : "server_error";
+                                var detail = !string.IsNullOrEmpty(httpBrief)
+                                    ? httpBrief
+                                    : TruncateForLog(msg, 100);
+                                var chunkIdx = options.ChunkIndex ?? -1;
+                                _diagnosticsSink?.OnTranscriptionHttpRetryScheduled(
+                                    options.AgentJobId,
+                                    chunkIdx,
+                                    options.SubChunkIndex,
+                                    Path.GetFileName(audioPath),
+                                    attempt + 2,
+                                    codeForUi,
+                                    cat,
+                                    detail);
                                 var delay = Math.Min(1 << attempt, 4) * 1000;
                                 await Task.Delay(delay, cancellationToken);
                                 continue;
@@ -136,6 +172,18 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
                 logContext.ChunkIndex,
                 model,
                 logContext.ParallelWorkersConfigured,
+                inFlight,
+                fileName,
+                fileStream.Length);
+
+            var chunkIdx = logContext.ChunkIndex ?? -1;
+            _diagnosticsSink?.OnTranscriptionHttpRequestStarting(
+                logContext.AgentJobId,
+                chunkIdx,
+                logContext.SubChunkIndex,
+                httpAttemptId.ToString("D"),
+                model,
+                logContext.ParallelWorkersConfigured ?? 0,
                 inFlight,
                 fileName,
                 fileStream.Length);
@@ -224,6 +272,25 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
         }
 
         return false;
+    }
+
+    private static bool TryParseHttpStatusFromException(Exception ex, out int statusCode, out string brief)
+    {
+        statusCode = 0;
+        brief = "";
+        if (ex is not HttpRequestException)
+            return false;
+        var m = ex.Message;
+        var idx = m.IndexOf(':');
+        if (idx < 1)
+            return false;
+        if (!int.TryParse(m.AsSpan(0, idx), out var code))
+            return false;
+        statusCode = code;
+        brief = m[(idx + 1)..].Trim();
+        if (brief.Length > 120)
+            brief = brief[..120] + "…";
+        return true;
     }
 
     private static string ClassifyStatus(HttpStatusCode code) => code switch

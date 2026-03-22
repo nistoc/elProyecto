@@ -36,6 +36,8 @@ export interface ChunkVirtualModelEntry {
   isSubChunk?: boolean | null;
   parentChunkIndex?: number | null;
   subChunkIndex?: number | null;
+  /** Multi-line diagnostics from Agent04 (retries, HTTP, completion); cleared on chunk restart. */
+  transcriptActivityLog?: string | null;
 }
 
 export interface ChunkState {
@@ -75,6 +77,10 @@ export interface JobSnapshot {
   agent04JobId?: string | null;
   /** Last Agent04 / transcription failure message (from gRPC or submit). */
   transcriptionError?: string | null;
+  /** Short line for status bar (e.g. automatic HTTP retry with chunk context). */
+  transcriptionFooterHint?: string | null;
+  /** Last Agent04 VM merge stats (API only; copy for debugging sync issues). */
+  transcriptionSyncDebug?: string | null;
   /** @deprecated Not populated by API. Use GET /api/jobs/:id/files (JobProjectFiles). */
   files?: JobFileInfo[] | null;
 }

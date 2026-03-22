@@ -3,6 +3,8 @@ using Grpc.Core;
 using Grpc.Net.Client;
 using Microsoft.Extensions.Logging;
 
+using Google.Protobuf.Collections;
+
 namespace XtractManager.Features.Jobs.Infrastructure;
 
 public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceClient
@@ -57,22 +59,7 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         while (await stream.ResponseStream.MoveNext(ct))
         {
             var update = stream.ResponseStream.Current;
-            IReadOnlyList<Application.ChunkVirtualModelEntry>? vm = null;
-            if (update.ChunkVirtualModel.Count > 0)
-            {
-                vm = update.ChunkVirtualModel.Select(e => new Application.ChunkVirtualModelEntry
-                {
-                    Index = e.ChunkIndex,
-                    StartedAt = string.IsNullOrEmpty(e.StartedAt) ? null : e.StartedAt,
-                    CompletedAt = string.IsNullOrEmpty(e.CompletedAt) ? null : e.CompletedAt,
-                    State = string.IsNullOrEmpty(e.State) ? "Pending" : e.State,
-                    ErrorMessage = string.IsNullOrEmpty(e.ErrorMessage) ? null : e.ErrorMessage,
-                    IsSubChunk = e.IsSubChunk,
-                    ParentChunkIndex = e.ParentChunkIndex,
-                    SubChunkIndex = e.SubChunkIndex
-                }).ToList();
-            }
-
+            var vm = MapChunkVirtualModel(update.ChunkVirtualModel);
             yield return new Application.JobStatusUpdate(
                 update.JobId,
                 update.State,
@@ -83,8 +70,57 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
                 update.MdOutputPath,
                 update.JsonOutputPath,
                 update.ErrorMessage,
-                vm);
+                vm,
+                string.IsNullOrEmpty(update.TranscriptionFooterHint) ? null : update.TranscriptionFooterHint);
         }
+    }
+
+    public async Task<Application.JobStatusUpdate?> GetJobStatusAsync(string agent04JobId, CancellationToken ct = default)
+    {
+        using var channel = GrpcChannel.ForAddress(_address);
+        var client = new TranscriptionService.TranscriptionServiceClient(channel);
+        try
+        {
+            var resp = await client.GetJobStatusAsync(new GetJobStatusRequest { JobId = agent04JobId }, cancellationToken: ct)
+                .ConfigureAwait(false);
+            var vm = MapChunkVirtualModel(resp.ChunkVirtualModel);
+            return new Application.JobStatusUpdate(
+                resp.JobId,
+                resp.State,
+                resp.ProgressPercent,
+                resp.CurrentPhase,
+                resp.TotalChunks,
+                resp.ProcessedChunks,
+                resp.MdOutputPath,
+                resp.JsonOutputPath,
+                resp.ErrorMessage,
+                vm,
+                string.IsNullOrEmpty(resp.TranscriptionFooterHint) ? null : resp.TranscriptionFooterHint);
+        }
+        catch (RpcException ex)
+        {
+            _logger.LogDebug(ex, "Agent04 GetJobStatus failed for {JobId}", agent04JobId);
+            return null;
+        }
+    }
+
+    private static IReadOnlyList<Application.ChunkVirtualModelEntry>? MapChunkVirtualModel(
+        RepeatedField<ChunkVirtualModelEntry> entries)
+    {
+        if (entries.Count == 0)
+            return null;
+        return entries.Select(e => new Application.ChunkVirtualModelEntry
+        {
+            Index = e.ChunkIndex,
+            StartedAt = string.IsNullOrEmpty(e.StartedAt) ? null : e.StartedAt,
+            CompletedAt = string.IsNullOrEmpty(e.CompletedAt) ? null : e.CompletedAt,
+            State = string.IsNullOrEmpty(e.State) ? "Pending" : e.State,
+            ErrorMessage = string.IsNullOrEmpty(e.ErrorMessage) ? null : e.ErrorMessage,
+            IsSubChunk = e.IsSubChunk,
+            ParentChunkIndex = e.ParentChunkIndex,
+            SubChunkIndex = e.SubChunkIndex,
+            TranscriptActivityLog = string.IsNullOrEmpty(e.TranscriptActivityLog) ? null : e.TranscriptActivityLog
+        }).ToList();
     }
 
     public async Task<Application.ChunkCommandResult> ChunkCommandAsync(

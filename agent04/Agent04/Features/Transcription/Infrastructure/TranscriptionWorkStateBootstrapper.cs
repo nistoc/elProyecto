@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
 
@@ -10,8 +9,6 @@ namespace Agent04.Features.Transcription.Infrastructure;
 /// </summary>
 public static class TranscriptionWorkStateBootstrapper
 {
-    private static readonly Regex PartIndex = new(@"(?:^|_)part_(\d+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-
     /// <summary>
     /// If no state file exists, try to build one from <c>chunks/</c> + <c>chunks_json/</c> (+ optional cache manifest).
     /// Returns null if nothing to infer.
@@ -46,7 +43,7 @@ public static class TranscriptionWorkStateBootstrapper
         var indexToStem = new Dictionary<int, string>();
         foreach (var w in wavFiles)
         {
-            var m = PartIndex.Match(w.Name);
+            var m = TranscriptionChunkOnDiskReader.PartIndexInFileName.Match(w.Name);
             if (!m.Success) continue;
             if (!int.TryParse(m.Groups[1].Value, out var idx)) continue;
             indexToStem[idx] = Path.GetFileNameWithoutExtension(w.Name);

@@ -44,6 +44,14 @@ public class JobSnapshot
     /// <summary>Agent04 transcription job id (gRPC SubmitJob). Used for chunk commands.</summary>
     public string? Agent04JobId { get; set; }
 
+    /// <summary>Latest automatic-retry / telemetry line from Agent04 (not persisted; refreshed via GetJobStatus).</summary>
+    public string? TranscriptionFooterHint { get; set; }
+
+    /// <summary>
+    /// One-line debug from last live VM merge (GET / merge Agent04). Not persisted; copy into bug reports.
+    /// </summary>
+    public string? TranscriptionSyncDebug { get; set; }
+
     /// <summary>Last Agent04 error text from gRPC status stream (Failed/Cancelled) or local submit failure.</summary>
     public string? TranscriptionError { get; set; }
 
@@ -104,6 +112,9 @@ public sealed class ChunkVirtualModelEntry
     public int ParentChunkIndex { get; set; }
     /// <summary>Sub index within parent when <see cref="IsSubChunk"/>; otherwise 0.</summary>
     public int SubChunkIndex { get; set; }
+
+    /// <summary>Per-chunk transcription diagnostics from Agent04 (retries, HTTP OK, etc.).</summary>
+    public string? TranscriptActivityLog { get; set; }
 }
 
 public class SplitJob

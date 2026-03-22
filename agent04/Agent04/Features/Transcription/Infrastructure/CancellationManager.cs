@@ -42,11 +42,49 @@ public sealed class CancellationManager : ICancellationManager
         _seen.TryAdd(chunkIndex, 0);
     }
 
+    public bool ClearChunkCancelFlag(int chunkIndex)
+    {
+        var path = Path.Combine(_cancelDir, $"cancel_{chunkIndex}.flag");
+        var existed = false;
+        try
+        {
+            existed = File.Exists(path);
+            if (existed)
+                File.Delete(path);
+        }
+        catch
+        {
+            /* best-effort */
+        }
+
+        _seen.TryRemove(chunkIndex, out _);
+        return existed;
+    }
+
     public void MarkSubChunkCancelled(int parentChunkIndex, int subChunkIndex)
     {
         var path = Path.Combine(_cancelDir, $"cancel_sub_{parentChunkIndex}_{subChunkIndex}.flag");
         try { File.WriteAllText(path, "cancelled"); } catch { /* best-effort */ }
         _seenSub.TryAdd((parentChunkIndex, subChunkIndex), 0);
+    }
+
+    public bool ClearSubChunkCancelFlag(int parentChunkIndex, int subChunkIndex)
+    {
+        var path = Path.Combine(_cancelDir, $"cancel_sub_{parentChunkIndex}_{subChunkIndex}.flag");
+        var existed = false;
+        try
+        {
+            existed = File.Exists(path);
+            if (existed)
+                File.Delete(path);
+        }
+        catch
+        {
+            /* best-effort */
+        }
+
+        _seenSub.TryRemove((parentChunkIndex, subChunkIndex), out _);
+        return existed;
     }
 
     public bool IsSubChunkCancelled(int parentChunkIndex, int subChunkIndex)

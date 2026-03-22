@@ -11,6 +11,9 @@ public interface INodeModel
     void CompleteNode(string nodeId, JobState status, DateTimeOffset? completedAt = null, string? errorMessage = null);
     /// <summary>Update progress and phase on a node (e.g. job or transcribe phase).</summary>
     void UpdateNodeProgress(string nodeId, int progressPercent, string? phase = null);
+
+    /// <summary>Append a line to <c>transcript_activity_log</c> metadata (chunk / sub-chunk transcription diagnostics).</summary>
+    void AppendTranscriptActivityLog(string nodeId, string line);
 }
 
 /// <summary>

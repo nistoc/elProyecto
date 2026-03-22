@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -32,6 +33,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
     private readonly INodeQuery? _nodeQuery;
     private readonly IHttpClientFactory? _httpClientFactory;
     private readonly IOutboundJobNotifier? _outboundNotifier;
+    private readonly TranscriptionTelemetryHub? _telemetryHub;
 
     public TranscriptionGrpcService(
         ITranscriptionPipeline pipeline,
@@ -46,7 +48,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         INodeModel? nodeModel = null,
         INodeQuery? nodeQuery = null,
         IHttpClientFactory? httpClientFactory = null,
-        IOutboundJobNotifier? outboundNotifier = null)
+        IOutboundJobNotifier? outboundNotifier = null,
+        TranscriptionTelemetryHub? telemetryHub = null)
     {
         _pipeline = pipeline;
         _store = store;
@@ -61,6 +64,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         _nodeQuery = nodeQuery;
         _httpClientFactory = httpClientFactory;
         _outboundNotifier = outboundNotifier;
+        _telemetryHub = telemetryHub;
     }
 
     public override async Task<SubmitJobResponse> SubmitJob(Agent04.Proto.SubmitJobRequest request, ServerCallContext context)
@@ -179,6 +183,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         var lastState = "";
         var lastUpdated = "";
         var lastChunkSig = "";
+        var lastFooter = "";
         while (!context.CancellationToken.IsCancellationRequested)
         {
             var job = _store.Get(jobId);
@@ -191,11 +196,13 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             var updated = job.UpdatedAt.ToString("O");
             var vm = BuildChunkVirtualModel(job.JobId, job.TotalChunks);
             var chunkSig = ChunkVirtualModelSignature(vm);
-            if (state != lastState || updated != lastUpdated || chunkSig != lastChunkSig)
+            var footer = _telemetryHub?.GetFooterHint(job.JobId) ?? "";
+            if (state != lastState || updated != lastUpdated || chunkSig != lastChunkSig || footer != lastFooter)
             {
                 lastState = state;
                 lastUpdated = updated;
                 lastChunkSig = chunkSig;
+                lastFooter = footer;
                 var msg = new Agent04.Proto.JobStatusUpdate
                 {
                     JobId = job.JobId,
@@ -207,12 +214,13 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                     UpdatedAt = updated,
                     MdOutputPath = job.MdOutputPath ?? "",
                     JsonOutputPath = job.JsonOutputPath ?? "",
-                    ErrorMessage = job.ErrorMessage ?? ""
+                    ErrorMessage = job.ErrorMessage ?? "",
+                    TranscriptionFooterHint = footer
                 };
                 foreach (var e in vm)
                     msg.ChunkVirtualModel.Add(e);
                 await responseStream.WriteAsync(msg);
-                if (job.State is JobState.Completed or JobState.Failed or JobState.Cancelled)
+                if (job.State is JobState.Failed or JobState.Cancelled)
                     return;
             }
             var pollMs = _configuration.GetValue("Agent04:StreamJobStatusPollMs", 2000);
@@ -271,7 +279,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         var allowCompleted =
             request.Action == ChunkCommandAction.Split
             || request.Action == ChunkCommandAction.TranscribeSub
-            || request.Action == ChunkCommandAction.Retranscribe;
+            || request.Action == ChunkCommandAction.Retranscribe
+            || request.Action == ChunkCommandAction.RebuildCombined;
         var job = _store.Get(request.JobId);
         if (job == null && allowCompleted && !string.IsNullOrWhiteSpace(request.JobDirectoryRelative))
         {
@@ -288,13 +297,13 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             if (!Directory.Exists(artifactRoot))
                 throw new RpcException(new Status(StatusCode.NotFound, "Job workspace not found"));
 
-            job = new JobStatus
-            {
-                JobId = request.JobId,
-                State = JobState.Completed,
-                CreatedAt = DateTimeOffset.UtcNow,
-                UpdatedAt = DateTimeOffset.UtcNow
-            };
+            var totalHint =
+                await ResolveTotalChunksFromArtifactRootAsync(artifactRoot, context.CancellationToken)
+                    .ConfigureAwait(false);
+            _store.EnsureDiskBackedCompletedJob(request.JobId, totalHint);
+            job = _store.Get(request.JobId);
+            if (job == null)
+                throw new RpcException(new Status(StatusCode.Internal, "Failed to register disk-backed job"));
         }
         else if (job == null)
         {
@@ -305,7 +314,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             throw new RpcException(new Status(StatusCode.FailedPrecondition, $"Job is not running (state={job.State})"));
         if (allowCompleted && job.State != JobState.Running && job.State != JobState.Completed)
             throw new RpcException(new Status(StatusCode.FailedPrecondition,
-                $"Split / transcribe_sub require job Running or Completed (state={job.State})"));
+                $"Split / transcribe_sub / retranscribe / rebuild_combined require job Running or Completed (state={job.State})"));
 
         switch (request.Action)
         {
@@ -338,6 +347,9 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                     throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
                 RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "retranscribe");
                 return await ExecuteRetranscribeChunkAsync(request, context.CancellationToken).ConfigureAwait(false);
+            case ChunkCommandAction.RebuildCombined:
+                RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "rebuild_combined");
+                return await ExecuteRebuildCombinedAsync(request, context.CancellationToken).ConfigureAwait(false);
             case ChunkCommandAction.Split:
                 if (request.ChunkIndex < 0)
                     throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
@@ -466,7 +478,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                     jobId,
                     chunkIndex,
                     _nodeModel,
-                    CancellationToken.None).ConfigureAwait(false);
+                    CancellationToken.None,
+                    _store).ConfigureAwait(false);
                 _logger.LogInformation("Retranscribe ok: job {JobId} chunk {Chunk}", jobId, chunkIndex);
             }
             catch (Exception ex)
@@ -476,6 +489,56 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         }, CancellationToken.None);
 
         return new ChunkCommandResponse { Ok = true, Message = "retranscribe_started" };
+    }
+
+    private async Task<ChunkCommandResponse> ExecuteRebuildCombinedAsync(ChunkCommandRequest request, CancellationToken ct)
+    {
+        string artifactRoot;
+        try
+        {
+            artifactRoot = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
+        }
+        catch (RpcException ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = ex.Status.Detail };
+        }
+
+        var configRel = (_configuration["Agent04:ConfigPath"] ?? "config/default.json").Trim()
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var configPathFull = ResolveConfigFullPath(_workspaceRoot.RootPath, configRel);
+        if (string.IsNullOrEmpty(configPathFull))
+            return new ChunkCommandResponse { Ok = false, Message = "transcription config file not found" };
+
+        TranscriptionConfig config;
+        try
+        {
+            config = await TranscriptionConfig.FromFileAsync(configPathFull, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = "config load failed: " + ex.Message };
+        }
+
+        var jobId = request.JobId;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _pipeline.RebuildCombinedOutputsFromPerChunkJsonAsync(
+                    config,
+                    artifactRoot,
+                    jobId,
+                    _nodeModel,
+                    CancellationToken.None).ConfigureAwait(false);
+                _logger.LogInformation("rebuild_combined ok: job {JobId}", jobId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "rebuild_combined failed for job {JobId}", jobId);
+            }
+        }, CancellationToken.None);
+
+        return new ChunkCommandResponse { Ok = true, Message = "rebuild_combined_started" };
     }
 
     private async Task<ChunkCommandResponse> ExecuteOperatorSplitAsync(ChunkCommandRequest request, CancellationToken ct)
@@ -662,6 +725,56 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             });
     }
 
+    private static async Task<int> ResolveTotalChunksFromArtifactRootAsync(string artifactRoot, CancellationToken ct)
+    {
+        var ws = await TranscriptionWorkStateFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
+        if (ws?.TotalChunks is > 0)
+            return ws.TotalChunks;
+        try
+        {
+            var map = TranscriptionChunkOnDiskReader.MapPartIndexToAudioPath(
+                Path.Combine(artifactRoot, "chunks"));
+            if (map.Count > 0)
+                return map.Keys.Max() + 1;
+        }
+        catch
+        {
+            /* best-effort */
+        }
+
+        return 0;
+    }
+
+    /// <summary>Main chunk node ids are <c>{jobId}:transcribe:chunk-{n}</c> (not sub-chunk rows).</summary>
+    private int InferTotalChunksFromNodeScope(string agent04JobId)
+    {
+        if (_nodeQuery == null || string.IsNullOrEmpty(agent04JobId))
+            return 0;
+        var prefix = agent04JobId + ":transcribe:chunk-";
+        var max = -1;
+        foreach (var n in _nodeQuery.GetByScope(agent04JobId))
+        {
+            if (!n.Id.StartsWith(prefix, StringComparison.Ordinal))
+                continue;
+            var rest = n.Id.AsSpan(prefix.Length);
+            var idx = 0;
+            var len = 0;
+            foreach (var c in rest)
+            {
+                if (c < '0' || c > '9')
+                    break;
+                idx = idx * 10 + (c - '0');
+                len++;
+            }
+
+            if (len == 0 || len != rest.Length)
+                continue;
+            max = Math.Max(max, idx);
+        }
+
+        return max < 0 ? 0 : max + 1;
+    }
+
     private JobStatusResponse ToResponse(JobStatus job)
     {
         var r = new JobStatusResponse
@@ -678,7 +791,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             UpdatedAt = job.UpdatedAt.ToString("O"),
             MdOutputPath = job.MdOutputPath ?? "",
             JsonOutputPath = job.JsonOutputPath ?? "",
-            ErrorMessage = job.ErrorMessage ?? ""
+            ErrorMessage = job.ErrorMessage ?? "",
+            TranscriptionFooterHint = _telemetryHub?.GetFooterHint(job.JobId) ?? ""
         };
         foreach (var e in BuildChunkVirtualModel(job.JobId, job.TotalChunks))
             r.ChunkVirtualModel.Add(e);
@@ -688,9 +802,14 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
     private IReadOnlyList<ChunkVirtualModelEntry> BuildChunkVirtualModel(string agent04JobId, int totalChunks)
     {
         var list = new List<ChunkVirtualModelEntry>();
-        if (_nodeQuery == null || totalChunks <= 0)
+        if (_nodeQuery == null)
             return list;
-        for (var i = 0; i < totalChunks; i++)
+        var effectiveTotal = totalChunks;
+        if (effectiveTotal <= 0)
+            effectiveTotal = InferTotalChunksFromNodeScope(agent04JobId);
+        if (effectiveTotal <= 0)
+            return list;
+        for (var i = 0; i < effectiveTotal; i++)
         {
             var nodeId = $"{agent04JobId}:transcribe:chunk-{i}";
             var node = _nodeQuery.GetNodeByScopeAndId(agent04JobId, nodeId);
@@ -716,7 +835,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 ErrorMessage = TruncateForChunkVm(node.ErrorMessage),
                 IsSubChunk = false,
                 ParentChunkIndex = 0,
-                SubChunkIndex = 0
+                SubChunkIndex = 0,
+                TranscriptActivityLog = TruncateForChunkVm(TranscriptActivityLogFromMetadata(node.Metadata), 4000)
             });
         }
 
@@ -737,11 +857,19 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 ErrorMessage = TruncateForChunkVm(n.ErrorMessage),
                 IsSubChunk = true,
                 ParentChunkIndex = parent,
-                SubChunkIndex = sub
+                SubChunkIndex = sub,
+                TranscriptActivityLog = TruncateForChunkVm(TranscriptActivityLogFromMetadata(n.Metadata), 4000)
             });
         }
 
         return list;
+    }
+
+    private static string TranscriptActivityLogFromMetadata(IReadOnlyDictionary<string, object?>? md)
+    {
+        if (md == null || !md.TryGetValue("transcript_activity_log", out var v))
+            return "";
+        return v as string ?? "";
     }
 
     private static string TruncateForChunkVm(string? message, int maxLen = 400)
@@ -756,7 +884,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         if (entries.Count == 0)
             return "";
         return string.Join("|", entries.Select(e =>
-            $"{e.ChunkIndex}:{e.IsSubChunk}:{e.ParentChunkIndex}:{e.SubChunkIndex}:{e.StartedAt}:{e.CompletedAt}:{e.State}:{e.ErrorMessage}"));
+            $"{e.ChunkIndex}:{e.IsSubChunk}:{e.ParentChunkIndex}:{e.SubChunkIndex}:{e.StartedAt}:{e.CompletedAt}:{e.State}:{e.ErrorMessage}:{e.TranscriptActivityLog}"));
     }
 
     private async Task RunJobAsync(string jobId, TranscriptionConfig config, string inputPath, string workspaceRoot, CancellationToken cancellationToken)

@@ -43,6 +43,8 @@ message ChunkVirtualModelEntry {
   bool is_sub_chunk = 6;
   int32 parent_chunk_index = 7; // main chunk index when is_sub_chunk; otherwise 0
   int32 sub_chunk_index = 8;    // sub index within parent when is_sub_chunk; otherwise 0
+  /// Multi-line diagnostic: retries, HTTP errors, completion (cleared when chunk restarts).
+  string transcript_activity_log = 9;
 }
 
 message JobStatusResponse {
@@ -60,6 +62,8 @@ message JobStatusResponse {
   string json_output_path = 10;
   string error_message = 11;
   repeated ChunkVirtualModelEntry chunk_virtual_model = 14;
+  /// Latest concise line for operator UI (e.g. automatic transcription HTTP retry).
+  string transcription_footer_hint = 15;
 }
 
 message QueryJobsRequest {
@@ -91,6 +95,7 @@ message JobStatusUpdate {
   string json_output_path = 7;
   string error_message = 8;
   repeated ChunkVirtualModelEntry chunk_virtual_model = 11;
+  string transcription_footer_hint = 12;
 }
 
 enum ChunkCommandAction {
@@ -101,6 +106,8 @@ enum ChunkCommandAction {
   CHUNK_COMMAND_ACTION_SPLIT = 4;
   /// Transcribe one operator split sub-file under split_chunks/chunk_{chunk_index}/sub_chunks/ (writes results/sub_chunk_XX_result.json).
   CHUNK_COMMAND_ACTION_TRANSCRIBE_SUB = 5;
+  /// Rebuild combined transcript.md + openai_response.json from per-chunk JSON only (chunk_index ignored).
+  CHUNK_COMMAND_ACTION_REBUILD_COMBINED = 6;
 }
 
 message ChunkCommandRequest {

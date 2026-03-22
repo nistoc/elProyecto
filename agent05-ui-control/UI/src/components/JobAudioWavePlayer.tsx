@@ -171,6 +171,9 @@ export function JobAudioWavePlayer({
     drawWaveform(canvas, peaksRef.current, progress, line, fill, ph);
   }, [progress]);
 
+  const paintRef = useRef(paint);
+  paintRef.current = paint;
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
@@ -184,14 +187,14 @@ export function JobAudioWavePlayer({
       canvas.height = Math.floor(CANVAS_HEIGHT * dpr);
       canvas.style.width = `${cssW}px`;
       canvas.style.height = `${CANVAS_HEIGHT}px`;
-      paint();
+      paintRef.current();
     };
 
     const ro = new ResizeObserver(resize);
     ro.observe(wrap);
     resize();
     return () => ro.disconnect();
-  }, [paint, peaks]);
+  }, []);
 
   useEffect(() => {
     paint();

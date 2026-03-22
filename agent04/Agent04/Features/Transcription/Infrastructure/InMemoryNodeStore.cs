@@ -46,9 +46,18 @@ public sealed class InMemoryNodeStore : INodeModel, INodeQuery
         var now = DateTimeOffset.UtcNow;
         if (_nodes.TryGetValue(nodeId, out var node))
         {
-            node.Status = JobState.Running;
-            node.StartedAt ??= now;
-            node.UpdatedAt = now;
+            lock (node)
+            {
+                if (node.Status is JobState.Completed or JobState.Failed or JobState.Cancelled)
+                {
+                    node.Metadata ??= new Dictionary<string, object?>();
+                    node.Metadata.Remove("transcript_activity_log");
+                }
+
+                node.Status = JobState.Running;
+                node.StartedAt ??= now;
+                node.UpdatedAt = now;
+            }
         }
     }
 
@@ -72,6 +81,26 @@ public sealed class InMemoryNodeStore : INodeModel, INodeQuery
             node.ProgressPercent = progressPercent;
             if (phase != null) node.Phase = phase;
             node.UpdatedAt = now;
+        }
+    }
+
+    public void AppendTranscriptActivityLog(string nodeId, string line)
+    {
+        if (string.IsNullOrEmpty(nodeId) || string.IsNullOrWhiteSpace(line))
+            return;
+        if (!_nodes.TryGetValue(nodeId, out var node))
+            return;
+        var trimmed = line.TrimEnd();
+        lock (node)
+        {
+            node.Metadata ??= new Dictionary<string, object?>();
+            const string key = "transcript_activity_log";
+            var prev = node.Metadata.TryGetValue(key, out var v) ? v as string ?? "" : "";
+            var next = string.IsNullOrEmpty(prev) ? trimmed : prev + "\n" + trimmed;
+            if (next.Length > 12000)
+                next = next[^12000..];
+            node.Metadata[key] = next;
+            node.UpdatedAt = DateTimeOffset.UtcNow;
         }
     }
 

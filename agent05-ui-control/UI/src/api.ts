@@ -135,7 +135,8 @@ export type ChunkActionName =
   | 'skip'
   | 'retranscribe'
   | 'split'
-  | 'transcribe_sub';
+  | 'transcribe_sub'
+  | 'rebuild_combined';
 
 export interface ChunkActionResponseBody {
   ok: boolean;

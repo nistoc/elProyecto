@@ -4,6 +4,8 @@ public interface ITranscriptionServiceClient
 {
     Task<SubmitJobResult> SubmitJobAsync(string configPath, string inputFilePath, IReadOnlyList<string>? tags, CancellationToken ct = default);
     IAsyncEnumerable<JobStatusUpdate> StreamJobStatusAsync(string jobId, CancellationToken ct = default);
+    /// <summary>Live VM + footer from Agent04 (for post-completion retranscribe / operator actions).</summary>
+    Task<JobStatusUpdate?> GetJobStatusAsync(string agent04JobId, CancellationToken ct = default);
     /// <param name="jobDirectoryRelative">Xtract job folder name under workspace (single segment); pass for chunk cancel paths under per-job artifacts.</param>
     Task<ChunkCommandResult> ChunkCommandAsync(
         string agent04JobId,
@@ -23,6 +25,7 @@ public enum TranscriptionChunkAction
     Retranscribe = 3,
     Split = 4,
     TranscribeSub = 5,
+    RebuildCombined = 6,
 }
 
 public record ChunkCommandResult(bool Ok, string Message);
@@ -39,4 +42,5 @@ public record JobStatusUpdate(
     string? MdOutputPath,
     string? JsonOutputPath,
     string? ErrorMessage,
-    IReadOnlyList<ChunkVirtualModelEntry>? ChunkVirtualModel = null);
+    IReadOnlyList<ChunkVirtualModelEntry>? ChunkVirtualModel = null,
+    string? TranscriptionFooterHint = null);
