@@ -22,8 +22,8 @@ Rules match the former Agent05 merge: weak `Pending` placeholders without timest
 
 ## UI (agent05-ui-control)
 
-`GetChunkArtifactGroups` still returns **file metadata only**. `mergeChunkGroupVm` in the UI attaches snapshot VM rows to those groups until a future contract bundles VM with groups (phase 8 / optional).
+`GetChunkArtifactGroups` returns file metadata plus optional **`main_virtual_model` / `sub_virtual_model`** (JSON: `vmRow` on each group / sub-chunk). The UI uses **`overlayVmFromJobWhenMissing`**: Rentgen rows from the API win; the job snapshot fills gaps when nodes are missing. `GET .../files` + `JobProjectFilesScanner` remain only for the project file tree, not Stats grouping (phase 8).
 
 ## Tests
 
-Merge unit tests live in `Agent04.Tests/ChunkVirtualModelMergeTests.cs`.
+Merge unit tests: `Agent04.Tests/ChunkVirtualModelMergeTests.cs`. Binder tests: `Agent04.Tests/ChunkArtifactGroupVirtualModelBinderTests.cs`.

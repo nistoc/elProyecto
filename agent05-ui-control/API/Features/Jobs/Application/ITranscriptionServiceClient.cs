@@ -48,7 +48,7 @@ public enum TranscriptionChunkAction
 
 public record ChunkCommandResult(bool Ok, string Message);
 
-/// <summary>JSON shape matches UI <c>ChunkArtifactGroup</c> (camelCase); <c>vmRow</c> is always null from gRPC.</summary>
+/// <summary>JSON shape matches UI <c>ChunkArtifactGroup</c> (camelCase); <c>vmRow</c> from Agent04 Rentgen when present.</summary>
 public sealed class ChunkArtifactGroupsResult
 {
     public IReadOnlyList<ChunkArtifactGroupJson> Groups { get; init; } = Array.Empty<ChunkArtifactGroupJson>();
@@ -62,7 +62,7 @@ public sealed class ChunkArtifactGroupJson
     public IReadOnlyList<JobProjectFile> JsonFiles { get; set; } = Array.Empty<JobProjectFile>();
     public IReadOnlyList<SubChunkArtifactGroupJson> SubChunks { get; set; } = Array.Empty<SubChunkArtifactGroupJson>();
     public IReadOnlyList<JobProjectFile> MergedSplitFiles { get; set; } = Array.Empty<JobProjectFile>();
-    public object? VmRow { get; set; }
+    public ChunkVirtualModelEntry? VmRow { get; set; }
 }
 
 public sealed class SubChunkArtifactGroupJson
@@ -71,7 +71,7 @@ public sealed class SubChunkArtifactGroupJson
     public string DisplayStem { get; set; } = "";
     public IReadOnlyList<JobProjectFile> AudioFiles { get; set; } = Array.Empty<JobProjectFile>();
     public IReadOnlyList<JobProjectFile> JsonFiles { get; set; } = Array.Empty<JobProjectFile>();
-    public object? VmRow { get; set; }
+    public ChunkVirtualModelEntry? VmRow { get; set; }
 }
 
 public record SubmitJobResult(string JobId);

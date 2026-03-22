@@ -247,6 +247,24 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         return f;
     }
 
+    private static Application.ChunkVirtualModelEntry? MapSingleVirtualModel(ChunkVirtualModelEntry? e)
+    {
+        if (e == null)
+            return null;
+        return new Application.ChunkVirtualModelEntry
+        {
+            Index = e.ChunkIndex,
+            StartedAt = string.IsNullOrEmpty(e.StartedAt) ? null : e.StartedAt,
+            CompletedAt = string.IsNullOrEmpty(e.CompletedAt) ? null : e.CompletedAt,
+            State = string.IsNullOrEmpty(e.State) ? "Pending" : e.State,
+            ErrorMessage = string.IsNullOrEmpty(e.ErrorMessage) ? null : e.ErrorMessage,
+            IsSubChunk = e.IsSubChunk,
+            ParentChunkIndex = e.ParentChunkIndex,
+            SubChunkIndex = e.SubChunkIndex,
+            TranscriptActivityLog = string.IsNullOrEmpty(e.TranscriptActivityLog) ? null : e.TranscriptActivityLog
+        };
+    }
+
     private static Application.SubChunkArtifactGroupJson MapSubChunkGroup(SubChunkArtifactGroup s)
     {
         return new Application.SubChunkArtifactGroupJson
@@ -255,7 +273,7 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
             DisplayStem = s.DisplayStem ?? "",
             AudioFiles = s.AudioFiles.Select(MapArtifactFile).ToList(),
             JsonFiles = s.JsonFiles.Select(MapArtifactFile).ToList(),
-            VmRow = null
+            VmRow = MapSingleVirtualModel(s.SubVirtualModel)
         };
     }
 
@@ -269,7 +287,7 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
             JsonFiles = c.JsonFiles.Select(MapArtifactFile).ToList(),
             SubChunks = c.SubChunks.Select(MapSubChunkGroup).ToList(),
             MergedSplitFiles = c.MergedSplitFiles.Select(MapArtifactFile).ToList(),
-            VmRow = null
+            VmRow = MapSingleVirtualModel(c.MainVirtualModel)
         };
     }
 }

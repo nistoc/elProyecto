@@ -168,6 +168,7 @@ message SubChunkArtifactGroup {
   string display_stem = 2;
   repeated JobArtifactFileEntry audio_files = 3;
   repeated JobArtifactFileEntry json_files = 4;
+  optional ChunkVirtualModelEntry sub_virtual_model = 5;
 }
 
 message ChunkArtifactGroup {
@@ -177,6 +178,7 @@ message ChunkArtifactGroup {
   repeated JobArtifactFileEntry json_files = 4;
   repeated SubChunkArtifactGroup sub_chunks = 5;
   repeated JobArtifactFileEntry merged_split_files = 6;
+  optional ChunkVirtualModelEntry main_virtual_model = 7;
 }
 
 message GetChunkArtifactGroupsRequest {

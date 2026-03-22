@@ -315,6 +315,11 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             resp.Groups.Add(row);
         }
 
+        var job = _store.Get(request.JobId);
+        var totalHint = request.TotalChunks > 0 ? request.TotalChunks : job?.TotalChunks ?? 0;
+        var vm = BuildChunkVirtualModel(request.JobId, totalHint);
+        ChunkArtifactGroupVirtualModelBinder.ApplyToResponse(resp, vm);
+
         return resp;
     }
 

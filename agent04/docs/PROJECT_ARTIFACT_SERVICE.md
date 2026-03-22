@@ -7,7 +7,7 @@
 ## Решение по VM (gRPC групп / Stats)
 
 - **Склейка VM (плейсхолдеры Pending, orphan-строки, activity log):** выполняется в **Agent04** (`ChunkVirtualModelMerge`), см. [CHUNK_VM_MERGE.md](./CHUNK_VM_MERGE.md). Запросы `GetJobStatus` / `StreamJobStatus` принимают `client_chunk_virtual_model`; ответ уже merged. Agent05 только передаёт снимок и сохраняет результат.
-- **RPC группировок** (`GetChunkArtifactGroups`) по-прежнему отдаёт **только метаданные файлов**; строки VM для Stats в UI пока подмешиваются на клиенте к группам (`mergeChunkGroupVm`), пока контракт групп не расширят.
+- **RPC группировок** (`GetChunkArtifactGroups`) отдаёт метаданные файлов и опционально **VM-строки Rentgen** (`main_virtual_model` / `sub_virtual_model`). В UI используется `overlayVmFromJobWhenMissing` для дыр в VM. Дерево файлов — по-прежнему `GET .../files` и `JobProjectFilesScanner` (фаза 8).
 
 Комментарии в `Proto/transcription.proto` согласованы с этим разделением.
 

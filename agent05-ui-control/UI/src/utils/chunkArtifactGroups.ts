@@ -232,20 +232,20 @@ export function chunkArtifactsTranscriptionComplete(
 }
 
 /**
- * Attach VM rows from the job snapshot to groups loaded from GET .../chunk-artifact-groups
- * (Agent04 returns file metadata only; vmRow fields are null in JSON).
+ * Fills vmRow from the job snapshot only where the API omitted it (e.g. Rentgen node missing).
+ * When Agent04 sends main_virtual_model / sub_virtual_model, those win.
  */
-export function mergeChunkGroupVm(
+export function overlayVmFromJobWhenMissing(
   groups: ChunkArtifactGroup[],
   job: JobSnapshot
 ): ChunkArtifactGroup[] {
   const vm = job.chunks?.chunkVirtualModel;
   return groups.map((g) => ({
     ...g,
-    vmRow: findMainChunkVmRow(vm, g.index),
+    vmRow: g.vmRow ?? findMainChunkVmRow(vm, g.index),
     subChunks: (g.subChunks ?? []).map((sc) => ({
       ...sc,
-      vmRow: findSubChunkVmRow(vm, g.index, sc.subIndex ?? null),
+      vmRow: sc.vmRow ?? findSubChunkVmRow(vm, g.index, sc.subIndex ?? null),
     })),
   }));
 }

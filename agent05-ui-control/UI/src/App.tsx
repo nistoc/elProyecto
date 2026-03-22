@@ -162,6 +162,7 @@ function AppContent() {
                           locale={locale}
                           t={t}
                           refreshJobSnapshot={refreshJobSnapshot}
+                          artifactGroupsRefreshKey={jobSnapshotRevision}
                           onProjectFilesChanged={async () => {
                             await jobFiles.reload();
                             await refreshJobSnapshot();

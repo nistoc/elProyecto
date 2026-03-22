@@ -49,7 +49,12 @@ public class ChunkArtifactGroupsControllerTests
                         JsonFiles = [],
                         SubChunks = [],
                         MergedSplitFiles = [],
-                        VmRow = null
+                        VmRow = new ChunkVirtualModelEntry
+                        {
+                            Index = 0,
+                            State = "Running",
+                            StartedAt = "2020-01-01T00:00:00Z",
+                        },
                     }
                 ]
             }
@@ -75,6 +80,9 @@ public class ChunkArtifactGroupsControllerTests
         Assert.Equal(0, g0.GetProperty("index").GetInt32());
         Assert.Equal("chunk0", g0.GetProperty("displayStem").GetString());
         Assert.Equal("x.wav", g0.GetProperty("audioFiles")[0].GetProperty("name").GetString());
+        Assert.True(g0.TryGetProperty("vmRow", out var vmEl));
+        Assert.Equal("Running", vmEl.GetProperty("state").GetString());
+        Assert.Equal(0, vmEl.GetProperty("index").GetInt32());
     }
 
     [Fact]

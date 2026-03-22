@@ -6,7 +6,8 @@ using XtractManager.Features.Jobs.Application;
 namespace XtractManager.Features.Jobs.Infrastructure;
 
 /// <summary>
-/// Structured scan of a job directory (same categories as agent-browser GET /api/jobs/:id/files).
+/// Structured scan for <c>GET /api/jobs/:id/files</c> (project file tree / editor). Chunk rows for the Stats panel
+/// come from Agent04 <c>GetChunkArtifactGroups</c> via the API proxy — not recomputed here (phase 8).
 /// </summary>
 public static class JobProjectFilesScanner
 {

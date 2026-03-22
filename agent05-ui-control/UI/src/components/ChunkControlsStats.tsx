@@ -17,7 +17,7 @@ import {
   buildChunkGroups,
   chunkArtifactsTranscriptionComplete,
   chunkHasBlockingSplitArtifacts,
-  mergeChunkGroupVm,
+  overlayVmFromJobWhenMissing,
 } from '../utils/chunkArtifactGroups';
 import {
   elapsedSeconds,
@@ -241,6 +241,8 @@ export interface ChunkControlsStatsProps {
   onProjectFilesChanged?: () => void | Promise<void>;
   /** Poll GET /api/jobs/:id while any VM row is Running (retranscribe / HTTP in flight). */
   refreshJobSnapshot?: () => Promise<void>;
+  /** Bumps when SSE/job snapshot updates — refetch chunk-artifact-groups for fresh Rentgen VM on groups. */
+  artifactGroupsRefreshKey?: number;
 }
 
 const emptyFiles: JobProjectFiles = {
@@ -263,6 +265,7 @@ export function ChunkControlsStats({
   t,
   onProjectFilesChanged,
   refreshJobSnapshot,
+  artifactGroupsRefreshKey = 0,
 }: ChunkControlsStatsProps) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -326,7 +329,7 @@ export function ChunkControlsStats({
     return () => {
       cancelled = true;
     };
-  }, [jobId, job.agent04JobId, files]);
+  }, [jobId, job.agent04JobId, files, artifactGroupsRefreshKey]);
 
   const total = job.chunks?.total ?? 0;
   const readOnly =
@@ -336,7 +339,7 @@ export function ChunkControlsStats({
   const fileData = files ?? emptyFiles;
   const groups =
     agent04ArtifactGroups != null
-      ? mergeChunkGroupVm(agent04ArtifactGroups, job)
+      ? overlayVmFromJobWhenMissing(agent04ArtifactGroups, job)
       : buildChunkGroups(job, fileData);
   const showList = groups.length > 0;
   const anyVmTelemetry = groups.some((g) => vmRowHasTelemetry(g.vmRow));
