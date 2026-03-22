@@ -21,5 +21,6 @@ public sealed class TranscriptionConfigDefaultJsonTests
 
         Assert.True(config.Get<bool?>("pre_split") == true);
         Assert.Equal(5, config.Get<double?>("target_chunk_mb"));
+        Assert.Equal("split_chunks", config.SplitChunksDir);
     }
 }

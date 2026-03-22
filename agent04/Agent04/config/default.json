@@ -17,6 +17,7 @@
   "target_chunk_mb": 5,
   "chunking_strategy": "auto",
   "split_workdir": "chunks",
+  "split_chunks_dir": "split_chunks",
   "cancel_dir": "cancel_signals",
   "ffmpeg_path": "C:/Users/n.temnikov/AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-8.0.1-essentials_build/bin/ffmpeg.exe",
   "ffprobe_path": "C:/Users/n.temnikov/AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-8.0.1-essentials_build/bin/ffprobe.exe",

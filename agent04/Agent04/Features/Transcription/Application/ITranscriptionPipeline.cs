@@ -23,4 +23,29 @@ public interface ITranscriptionPipeline
         INodeModel? nodeModel = null,
         CancellationToken cancellationToken = default,
         IReadOnlySet<int>? chunkIndicesFilter = null);
+
+    /// <summary>
+    /// Transcribe one operator-split sub-file; writes <c>results/sub_chunk_XX_result.json</c> and VM/work-state row.
+    /// </summary>
+    Task TranscribeSplitSubChunkAsync(
+        TranscriptionConfig config,
+        string artifactRoot,
+        string agentJobId,
+        int parentChunkIndex,
+        int subChunkIndex,
+        int totalChunks,
+        INodeModel? nodeModel,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Re-run API transcription for one main pipeline chunk and rebuild combined md/json from
+    /// <c>chunks_json</c> siblings + fresh result for <paramref name="chunkIndex"/>.
+    /// </summary>
+    Task RetranscribeMainChunkAsync(
+        TranscriptionConfig config,
+        string artifactRoot,
+        string agentJobId,
+        int chunkIndex,
+        INodeModel? nodeModel,
+        CancellationToken cancellationToken = default);
 }

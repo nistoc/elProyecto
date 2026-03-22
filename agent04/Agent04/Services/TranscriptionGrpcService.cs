@@ -268,12 +268,44 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         if (string.IsNullOrWhiteSpace(request.JobId))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "job_id is required"));
 
+        var allowCompleted =
+            request.Action == ChunkCommandAction.Split
+            || request.Action == ChunkCommandAction.TranscribeSub
+            || request.Action == ChunkCommandAction.Retranscribe;
         var job = _store.Get(request.JobId);
-        if (job == null)
-            throw new RpcException(new Status(StatusCode.NotFound, "Job not found"));
+        if (job == null && allowCompleted && !string.IsNullOrWhiteSpace(request.JobDirectoryRelative))
+        {
+            string artifactRoot;
+            try
+            {
+                artifactRoot = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
+            }
+            catch (RpcException)
+            {
+                throw;
+            }
 
-        if (job.State != JobState.Running)
+            if (!Directory.Exists(artifactRoot))
+                throw new RpcException(new Status(StatusCode.NotFound, "Job workspace not found"));
+
+            job = new JobStatus
+            {
+                JobId = request.JobId,
+                State = JobState.Completed,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+        }
+        else if (job == null)
+        {
+            throw new RpcException(new Status(StatusCode.NotFound, "Job not found"));
+        }
+
+        if (!allowCompleted && job.State != JobState.Running)
             throw new RpcException(new Status(StatusCode.FailedPrecondition, $"Job is not running (state={job.State})"));
+        if (allowCompleted && job.State != JobState.Running && job.State != JobState.Completed)
+            throw new RpcException(new Status(StatusCode.FailedPrecondition,
+                $"Split / transcribe_sub require job Running or Completed (state={job.State})"));
 
         switch (request.Action)
         {
@@ -282,24 +314,168 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                     throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
                 var cancelBase = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
                 var cm = _cancellationFactory.Get(request.JobId, cancelBase);
+                if (request.SubChunkIndex >= 0)
+                {
+                    cm.MarkSubChunkCancelled(request.ChunkIndex, request.SubChunkIndex);
+                    RecordSubChunkOperatorActionInNodeModel(
+                        request.JobId,
+                        request.ChunkIndex,
+                        request.SubChunkIndex,
+                        "cancel");
+                    return new ChunkCommandResponse { Ok = true, Message = "cancel_sub_requested" };
+                }
+
                 cm.MarkCancelled(request.ChunkIndex);
                 RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "cancel");
                 return new ChunkCommandResponse { Ok = true, Message = "cancel_requested" };
             case ChunkCommandAction.Skip:
+                if (request.ChunkIndex < 0)
+                    throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
+                RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "skip");
+                return new ChunkCommandResponse { Ok = false, Message = "not_implemented" };
             case ChunkCommandAction.Retranscribe:
                 if (request.ChunkIndex < 0)
                     throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
-                RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex,
-                    request.Action == ChunkCommandAction.Skip ? "skip" : "retranscribe");
-                return new ChunkCommandResponse { Ok = false, Message = "not_implemented" };
+                RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "retranscribe");
+                return await ExecuteRetranscribeChunkAsync(request, context.CancellationToken).ConfigureAwait(false);
             case ChunkCommandAction.Split:
                 if (request.ChunkIndex < 0)
                     throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
                 RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "split");
                 return await ExecuteOperatorSplitAsync(request, context.CancellationToken).ConfigureAwait(false);
+            case ChunkCommandAction.TranscribeSub:
+                if (request.ChunkIndex < 0)
+                    throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
+                RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "transcribe_sub");
+                return await ExecuteTranscribeSubChunkAsync(request, context.CancellationToken).ConfigureAwait(false);
             default:
                 return new ChunkCommandResponse { Ok = false, Message = "unknown_action" };
         }
+    }
+
+    private async Task<ChunkCommandResponse> ExecuteTranscribeSubChunkAsync(ChunkCommandRequest request, CancellationToken ct)
+    {
+        if (request.SubChunkIndex < 0)
+            return new ChunkCommandResponse { Ok = false, Message = "sub_chunk_index must be >= 0" };
+
+        string artifactRoot;
+        try
+        {
+            artifactRoot = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
+        }
+        catch (RpcException ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = ex.Status.Detail };
+        }
+
+        var configRel = (_configuration["Agent04:ConfigPath"] ?? "config/default.json").Trim()
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var configPathFull = ResolveConfigFullPath(_workspaceRoot.RootPath, configRel);
+        if (string.IsNullOrEmpty(configPathFull))
+            return new ChunkCommandResponse { Ok = false, Message = "transcription config file not found" };
+
+        TranscriptionConfig config;
+        try
+        {
+            config = await TranscriptionConfig.FromFileAsync(configPathFull, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = "config load failed: " + ex.Message };
+        }
+
+        var job = _store.Get(request.JobId);
+        var totalChunks = job?.TotalChunks ?? 0;
+        if (totalChunks <= 0)
+        {
+            var doc = await TranscriptionWorkStateFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
+            totalChunks = doc?.TotalChunks ?? 0;
+        }
+
+        if (totalChunks <= 0)
+            return new ChunkCommandResponse { Ok = false, Message = "total_chunks unknown; complete main transcription first" };
+
+        var jobId = request.JobId;
+        var chunkIndex = request.ChunkIndex;
+        var subIdx = request.SubChunkIndex;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _pipeline.TranscribeSplitSubChunkAsync(
+                    config,
+                    artifactRoot,
+                    jobId,
+                    chunkIndex,
+                    subIdx,
+                    totalChunks,
+                    _nodeModel,
+                    CancellationToken.None).ConfigureAwait(false);
+                _logger.LogInformation(
+                    "TranscribeSub ok: job {JobId} parent chunk {Parent} sub {Sub}",
+                    jobId,
+                    chunkIndex,
+                    subIdx);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "TranscribeSub failed for job {JobId}", jobId);
+            }
+        }, CancellationToken.None);
+
+        return new ChunkCommandResponse { Ok = true, Message = "transcribe_sub_started" };
+    }
+
+    private async Task<ChunkCommandResponse> ExecuteRetranscribeChunkAsync(ChunkCommandRequest request, CancellationToken ct)
+    {
+        string artifactRoot;
+        try
+        {
+            artifactRoot = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
+        }
+        catch (RpcException ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = ex.Status.Detail };
+        }
+
+        var configRel = (_configuration["Agent04:ConfigPath"] ?? "config/default.json").Trim()
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var configPathFull = ResolveConfigFullPath(_workspaceRoot.RootPath, configRel);
+        if (string.IsNullOrEmpty(configPathFull))
+            return new ChunkCommandResponse { Ok = false, Message = "transcription config file not found" };
+
+        TranscriptionConfig config;
+        try
+        {
+            config = await TranscriptionConfig.FromFileAsync(configPathFull, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = "config load failed: " + ex.Message };
+        }
+
+        var jobId = request.JobId;
+        var chunkIndex = request.ChunkIndex;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _pipeline.RetranscribeMainChunkAsync(
+                    config,
+                    artifactRoot,
+                    jobId,
+                    chunkIndex,
+                    _nodeModel,
+                    CancellationToken.None).ConfigureAwait(false);
+                _logger.LogInformation("Retranscribe ok: job {JobId} chunk {Chunk}", jobId, chunkIndex);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Retranscribe failed for job {JobId} chunk {Chunk}", jobId, chunkIndex);
+            }
+        }, CancellationToken.None);
+
+        return new ChunkCommandResponse { Ok = true, Message = "retranscribe_started" };
     }
 
     private async Task<ChunkCommandResponse> ExecuteOperatorSplitAsync(ChunkCommandRequest request, CancellationToken ct)
@@ -348,23 +524,50 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         if (durSec <= 0)
             return new ChunkCommandResponse { Ok = false, Message = "could not read audio duration (ffprobe)" };
 
+        var splitChunksDir = "split_chunks";
+        var overlapSec = 1.0;
+        var configRel = (_configuration["Agent04:ConfigPath"] ?? "config/default.json").Trim()
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var configPathFull = ResolveConfigFullPath(_workspaceRoot.RootPath, configRel);
+        if (!string.IsNullOrEmpty(configPathFull))
+        {
+            try
+            {
+                var cfg = await TranscriptionConfig.FromFileAsync(configPathFull, ct).ConfigureAwait(false);
+                splitChunksDir = cfg.SplitChunksDir;
+                overlapSec = cfg.ChunkOverlapSec;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Operator split: optional transcription config not loaded from {Path}", configPathFull);
+            }
+        }
+
         var ext = Path.GetExtension(inputPath);
         var baseName = Path.GetFileNameWithoutExtension(inputPath);
-        var outRoot = Path.Combine(artifactRoot, "split_chunks", $"chunk_{request.ChunkIndex}", "sub_chunks");
+        var outRoot = Path.Combine(artifactRoot, splitChunksDir, $"chunk_{request.ChunkIndex}", "sub_chunks");
         Directory.CreateDirectory(outRoot);
 
-        var seg = durSec / parts;
+        IReadOnlyList<OperatorChunkSplitPlanner.Segment> plan;
+        try
+        {
+            plan = OperatorChunkSplitPlanner.PlanEqualSegmentsWithOverlap(durSec, parts, overlapSec);
+        }
+        catch (Exception ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = ex.Message };
+        }
+
         try
         {
             await Task.Run(() =>
             {
-                for (var k = 0; k < parts; k++)
+                for (var k = 0; k < plan.Count; k++)
                 {
-                    var start = k * seg;
-                    var length = k == parts - 1 ? Math.Max(0.01, durSec - start) : seg;
-                    var outName = $"{baseName}_sub_{k}{ext}";
+                    var seg = plan[k];
+                    var outName = $"{baseName}_sub_{k:D2}{ext}";
                     var outPath = Path.Combine(outRoot, outName);
-                    _audioUtils.ExtractAudioSegmentCopy(ffmpeg, inputPath, start, length, outPath);
+                    _audioUtils.ExtractAudioSegmentCopyOrReencode(ffmpeg, inputPath, seg.StartSec, seg.DurationSec, outPath);
                 }
             }, ct).ConfigureAwait(false);
         }
@@ -438,6 +641,20 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         var transcribeParent = jobId + ":transcribe";
         var chunkNodeId = transcribeParent + ":chunk-" + chunkIndex;
         _nodeModel.EnsureNode(chunkNodeId, transcribeParent, jobId, "chunk",
+            new Dictionary<string, object?>
+            {
+                ["operator_action"] = action,
+                ["operator_action_at"] = DateTimeOffset.UtcNow.ToString("O")
+            });
+    }
+
+    private void RecordSubChunkOperatorActionInNodeModel(string jobId, int parentChunkIndex, int subChunkIndex, string action)
+    {
+        if (_nodeModel == null) return;
+        var transcribeParent = jobId + ":transcribe";
+        var localKey = "chunk-" + parentChunkIndex + ":sub-" + subChunkIndex;
+        var nodeId = transcribeParent + ":" + localKey;
+        _nodeModel.EnsureNode(nodeId, transcribeParent, jobId, "chunk",
             new Dictionary<string, object?>
             {
                 ["operator_action"] = action,

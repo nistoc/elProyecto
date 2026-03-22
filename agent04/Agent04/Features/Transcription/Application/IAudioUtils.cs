@@ -25,4 +25,7 @@ public interface IAudioUtils
 
     /// <summary>Extract a segment with stream copy (<c>-c copy</c>). Creates parent directory for <paramref name="outputPath"/>.</summary>
     void ExtractAudioSegmentCopy(string ffmpegPath, string inputPath, double startSeconds, double durationSeconds, string outputPath);
+
+    /// <summary>Like <see cref="ExtractAudioSegmentCopy"/>; on ffmpeg failure, re-encodes to PCM s16le 16 kHz (agent01 split fallback).</summary>
+    void ExtractAudioSegmentCopyOrReencode(string ffmpegPath, string inputPath, double startSeconds, double durationSeconds, string outputPath);
 }

@@ -130,6 +130,41 @@ public sealed class AudioUtils : IAudioUtils
         });
     }
 
+    public void ExtractAudioSegmentReencodePcm16kMono(string ffmpegPath, string inputPath, double startSeconds, double durationSeconds, string outputPath)
+    {
+        var dir = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+        var ss = startSeconds.ToString("G", CultureInfo.InvariantCulture);
+        var t = durationSeconds.ToString("G", CultureInfo.InvariantCulture);
+        RunFfmpeg(ffmpegPath, new[]
+        {
+            "-y", "-loglevel", "error", "-hide_banner",
+            "-i", inputPath,
+            "-ss", ss,
+            "-t", t,
+            "-acodec", "pcm_s16le",
+            "-ar", "16000",
+            outputPath
+        });
+    }
+
+    public void ExtractAudioSegmentCopyOrReencode(string ffmpegPath, string inputPath, double startSeconds, double durationSeconds, string outputPath)
+    {
+        try
+        {
+            ExtractAudioSegmentCopy(ffmpegPath, inputPath, startSeconds, durationSeconds, outputPath);
+        }
+        catch (InvalidOperationException)
+        {
+            if (File.Exists(outputPath))
+            {
+                try { File.Delete(outputPath); } catch { /* ignore */ }
+            }
+            ExtractAudioSegmentReencodePcm16kMono(ffmpegPath, inputPath, startSeconds, durationSeconds, outputPath);
+        }
+    }
+
     private static void RunFfmpeg(string ffmpegPath, string[] args)
     {
         var psi = new ProcessStartInfo

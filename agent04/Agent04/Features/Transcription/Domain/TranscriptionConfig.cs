@@ -112,6 +112,8 @@ public sealed class TranscriptionConfig
     public double ChunkOverlapSec => Get<double?>("chunk_overlap_sec") ?? 2.0;
     public double TargetChunkMb => Get<double?>("target_chunk_mb") ?? 24.5;
     public string SplitWorkdir => Get<string>("split_workdir") ?? "chunks";
+    /// <summary>Root folder for operator split output (<c>split_chunks/chunk_N/sub_chunks</c> under job artifacts).</summary>
+    public string SplitChunksDir => Get<string>("split_chunks_dir") ?? "split_chunks";
     public string CacheDir => Get<string>("cache_dir") ?? "cache";
     public string? FfmpegPath => Get<string>("ffmpeg_path");
     public string? FfprobePath => Get<string>("ffprobe_path");

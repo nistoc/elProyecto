@@ -212,7 +212,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             {
                 await TranscriptionWorkStateFile.UpsertChunkAsync(
                     artifactRoot,
-                    1,
+                    TranscriptionWorkStateFile.SchemaVersionLatest,
                     totalChunks,
                     idx,
                     state,
@@ -638,6 +638,359 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         catch (OperationCanceledException)
         {
             // stopPollingToken fired after transcription finished or job cancelled
+        }
+    }
+
+    internal static async Task PollSubChunkCancelWhileTranscribingAsync(
+        ICancellationManager cancellation,
+        int parentChunkIndex,
+        int subChunkIndex,
+        CancellationTokenSource cancelTranscription,
+        CancellationToken stopPollingToken)
+    {
+        try
+        {
+            while (!stopPollingToken.IsCancellationRequested)
+            {
+                await Task.Delay(200, stopPollingToken).ConfigureAwait(false);
+                if (cancellation.IsSubChunkCancelled(parentChunkIndex, subChunkIndex))
+                {
+                    cancelTranscription.Cancel();
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // stopPollingToken fired after transcription finished or job cancelled
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task TranscribeSplitSubChunkAsync(
+        TranscriptionConfig config,
+        string artifactRoot,
+        string agentJobId,
+        int parentChunkIndex,
+        int subChunkIndex,
+        int totalChunks,
+        INodeModel? nodeModel,
+        CancellationToken ct)
+    {
+        var subChunksDir = Path.Combine(artifactRoot, config.SplitChunksDir, $"chunk_{parentChunkIndex}", "sub_chunks");
+        var audioPath = SplitChunkPaths.FindSubChunkAudioFile(subChunksDir, subChunkIndex);
+        if (audioPath == null)
+            throw new FileNotFoundException(
+                $"No sub-chunk audio for parent {parentChunkIndex} sub {subChunkIndex} under {subChunksDir}");
+
+        var resultsDir = Path.Combine(artifactRoot, config.SplitChunksDir, $"chunk_{parentChunkIndex}", "results");
+        var transcribeParent = agentJobId + ":transcribe";
+        var localKey = "chunk-" + parentChunkIndex + ":sub-" + subChunkIndex;
+        var parallelConfigured = config.Get<int?>("parallel_transcription_workers") ?? 4;
+
+        if (nodeModel != null)
+        {
+            EnsureAndStartTranscribePhase(nodeModel, agentJobId);
+            EnterStep(nodeModel, agentJobId, transcribeParent, localKey, "chunk");
+        }
+
+        var started = DateTimeOffset.UtcNow;
+        await TranscriptionWorkStateFile.UpsertSubChunkAsync(
+            artifactRoot,
+            TranscriptionWorkStateFile.SchemaVersionLatest,
+            totalChunks,
+            parentChunkIndex,
+            subChunkIndex,
+            JobState.Running,
+            started,
+            null,
+            null,
+            ct).ConfigureAwait(false);
+
+        var cancelMgr = _cancellationFactory.Get(agentJobId, artifactRoot);
+        using var userCancelCts = new CancellationTokenSource();
+        using var transcribeCts = CancellationTokenSource.CreateLinkedTokenSource(ct, userCancelCts.Token);
+        using var stopPolling = new CancellationTokenSource();
+        var pollTask = Task.Run(
+            () => PollSubChunkCancelWhileTranscribingAsync(
+                cancelMgr,
+                parentChunkIndex,
+                subChunkIndex,
+                userCancelCts,
+                stopPolling.Token),
+            CancellationToken.None);
+
+        try
+        {
+            var options = new TranscriptionClientOptions
+            {
+                Language = config.Language,
+                Prompt = config.Get<string>("prompt"),
+                Temperature = config.Temperature,
+                ResponseFormat = config.Get<string>("response_format"),
+                ChunkingStrategy = config.Get<string>("chunking_strategy"),
+                ChunkIndex = parentChunkIndex,
+                AgentJobId = agentJobId,
+                ParallelWorkersConfigured = parallelConfigured
+            };
+            var clientResult = await _client.TranscribeAsync(audioPath, options, transcribeCts.Token).ConfigureAwait(false);
+            var tr = new TranscriptionResult(
+                Path.GetFileName(audioPath),
+                0,
+                0,
+                clientResult.Segments,
+                clientResult.RawResponse);
+            SubChunkResultWriter.Save(resultsDir, subChunkIndex, tr);
+            var completed = DateTimeOffset.UtcNow;
+            if (nodeModel != null)
+                CompleteStep(nodeModel, agentJobId, transcribeParent, localKey, JobState.Completed);
+            await TranscriptionWorkStateFile.UpsertSubChunkAsync(
+                artifactRoot,
+                TranscriptionWorkStateFile.SchemaVersionLatest,
+                totalChunks,
+                parentChunkIndex,
+                subChunkIndex,
+                JobState.Completed,
+                started,
+                completed,
+                null,
+                ct).ConfigureAwait(false);
+
+            await SplitChunkMergeIntegrator.TryAfterSubChunkCompletedAsync(
+                    config,
+                    artifactRoot,
+                    agentJobId,
+                    parentChunkIndex,
+                    totalChunks,
+                    _merger,
+                    _logger,
+                    ct)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (ct.IsCancellationRequested)
+                throw;
+            if (nodeModel != null)
+                CompleteStep(nodeModel, agentJobId, transcribeParent, localKey, JobState.Cancelled);
+            await TranscriptionWorkStateFile.UpsertSubChunkAsync(
+                artifactRoot,
+                TranscriptionWorkStateFile.SchemaVersionLatest,
+                totalChunks,
+                parentChunkIndex,
+                subChunkIndex,
+                JobState.Cancelled,
+                started,
+                DateTimeOffset.UtcNow,
+                null,
+                ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            if (nodeModel != null)
+                CompleteStep(nodeModel, agentJobId, transcribeParent, localKey, JobState.Failed, ex.Message);
+            await TranscriptionWorkStateFile.UpsertSubChunkAsync(
+                artifactRoot,
+                TranscriptionWorkStateFile.SchemaVersionLatest,
+                totalChunks,
+                parentChunkIndex,
+                subChunkIndex,
+                JobState.Failed,
+                started,
+                DateTimeOffset.UtcNow,
+                ex.Message,
+                ct).ConfigureAwait(false);
+            throw;
+        }
+        finally
+        {
+            stopPolling.Cancel();
+            try
+            {
+                await pollTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                /* ignore */
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task RetranscribeMainChunkAsync(
+        TranscriptionConfig config,
+        string artifactRoot,
+        string agentJobId,
+        int chunkIndex,
+        INodeModel? nodeModel,
+        CancellationToken ct)
+    {
+        var files = config.GetFiles();
+        if (files.Count == 0)
+            throw new InvalidOperationException("config has no input file entry");
+        var rel = files[0].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var inputPath = Path.Combine(artifactRoot, rel);
+        if (!File.Exists(inputPath))
+            throw new FileNotFoundException("Input audio not found under artifact root", inputPath);
+
+        var workingPath = await ConvertToWavIfNeededAsync(config, inputPath, artifactRoot, ct).ConfigureAwait(false);
+        var baseName = Path.GetFileNameWithoutExtension(Path.GetFileName(inputPath));
+        var mdRel = ResolveOutputPattern(config.MdOutputPath, baseName, agentJobId);
+        var jsonRel = ResolveOutputPattern(config.RawJsonOutputPath, baseName, agentJobId);
+        var mdPath = Path.Combine(artifactRoot, mdRel);
+        var jsonPath = Path.Combine(artifactRoot, jsonRel);
+        EnsureDirectoryFor(mdPath);
+        EnsureDirectoryFor(jsonPath);
+
+        var splitWorkdirFull = Path.Combine(artifactRoot, config.SplitWorkdir);
+        var chunkInfos = await PrepareChunksAsync(config, workingPath, splitWorkdirFull, ct).ConfigureAwait(false);
+        var total = chunkInfos.Count;
+        if (chunkIndex < 0 || chunkIndex >= total)
+            throw new ArgumentOutOfRangeException(nameof(chunkIndex));
+
+        if (config.Get<bool?>("save_per_chunk_json") != true)
+            throw new InvalidOperationException("retranscribe requires save_per_chunk_json=true and existing chunks_json for other chunks");
+
+        var cacheDirFull = Path.Combine(artifactRoot, config.CacheDir);
+        EnsureDirectoryFor(cacheDirFull);
+        var manifestPath = Path.Combine(cacheDirFull, baseName + ".manifest.json");
+        var manifest = await _cache.LoadManifestAsync(manifestPath, ct).ConfigureAwait(false);
+        var targetBasename = Path.GetFileName(chunkInfos[chunkIndex].Path);
+        manifest.Chunks.Remove(targetBasename);
+        await _cache.SaveManifestAsync(manifestPath, manifest, ct).ConfigureAwait(false);
+
+        var merged = new TranscriptionResult[total];
+        for (var i = 0; i < total; i++)
+        {
+            if (i == chunkIndex)
+                continue;
+            var loaded = await TryLoadPerChunkTranscriptionResultAsync(config, artifactRoot, chunkInfos[i], ct)
+                .ConfigureAwait(false);
+            if (loaded == null)
+                throw new InvalidOperationException(
+                    $"Missing or invalid chunks_json for chunk {i}; cannot retranscribe chunk {chunkIndex} alone.");
+            merged[i] = loaded;
+        }
+
+        var transcribeParent = agentJobId + ":transcribe";
+        var localKey = "chunk-" + chunkIndex;
+        if (nodeModel != null)
+        {
+            EnsureAndStartTranscribePhase(nodeModel, agentJobId);
+            EnterStep(nodeModel, agentJobId, transcribeParent, localKey, "chunk");
+        }
+
+        var started = DateTimeOffset.UtcNow;
+        await TranscriptionWorkStateFile.UpsertChunkAsync(
+            artifactRoot,
+            TranscriptionWorkStateFile.SchemaVersionLatest,
+            total,
+            chunkIndex,
+            JobState.Running,
+            started,
+            null,
+            null,
+            false,
+            ct).ConfigureAwait(false);
+
+        var cancellation = _cancellationFactory.Get(agentJobId, artifactRoot);
+        using var manifestGate = new SemaphoreSlim(1, 1);
+        var parallelConfigured = config.Get<int?>("parallel_transcription_workers") ?? 4;
+
+        TranscriptionResult newResult;
+        try
+        {
+            newResult = await ProcessChunkAsync(
+                config,
+                chunkInfos[chunkIndex],
+                chunkIndex,
+                total,
+                manifest,
+                manifestPath,
+                baseName,
+                agentJobId,
+                parallelConfigured,
+                manifestGate,
+                cancellation,
+                ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            if (nodeModel != null)
+                CompleteStep(nodeModel, agentJobId, transcribeParent, localKey, JobState.Failed, ex.Message);
+            await TranscriptionWorkStateFile.UpsertChunkAsync(
+                artifactRoot,
+                TranscriptionWorkStateFile.SchemaVersionLatest,
+                total,
+                chunkIndex,
+                JobState.Failed,
+                started,
+                DateTimeOffset.UtcNow,
+                ex.Message,
+                false,
+                ct).ConfigureAwait(false);
+            throw;
+        }
+
+        merged[chunkIndex] = newResult;
+        var completedAt = DateTimeOffset.UtcNow;
+        if (nodeModel != null)
+            CompleteStep(nodeModel, agentJobId, transcribeParent, localKey, JobState.Completed);
+        await TranscriptionWorkStateFile.UpsertChunkAsync(
+            artifactRoot,
+            TranscriptionWorkStateFile.SchemaVersionLatest,
+            total,
+            chunkIndex,
+            JobState.Completed,
+            started,
+            completedAt,
+            null,
+            false,
+            ct).ConfigureAwait(false);
+
+        var perChunkRel = config.Get<string>("per_chunk_json_dir") ?? "chunks_json";
+        var perChunkDirFull = Path.Combine(artifactRoot, perChunkRel);
+        _output.SavePerChunkJson(Path.GetFileName(chunkInfos[chunkIndex].Path), newResult.RawResponse, perChunkDirFull);
+
+        _output.InitializeMarkdown(mdPath);
+        _output.ResetSpeakerMap();
+        foreach (var r in merged)
+            _output.AppendSegmentsToMarkdown(mdPath, r.Segments, r.Offset, r.EmitGuard);
+        _output.FinalizeMarkdown(mdPath);
+        _output.SaveCombinedJson(jsonPath, merged.ToList());
+        _logger?.LogInformation("Retranscribed main chunk {Index}; rebuilt {Md} and {Json}", chunkIndex, mdPath, jsonPath);
+    }
+
+    private async Task<TranscriptionResult?> TryLoadPerChunkTranscriptionResultAsync(
+        TranscriptionConfig config,
+        string artifactRoot,
+        ChunkInfo chunkInfo,
+        CancellationToken ct)
+    {
+        var perChunkRel = config.Get<string>("per_chunk_json_dir") ?? "chunks_json";
+        var jsonPath = Path.Combine(
+            artifactRoot,
+            perChunkRel,
+            Path.GetFileNameWithoutExtension(chunkInfo.Path) + ".json");
+        if (!File.Exists(jsonPath))
+            return null;
+        try
+        {
+            var bytes = await File.ReadAllBytesAsync(jsonPath, ct).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(bytes);
+            var dict = ToDictionary(doc.RootElement);
+            var segments = OpenAITranscriptionClient.ParseSegments(dict);
+            return new TranscriptionResult(
+                Path.GetFileName(chunkInfo.Path),
+                chunkInfo.Offset,
+                chunkInfo.EmitGuard,
+                segments,
+                dict);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Could not load per-chunk JSON for {Path}", jsonPath);
+            return null;
         }
     }
 }

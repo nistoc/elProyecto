@@ -6,10 +6,12 @@ namespace Agent04.Features.Transcription.Infrastructure;
 
 /// <summary>
 /// Persists per-chunk work state next to job artifacts for restart / agent05 hydration.
+/// Schema v2 adds optional sub-chunk rows (<see cref="TranscriptionWorkStateChunk.IsSubChunk"/>).
 /// </summary>
 public static class TranscriptionWorkStateFile
 {
     public const string DefaultFileName = "transcription_work_state.json";
+    public const int SchemaVersionLatest = 2;
 
     public static string ResolvePath(string artifactRoot) =>
         Path.Combine(artifactRoot, DefaultFileName);
@@ -28,21 +30,118 @@ public static class TranscriptionWorkStateFile
         var dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
-        var tmp = path + ".tmp";
-        await using (var fs = File.Create(tmp))
+
+        byte[] utf8;
+        await using (var ms = new MemoryStream())
         {
-            await JsonSerializer.SerializeAsync(fs, doc, SerializerOptions, ct).ConfigureAwait(false);
+            await JsonSerializer.SerializeAsync(ms, doc, SerializerOptions, ct).ConfigureAwait(false);
+            utf8 = ms.ToArray();
         }
 
-        File.Move(tmp, path, overwrite: true);
+        const int maxAttempts = 8;
+        Exception? lastEx = null;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            var tmp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                await File.WriteAllBytesAsync(tmp, utf8, ct).ConfigureAwait(false);
+                if (!File.Exists(path))
+                {
+                    File.Move(tmp, path, overwrite: false);
+                    return;
+                }
+
+                File.Replace(tmp, path, destinationBackupFileName: null, ignoreMetadataErrors: true);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                lastEx = ex;
+                TryDeleteQuiet(tmp);
+                if (attempt < maxAttempts - 1)
+                    await Task.Delay(40 * (attempt + 1), ct).ConfigureAwait(false);
+            }
+        }
+
+        throw new IOException("Failed to save transcription work state after retries: " + path, lastEx);
     }
 
-    /// <summary>Merge chunk row and write atomically.</summary>
-    public static async Task UpsertChunkAsync(
+    private static void TryDeleteQuiet(string p)
+    {
+        try
+        {
+            if (File.Exists(p))
+                File.Delete(p);
+        }
+        catch
+        {
+            /* best-effort */
+        }
+    }
+
+    /// <summary>Merge main-chunk row and write atomically.</summary>
+    public static Task UpsertChunkAsync(
         string artifactRoot,
         int schemaVersion,
         int totalChunks,
         int chunkIndex,
+        JobState state,
+        DateTimeOffset? startedAt,
+        DateTimeOffset? completedAt,
+        string? error,
+        bool recoveredFromArtifacts,
+        CancellationToken ct) =>
+        UpsertChunkRowAsync(
+            artifactRoot,
+            schemaVersion,
+            totalChunks,
+            chunkIndex,
+            isSubChunk: false,
+            parentChunkIndex: 0,
+            subChunkIndex: 0,
+            state,
+            startedAt,
+            completedAt,
+            error,
+            recoveredFromArtifacts,
+            ct);
+
+    /// <summary>Merge sub-chunk row (same <see cref="TranscriptionWorkStateChunk.Index"/> as parent chunk index).</summary>
+    public static Task UpsertSubChunkAsync(
+        string artifactRoot,
+        int schemaVersion,
+        int totalChunks,
+        int parentChunkIndex,
+        int subChunkIndex,
+        JobState state,
+        DateTimeOffset? startedAt,
+        DateTimeOffset? completedAt,
+        string? error,
+        CancellationToken ct) =>
+        UpsertChunkRowAsync(
+            artifactRoot,
+            schemaVersion,
+            totalChunks,
+            parentChunkIndex,
+            isSubChunk: true,
+            parentChunkIndex,
+            subChunkIndex,
+            state,
+            startedAt,
+            completedAt,
+            error,
+            recoveredFromArtifacts: false,
+            ct);
+
+    private static async Task UpsertChunkRowAsync(
+        string artifactRoot,
+        int schemaVersion,
+        int totalChunks,
+        int chunkIndex,
+        bool isSubChunk,
+        int parentChunkIndex,
+        int subChunkIndex,
         JobState state,
         DateTimeOffset? startedAt,
         DateTimeOffset? completedAt,
@@ -56,13 +155,21 @@ public static class TranscriptionWorkStateFile
             TotalChunks = totalChunks,
             RecoveredFromArtifacts = recoveredFromArtifacts
         };
-        doc.SchemaVersion = schemaVersion;
-        doc.TotalChunks = totalChunks;
+        doc.SchemaVersion = Math.Max(doc.SchemaVersion, schemaVersion);
+        doc.TotalChunks = Math.Max(doc.TotalChunks, totalChunks);
+        if (recoveredFromArtifacts)
+            doc.RecoveredFromArtifacts = true;
         doc.Chunks ??= new List<TranscriptionWorkStateChunk>();
-        var row = doc.Chunks.FirstOrDefault(c => c.Index == chunkIndex);
+        var row = doc.Chunks.FirstOrDefault(c => RowKeyEquals(c, chunkIndex, isSubChunk, parentChunkIndex, subChunkIndex));
         if (row == null)
         {
-            row = new TranscriptionWorkStateChunk { Index = chunkIndex };
+            row = new TranscriptionWorkStateChunk
+            {
+                Index = chunkIndex,
+                IsSubChunk = isSubChunk,
+                ParentChunkIndex = parentChunkIndex,
+                SubChunkIndex = subChunkIndex
+            };
             doc.Chunks.Add(row);
         }
 
@@ -70,13 +177,33 @@ public static class TranscriptionWorkStateFile
         row.StartedAt = startedAt?.ToString("O");
         row.CompletedAt = completedAt?.ToString("O");
         row.ErrorMessage = error;
-        doc.Chunks.Sort((a, b) => a.Index.CompareTo(b.Index));
+        SortChunkRows(doc.Chunks);
         await SaveAsync(artifactRoot, doc, ct).ConfigureAwait(false);
+    }
+
+    private static bool RowKeyEquals(TranscriptionWorkStateChunk c, int chunkIndex, bool isSubChunk, int parentChunkIndex, int subChunkIndex)
+    {
+        if (!isSubChunk)
+            return !c.IsSubChunk && c.Index == chunkIndex;
+        return c.IsSubChunk && c.ParentChunkIndex == parentChunkIndex && c.SubChunkIndex == subChunkIndex;
+    }
+
+    private static void SortChunkRows(List<TranscriptionWorkStateChunk> chunks)
+    {
+        chunks.Sort((a, b) =>
+        {
+            var idxCmp = a.Index.CompareTo(b.Index);
+            if (idxCmp != 0) return idxCmp;
+            var subFlag = a.IsSubChunk.CompareTo(b.IsSubChunk);
+            if (subFlag != 0) return subFlag;
+            return a.SubChunkIndex.CompareTo(b.SubChunkIndex);
+        });
     }
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
+        PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 }
@@ -96,4 +223,7 @@ public sealed class TranscriptionWorkStateChunk
     public string? StartedAt { get; set; }
     public string? CompletedAt { get; set; }
     public string? ErrorMessage { get; set; }
+    public bool IsSubChunk { get; set; }
+    public int ParentChunkIndex { get; set; }
+    public int SubChunkIndex { get; set; }
 }

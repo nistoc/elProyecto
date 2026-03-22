@@ -99,6 +99,8 @@ enum ChunkCommandAction {
   CHUNK_COMMAND_ACTION_SKIP = 2;
   CHUNK_COMMAND_ACTION_RETRANSCRIBE = 3;
   CHUNK_COMMAND_ACTION_SPLIT = 4;
+  /// Transcribe one operator split sub-file under split_chunks/chunk_{chunk_index}/sub_chunks/ (writes results/sub_chunk_XX_result.json).
+  CHUNK_COMMAND_ACTION_TRANSCRIBE_SUB = 5;
 }
 
 message ChunkCommandRequest {
@@ -109,6 +111,8 @@ message ChunkCommandRequest {
   string job_directory_relative = 4;
   /// For SPLIT: number of sub-chunks (>= 2). Ignored if 0 or unset.
   int32 split_parts = 5;
+  /// For TRANSCRIBE_SUB: 0-based sub-chunk index (matches _sub_XX in filename).
+  int32 sub_chunk_index = 6;
 }
 
 message ChunkCommandResponse {
