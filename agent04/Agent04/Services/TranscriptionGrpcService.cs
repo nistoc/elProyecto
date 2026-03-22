@@ -323,6 +323,41 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         return resp;
     }
 
+    public override async Task<GetProjectFilesResponse> GetProjectFiles(
+        GetProjectFilesRequest request,
+        ServerCallContext context)
+    {
+        if (string.IsNullOrWhiteSpace(request.JobId))
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "job_id is required"));
+
+        string artifactRoot;
+        try
+        {
+            artifactRoot = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
+        }
+        catch (RpcException)
+        {
+            throw;
+        }
+
+        if (!Directory.Exists(artifactRoot))
+            throw new RpcException(new Status(StatusCode.NotFound, "Job artifact directory not found"));
+
+        var catalog = await _projectArtifactService
+            .GetProjectFilesCatalogAsync(artifactRoot, context.CancellationToken)
+            .ConfigureAwait(false);
+
+        var resp = new GetProjectFilesResponse();
+        foreach (var f in catalog.Original) resp.Original.Add(ToProtoJobFile(f));
+        foreach (var f in catalog.Transcripts) resp.Transcripts.Add(ToProtoJobFile(f));
+        foreach (var f in catalog.Chunks) resp.Chunks.Add(ToProtoJobFile(f));
+        foreach (var f in catalog.ChunkJson) resp.ChunkJson.Add(ToProtoJobFile(f));
+        foreach (var f in catalog.Intermediate) resp.Intermediate.Add(ToProtoJobFile(f));
+        foreach (var f in catalog.Converted) resp.Converted.Add(ToProtoJobFile(f));
+        foreach (var f in catalog.SplitChunks) resp.SplitChunks.Add(ToProtoJobFile(f));
+        return resp;
+    }
+
     private static JobArtifactFileEntry ToProtoJobFile(ArtifactFileEntry e)
     {
         var p = new JobArtifactFileEntry
@@ -866,7 +901,9 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 IsSubChunk = false,
                 ParentChunkIndex = 0,
                 SubChunkIndex = 0,
-                TranscriptActivityLog = TruncateForChunkVm(TranscriptActivityLogFromMetadata(node.Metadata), 4000)
+                TranscriptActivityLog = TruncateActivityLogPreservingNewlines(
+                    TranscriptActivityLogFromMetadata(node.Metadata),
+                    4000)
             });
         }
 
@@ -888,7 +925,9 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 IsSubChunk = true,
                 ParentChunkIndex = parent,
                 SubChunkIndex = sub,
-                TranscriptActivityLog = TruncateForChunkVm(TranscriptActivityLogFromMetadata(n.Metadata), 4000)
+                TranscriptActivityLog = TruncateActivityLogPreservingNewlines(
+                    TranscriptActivityLogFromMetadata(n.Metadata),
+                    4000)
             });
         }
 
@@ -907,6 +946,19 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         if (string.IsNullOrEmpty(message)) return "";
         var t = message.Replace('\r', ' ').Replace('\n', ' ');
         return t.Length <= maxLen ? t : t[..maxLen] + "…";
+    }
+
+    /// <summary>Keep newlines so UI can render one row per log line; trim on a line boundary when over budget.</summary>
+    private static string TruncateActivityLogPreservingNewlines(string? message, int maxLen)
+    {
+        if (string.IsNullOrEmpty(message)) return "";
+        var t = message.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+        if (t.Length <= maxLen) return t;
+        var slice = t[..maxLen];
+        var lastNl = slice.LastIndexOf('\n');
+        if (lastNl > 0)
+            return slice[..lastNl] + "\n…";
+        return slice + "…";
     }
 
     private static string ChunkVirtualModelSignature(IReadOnlyList<ChunkVirtualModelEntry> entries)

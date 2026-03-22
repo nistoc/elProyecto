@@ -16,6 +16,7 @@ import type { ChunkArtifactGroup } from '../utils/chunkArtifactGroups';
 import {
   buildChunkGroups,
   chunkArtifactsTranscriptionComplete,
+  chunkGroupHasBlockingSplitArtifacts,
   chunkHasBlockingSplitArtifacts,
   overlayVmFromJobWhenMissing,
 } from '../utils/chunkArtifactGroups';
@@ -464,10 +465,10 @@ export function ChunkControlsStats({
               (hasVmTelemetry || showArtifactDone || chunkVmPending);
             const showRunningOnlyCancel =
               transcriberRunning && total > 0 && vmIsRunning(vm?.state);
-            const hasSplitArtifacts = chunkHasBlockingSplitArtifacts(
-              fileData,
-              g.index
-            );
+            const hasSplitArtifacts =
+              agent04ArtifactGroups != null
+                ? chunkGroupHasBlockingSplitArtifacts(g)
+                : chunkHasBlockingSplitArtifacts(fileData, g.index);
             const mainCancelEnabled =
               live && chunkMainRunning && !readOnly;
             const mainSkipEnabled = live && !readOnly;
@@ -1027,7 +1028,7 @@ export function ChunkControlsStats({
           overflow: auto;
           display: flex;
           flex-direction: column;
-          gap: 0.35rem;
+          gap: 0.45rem;
           font-size: 0.68rem;
           line-height: 1.35;
           font-family: ui-monospace, monospace;

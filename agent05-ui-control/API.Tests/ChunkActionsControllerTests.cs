@@ -89,6 +89,12 @@ internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient
         int totalChunks,
         CancellationToken ct = default) =>
         Task.FromResult(NextChunkGroups);
+
+    public Task<JobProjectFiles?> GetProjectFilesAsync(
+        string agent04JobId,
+        string jobDirectoryRelative,
+        CancellationToken ct = default) =>
+        Task.FromResult<JobProjectFiles?>(null);
 }
 
 public class ChunkActionsControllerTests

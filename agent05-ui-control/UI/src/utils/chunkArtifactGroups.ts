@@ -222,6 +222,13 @@ export function chunkHasBlockingSplitArtifacts(
   );
 }
 
+/** When groups come from Agent04, split blocking matches scanner: any sub-chunk row (not merged-only at chunk root). */
+export function chunkGroupHasBlockingSplitArtifacts(g: ChunkArtifactGroup): boolean {
+  return g.subChunks.some(
+    (sc) => sc.audioFiles.length > 0 || sc.jsonFiles.length > 0
+  );
+}
+
 export function chunkArtifactsTranscriptionComplete(
   audioFiles: JobProjectFile[],
   jsonFiles: JobProjectFile[]

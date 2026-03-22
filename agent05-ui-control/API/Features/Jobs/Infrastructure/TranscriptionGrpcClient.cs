@@ -220,6 +220,48 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         }
     }
 
+    public async Task<Application.JobProjectFiles?> GetProjectFilesAsync(
+        string agent04JobId,
+        string jobDirectoryRelative,
+        CancellationToken ct = default)
+    {
+        using var channel = GrpcChannel.ForAddress(_address);
+        var client = new TranscriptionService.TranscriptionServiceClient(channel);
+        try
+        {
+            var response = await client.GetProjectFilesAsync(
+                    new GetProjectFilesRequest
+                    {
+                        JobId = agent04JobId,
+                        JobDirectoryRelative = jobDirectoryRelative ?? ""
+                    },
+                    cancellationToken: ct)
+                .ResponseAsync.ConfigureAwait(false);
+            return MapProjectFiles(response);
+        }
+        catch (RpcException ex)
+        {
+            _logger.LogDebug(
+                ex,
+                "Agent04 GetProjectFiles failed for {JobId}, dir={Dir}",
+                agent04JobId,
+                jobDirectoryRelative);
+            return null;
+        }
+    }
+
+    private static Application.JobProjectFiles MapProjectFiles(GetProjectFilesResponse r) =>
+        new()
+        {
+            Original = r.Original.Select(MapArtifactFile).ToList(),
+            Transcripts = r.Transcripts.Select(MapArtifactFile).ToList(),
+            Chunks = r.Chunks.Select(MapArtifactFile).ToList(),
+            ChunkJson = r.ChunkJson.Select(MapArtifactFile).ToList(),
+            Intermediate = r.Intermediate.Select(MapArtifactFile).ToList(),
+            Converted = r.Converted.Select(MapArtifactFile).ToList(),
+            SplitChunks = r.SplitChunks.Select(MapArtifactFile).ToList()
+        };
+
     private static Application.JobProjectFile MapArtifactFile(JobArtifactFileEntry e)
     {
         var f = new Application.JobProjectFile

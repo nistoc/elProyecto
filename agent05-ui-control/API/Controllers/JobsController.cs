@@ -193,8 +193,36 @@ public class JobsController : ControllerBase
             _logger.LogDebug("GetProjectFiles({Id}): archive job (directory only)", id);
         }
 
-        var files = JobProjectFilesScanner.Scan(jobDir);
-        _logger.LogDebug("GetProjectFiles({Id}): jobDir={Path}, original={O}, chunks={C}", id, jobDir, files.Original.Count, files.Chunks.Count);
+        JobProjectFiles files;
+        if (job != null && !string.IsNullOrWhiteSpace(job.Agent04JobId))
+        {
+            var remote = await _transcription
+                .GetProjectFilesAsync(job.Agent04JobId.Trim(), id, ct)
+                .ConfigureAwait(false);
+            if (remote != null)
+            {
+                files = remote;
+                _logger.LogDebug(
+                    "GetProjectFiles({Id}): from Agent04, original={O}, chunks={C}",
+                    id,
+                    files.Original.Count,
+                    files.Chunks.Count);
+            }
+            else
+            {
+                files = JobProjectFilesScanner.Scan(jobDir);
+                _logger.LogDebug(
+                    "GetProjectFiles({Id}): gRPC unavailable, local scan jobDir={Path}",
+                    id,
+                    jobDir);
+            }
+        }
+        else
+        {
+            files = JobProjectFilesScanner.Scan(jobDir);
+            _logger.LogDebug("GetProjectFiles({Id}): jobDir={Path}, original={O}, chunks={C}", id, jobDir, files.Original.Count, files.Chunks.Count);
+        }
+
         return Ok(new { files, jobDir });
     }
 

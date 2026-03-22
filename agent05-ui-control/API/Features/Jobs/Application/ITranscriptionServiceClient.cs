@@ -32,6 +32,12 @@ public interface ITranscriptionServiceClient
         string jobDirectoryRelative,
         int totalChunks,
         CancellationToken ct = default);
+
+    /// <summary>Structured file tree from Agent04 (null if unavailable — caller may fall back to local scan).</summary>
+    Task<JobProjectFiles?> GetProjectFilesAsync(
+        string agent04JobId,
+        string jobDirectoryRelative,
+        CancellationToken ct = default);
 }
 
 /// <summary>Aligns with agent04.proto ChunkCommandAction numeric values.</summary>

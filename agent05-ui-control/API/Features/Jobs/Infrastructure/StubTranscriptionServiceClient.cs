@@ -41,4 +41,10 @@ public sealed class StubTranscriptionServiceClient : Application.ITranscriptionS
         CancellationToken ct = default) =>
         Task.FromResult<Application.ChunkArtifactGroupsResult?>(
             new Application.ChunkArtifactGroupsResult { Groups = Array.Empty<Application.ChunkArtifactGroupJson>() });
+
+    public Task<Application.JobProjectFiles?> GetProjectFilesAsync(
+        string agent04JobId,
+        string jobDirectoryRelative,
+        CancellationToken ct = default) =>
+        Task.FromResult<Application.JobProjectFiles?>(null);
 }

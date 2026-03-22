@@ -17,6 +17,7 @@ service TranscriptionService {
   rpc EnqueueTranscriptionWork(EnqueueTranscriptionWorkRequest) returns (EnqueueTranscriptionWorkResponse);
   /// Chunk / split artifact grouping for Stats (file metadata only; VM comes from GetJobStatus / stream).
   rpc GetChunkArtifactGroups(GetChunkArtifactGroupsRequest) returns (GetChunkArtifactGroupsResponse);
+  rpc GetProjectFiles(GetProjectFilesRequest) returns (GetProjectFilesResponse);
 }
 
 // Paths in config_path and input_file_path are relative to the instance's workspace_root (from config).
@@ -190,4 +191,19 @@ message GetChunkArtifactGroupsRequest {
 
 message GetChunkArtifactGroupsResponse {
   repeated ChunkArtifactGroup groups = 1;
+}
+
+message GetProjectFilesRequest {
+  string job_id = 1;
+  string job_directory_relative = 2;
+}
+
+message GetProjectFilesResponse {
+  repeated JobArtifactFileEntry original = 1;
+  repeated JobArtifactFileEntry transcripts = 2;
+  repeated JobArtifactFileEntry chunks = 3;
+  repeated JobArtifactFileEntry chunk_json = 4;
+  repeated JobArtifactFileEntry intermediate = 5;
+  repeated JobArtifactFileEntry converted = 6;
+  repeated JobArtifactFileEntry split_chunks = 7;
 }

@@ -214,6 +214,13 @@ public sealed class ProjectArtifactService : IProjectArtifactService
     }
 
     /// <inheritdoc />
+    public Task<ProjectFilesCatalogResult> GetProjectFilesCatalogAsync(string artifactRoot, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(ProjectFilesCatalogScanner.Scan(artifactRoot));
+    }
+
+    /// <inheritdoc />
     public void InitializeJobMarkdownOutput(string mdPath) => _outputWriter.InitializeMarkdown(mdPath);
 
     /// <inheritdoc />

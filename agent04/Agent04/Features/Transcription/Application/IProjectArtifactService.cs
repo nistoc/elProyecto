@@ -62,6 +62,9 @@ public interface IProjectArtifactService
         int totalChunksHint,
         CancellationToken ct);
 
+    /// <summary>Full project file catalog under <paramref name="artifactRoot"/> (UI parity with Xtract GET .../files).</summary>
+    Task<ProjectFilesCatalogResult> GetProjectFilesCatalogAsync(string artifactRoot, CancellationToken ct);
+
     // --- Phase 4: transcription outputs + operator split (facade over existing writers / ffmpeg) ---
 
     void InitializeJobMarkdownOutput(string mdPath);
