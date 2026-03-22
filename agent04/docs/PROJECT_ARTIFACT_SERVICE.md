@@ -15,10 +15,10 @@
 | Метод | Фаза | Назначение |
 |--------|------|------------|
 | `ResolveJobArtifactRoot(workspaceRootFull, agent04JobId, jobDirectoryRelative)` | 1 | Корень артефактов: реестр → валидированный `job_directory_relative` → legacy workspace или strict-ошибка. Возвращает `ArtifactRootResolutionResult`. |
-| `GetGroupedArtifactsAsync` (или эквивалент по имени из proto) | 2 | Сгруппированные файлы job (семантика как `chunkArtifactGroups.ts` + `JobProjectFilesScanner`). |
-| `UpsertWorkState*` / загрузка контекста | 3+ | Атомарные обновления `transcription_work_state.json`, восстановление из диска. |
-| `WritePendingChunks` / consume | 3+ | Очередь `pending_chunks.json`. |
-| Операции cancel-сигналов | 3+ | Каталог `cancel_signals/` через политику сервиса. |
+| `GetChunkArtifactGroupsAsync(artifactRoot, totalChunksHint, ct)` + gRPC `GetChunkArtifactGroups` | 2 | Сгруппированные файлы job (семантика как `chunkArtifactGroups.ts` + `JobProjectFilesScanner`; сканер — `JobArtifactDirectoryScanner`). |
+| `TryLoadWorkStateAsync`, `SaveWorkStateAsync`, `UpsertWorkStateChunkAsync`, `UpsertWorkStateSubChunkAsync` | 3 | Фасад над `TranscriptionWorkStateFile` (модели — `TranscriptionWorkStateDocument` в Application). |
+| `WritePendingChunkIndicesAsync`, `TryLoadAndConsumePendingChunksAsync` | 3 | Очередь `pending_chunks.json`. |
+| `GetCancellationManager` | 3 | Фабрика `.agent04_chunk_cancel` (делегирование `ICancellationManagerFactory`). |
 | Запись артефактов пайплайна (делегирование существующим writer’ам) | 4 | Split, sub-chunk results, transcript outputs — единая точка входа. |
 | `DeleteSubChunkArtifacts` | 5 | Удаление файлов субчанка + согласованный work state / merged. |
 

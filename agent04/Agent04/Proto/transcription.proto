@@ -16,6 +16,8 @@ service TranscriptionService {
   rpc ChunkCommand(ChunkCommandRequest) returns (ChunkCommandResponse);
   /// Enqueue chunk indices for the next pipeline run (writes pending_chunks.json under the job artifact root).
   rpc EnqueueTranscriptionWork(EnqueueTranscriptionWorkRequest) returns (EnqueueTranscriptionWorkResponse);
+  /// Chunk / split artifact grouping for Stats (file metadata only; VM rows stay in Agent05 until phase 7).
+  rpc GetChunkArtifactGroups(GetChunkArtifactGroupsRequest) returns (GetChunkArtifactGroupsResponse);
 }
 
 // Paths in config_path and input_file_path are relative to the instance's workspace_root (from config).
@@ -141,4 +143,46 @@ message EnqueueTranscriptionWorkRequest {
 message EnqueueTranscriptionWorkResponse {
   bool ok = 1;
   string message = 2;
+}
+
+message JobArtifactFileEntry {
+  string name = 1;
+  string relative_path = 2;
+  string kind = 3;
+  int64 size_bytes = 4;
+  optional int32 line_count = 5;
+  optional double duration_seconds = 6;
+  /// Chunk index from chunks/ or chunks_json/ scan (first digits in filename).
+  optional int32 file_chunk_index = 7;
+  optional int32 parent_index = 8;
+  optional int32 sub_index = 9;
+  optional bool has_transcript = 10;
+  optional bool is_transcript = 11;
+}
+
+message SubChunkArtifactGroup {
+  optional int32 sub_index = 1;
+  string display_stem = 2;
+  repeated JobArtifactFileEntry audio_files = 3;
+  repeated JobArtifactFileEntry json_files = 4;
+}
+
+message ChunkArtifactGroup {
+  int32 index = 1;
+  string display_stem = 2;
+  repeated JobArtifactFileEntry audio_files = 3;
+  repeated JobArtifactFileEntry json_files = 4;
+  repeated SubChunkArtifactGroup sub_chunks = 5;
+  repeated JobArtifactFileEntry merged_split_files = 6;
+}
+
+message GetChunkArtifactGroupsRequest {
+  string job_id = 1;
+  string job_directory_relative = 2;
+  /// If > 0, group rows are 0..total_chunks-1. If 0, total_chunks is read from transcription_work_state.json; if still 0, indices come from chunk files + split_chunks only.
+  int32 total_chunks = 3;
+}
+
+message GetChunkArtifactGroupsResponse {
+  repeated ChunkArtifactGroup groups = 1;
 }

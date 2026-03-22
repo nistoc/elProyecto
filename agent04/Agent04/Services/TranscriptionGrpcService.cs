@@ -28,7 +28,6 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
     private readonly IConfiguration _configuration;
     private readonly IJobArtifactRootRegistry _artifactRootRegistry;
     private readonly IProjectArtifactService _projectArtifactService;
-    private readonly ICancellationManagerFactory _cancellationFactory;
     private readonly IAudioUtils _audioUtils;
     private readonly INodeModel? _nodeModel;
     private readonly INodeQuery? _nodeQuery;
@@ -45,7 +44,6 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         IConfiguration configuration,
         IJobArtifactRootRegistry artifactRootRegistry,
         IProjectArtifactService projectArtifactService,
-        ICancellationManagerFactory cancellationFactory,
         IAudioUtils audioUtils,
         INodeModel? nodeModel = null,
         INodeQuery? nodeQuery = null,
@@ -61,7 +59,6 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         _configuration = configuration;
         _artifactRootRegistry = artifactRootRegistry;
         _projectArtifactService = projectArtifactService;
-        _cancellationFactory = cancellationFactory;
         _audioUtils = audioUtils;
         _nodeModel = nodeModel;
         _nodeQuery = nodeQuery;
@@ -232,7 +229,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         }
     }
 
-    public override Task<EnqueueTranscriptionWorkResponse> EnqueueTranscriptionWork(
+    public override async Task<EnqueueTranscriptionWorkResponse> EnqueueTranscriptionWork(
         EnqueueTranscriptionWorkRequest request,
         ServerCallContext context)
     {
@@ -246,32 +243,97 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         }
         catch (RpcException ex)
         {
-            return Task.FromResult(new EnqueueTranscriptionWorkResponse { Ok = false, Message = ex.Status.Detail });
+            return new EnqueueTranscriptionWorkResponse { Ok = false, Message = ex.Status.Detail };
         }
 
-        var path = Path.Combine(artifactRoot, PendingChunksReader.FileName);
-        var dir = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(dir))
-            Directory.CreateDirectory(dir);
-
-        var payload = new { chunk_indices = request.ChunkIndices.ToList() };
-        var json = JsonSerializer.Serialize(payload, TranscriptionJsonSerializerOptions.Compact);
         try
         {
-            File.WriteAllText(path, json);
+            await _projectArtifactService
+                .WritePendingChunkIndicesAsync(artifactRoot, request.ChunkIndices.ToList(), context.CancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
+            var path = Path.Combine(artifactRoot, PendingChunksReader.FileName);
             _logger.LogWarning(ex, "EnqueueTranscriptionWork: failed to write {Path}", path);
-            return Task.FromResult(new EnqueueTranscriptionWorkResponse { Ok = false, Message = ex.Message });
+            return new EnqueueTranscriptionWorkResponse { Ok = false, Message = ex.Message };
         }
 
         _logger.LogInformation(
-            "EnqueueTranscriptionWork: job {JobId} wrote {Path} count={Count}",
+            "EnqueueTranscriptionWork: job {JobId} wrote pending_chunks count={Count}",
             request.JobId,
-            path,
             request.ChunkIndices.Count);
-        return Task.FromResult(new EnqueueTranscriptionWorkResponse { Ok = true, Message = "pending_chunks_written" });
+        return new EnqueueTranscriptionWorkResponse { Ok = true, Message = "pending_chunks_written" };
+    }
+
+    public override async Task<GetChunkArtifactGroupsResponse> GetChunkArtifactGroups(
+        GetChunkArtifactGroupsRequest request,
+        ServerCallContext context)
+    {
+        if (string.IsNullOrWhiteSpace(request.JobId))
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "job_id is required"));
+
+        string artifactRoot;
+        try
+        {
+            artifactRoot = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
+        }
+        catch (RpcException)
+        {
+            throw;
+        }
+
+        if (!Directory.Exists(artifactRoot))
+            throw new RpcException(new Status(StatusCode.NotFound, "Job artifact directory not found"));
+
+        var domainGroups = await _projectArtifactService
+            .GetChunkArtifactGroupsAsync(artifactRoot, request.TotalChunks, context.CancellationToken)
+            .ConfigureAwait(false);
+
+        var resp = new GetChunkArtifactGroupsResponse();
+        foreach (var g in domainGroups)
+        {
+            var row = new ChunkArtifactGroup
+            {
+                Index = g.Index,
+                DisplayStem = g.DisplayStem ?? "",
+            };
+            foreach (var f in g.AudioFiles) row.AudioFiles.Add(ToProtoJobFile(f));
+            foreach (var f in g.JsonFiles) row.JsonFiles.Add(ToProtoJobFile(f));
+            foreach (var s in g.SubChunks)
+            {
+                var sg = new SubChunkArtifactGroup { DisplayStem = s.DisplayStem ?? "" };
+                if (s.SubIndex.HasValue)
+                    sg.SubIndex = s.SubIndex.Value;
+                foreach (var f in s.AudioFiles) sg.AudioFiles.Add(ToProtoJobFile(f));
+                foreach (var f in s.JsonFiles) sg.JsonFiles.Add(ToProtoJobFile(f));
+                row.SubChunks.Add(sg);
+            }
+
+            foreach (var f in g.MergedSplitFiles) row.MergedSplitFiles.Add(ToProtoJobFile(f));
+            resp.Groups.Add(row);
+        }
+
+        return resp;
+    }
+
+    private static JobArtifactFileEntry ToProtoJobFile(ArtifactFileEntry e)
+    {
+        var p = new JobArtifactFileEntry
+        {
+            Name = e.Name,
+            RelativePath = e.RelativePath,
+            Kind = e.Kind,
+            SizeBytes = e.SizeBytes,
+        };
+        if (e.LineCount.HasValue) p.LineCount = e.LineCount.Value;
+        if (e.DurationSeconds.HasValue) p.DurationSeconds = e.DurationSeconds.Value;
+        if (e.Index.HasValue) p.FileChunkIndex = e.Index.Value;
+        if (e.ParentIndex.HasValue) p.ParentIndex = e.ParentIndex.Value;
+        if (e.SubIndex.HasValue) p.SubIndex = e.SubIndex.Value;
+        if (e.HasTranscript.HasValue) p.HasTranscript = e.HasTranscript.Value;
+        if (e.IsTranscript.HasValue) p.IsTranscript = e.IsTranscript.Value;
+        return p;
     }
 
     public override async Task<ChunkCommandResponse> ChunkCommand(ChunkCommandRequest request, ServerCallContext context)
@@ -301,7 +363,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 throw new RpcException(new Status(StatusCode.NotFound, "Job workspace not found"));
 
             var totalHint =
-                await ResolveTotalChunksFromArtifactRootAsync(artifactRoot, context.CancellationToken)
+                await _projectArtifactService.ResolveTotalChunksHintAsync(artifactRoot, context.CancellationToken)
                     .ConfigureAwait(false);
             _store.EnsureDiskBackedCompletedJob(request.JobId, totalHint);
             job = _store.Get(request.JobId);
@@ -325,7 +387,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 if (request.ChunkIndex < 0)
                     throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
                 var cancelBase = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
-                var cm = _cancellationFactory.Get(request.JobId, cancelBase);
+                var cm = _projectArtifactService.GetCancellationManager(request.JobId, cancelBase);
                 if (request.SubChunkIndex >= 0)
                 {
                     cm.MarkSubChunkCancelled(request.ChunkIndex, request.SubChunkIndex);
@@ -403,7 +465,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         var totalChunks = job?.TotalChunks ?? 0;
         if (totalChunks <= 0)
         {
-            var doc = await TranscriptionWorkStateFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
+            var doc = await _projectArtifactService.TryLoadWorkStateAsync(artifactRoot, ct).ConfigureAwait(false);
             totalChunks = doc?.TotalChunks ?? 0;
         }
 
@@ -717,26 +779,6 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 ["operator_action"] = action,
                 ["operator_action_at"] = DateTimeOffset.UtcNow.ToString("O")
             });
-    }
-
-    private static async Task<int> ResolveTotalChunksFromArtifactRootAsync(string artifactRoot, CancellationToken ct)
-    {
-        var ws = await TranscriptionWorkStateFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
-        if (ws?.TotalChunks is > 0)
-            return ws.TotalChunks;
-        try
-        {
-            var map = TranscriptionChunkOnDiskReader.MapPartIndexToAudioPath(
-                Path.Combine(artifactRoot, "chunks"));
-            if (map.Count > 0)
-                return map.Keys.Max() + 1;
-        }
-        catch
-        {
-            /* best-effort */
-        }
-
-        return 0;
     }
 
     /// <summary>Main chunk node ids are <c>{jobId}:transcribe:chunk-{n}</c> (not sub-chunk rows).</summary>

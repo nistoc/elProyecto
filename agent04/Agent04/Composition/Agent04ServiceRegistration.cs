@@ -78,7 +78,7 @@ public static class Agent04ServiceRegistration
             sp.GetRequiredService<ITranscriptionClient>(),
             sp.GetRequiredService<ITranscriptionOutputWriter>(),
             sp.GetRequiredService<ITranscriptionMerger>(),
-            sp.GetRequiredService<ICancellationManagerFactory>(),
+            sp.GetRequiredService<IProjectArtifactService>(),
             sp.GetRequiredService<INodeModel>(),
             sp.GetRequiredService<ILoggerFactory>().CreateLogger<TranscriptionPipeline>()));
         services.AddSingleton<IOutboundJobNotifier, NoOpOutboundJobNotifier>();

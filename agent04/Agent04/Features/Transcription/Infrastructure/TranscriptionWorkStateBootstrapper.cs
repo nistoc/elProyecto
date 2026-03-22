@@ -17,6 +17,7 @@ public static class TranscriptionWorkStateBootstrapper
         TranscriptionConfig config,
         string artifactRoot,
         string baseName,
+        IProjectArtifactService artifacts,
         CancellationToken ct)
     {
         var existingPath = TranscriptionWorkStateFile.ResolvePath(artifactRoot);
@@ -96,7 +97,7 @@ public static class TranscriptionWorkStateBootstrapper
             RecoveredFromArtifacts = true,
             Chunks = chunks
         };
-        await TranscriptionWorkStateFile.SaveAsync(artifactRoot, doc, ct).ConfigureAwait(false);
+        await artifacts.SaveWorkStateAsync(artifactRoot, doc, ct).ConfigureAwait(false);
         return doc;
     }
 

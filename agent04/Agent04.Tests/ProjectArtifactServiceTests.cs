@@ -13,7 +13,11 @@ public class ProjectArtifactServiceTests
         IConfiguration? configuration = null)
     {
         configuration ??= new ConfigurationBuilder().Build();
-        return new ProjectArtifactService(registry, configuration, NullLogger<ProjectArtifactService>.Instance);
+        return new ProjectArtifactService(
+            registry,
+            configuration,
+            new PerJobCancellationManagerFactory(),
+            NullLogger<ProjectArtifactService>.Instance);
     }
 
     [Fact]

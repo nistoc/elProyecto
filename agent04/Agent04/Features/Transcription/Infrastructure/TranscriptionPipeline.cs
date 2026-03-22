@@ -70,7 +70,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
     private readonly ITranscriptionClient _client;
     private readonly ITranscriptionOutputWriter _output;
     private readonly ITranscriptionMerger _merger;
-    private readonly ICancellationManagerFactory _cancellationFactory;
+    private readonly IProjectArtifactService _artifacts;
     private readonly INodeModel? _nodeModel;
     private readonly ILogger<TranscriptionPipeline>? _logger;
 
@@ -80,7 +80,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         ITranscriptionClient client,
         ITranscriptionOutputWriter output,
         ITranscriptionMerger merger,
-        ICancellationManagerFactory cancellationFactory,
+        IProjectArtifactService projectArtifacts,
         INodeModel? nodeModel = null,
         ILogger<TranscriptionPipeline>? logger = null)
     {
@@ -89,7 +89,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         _client = client;
         _output = output;
         _merger = merger;
-        _cancellationFactory = cancellationFactory;
+        _artifacts = projectArtifacts;
         _nodeModel = nodeModel;
         _logger = logger;
     }
@@ -181,11 +181,11 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         _logger?.LogInformation("Processing {Count} chunk(s)", chunkInfos.Count);
         UpdateProgress(JobState.Running, 5, "Chunking", chunkInfos.Count, 0, null, null, null);
 
-        await TranscriptionWorkStateBootstrapper.TryBootstrapAsync(config, artifactRoot, baseName, cancellationToken)
+        await TranscriptionWorkStateBootstrapper.TryBootstrapAsync(config, artifactRoot, baseName, _artifacts, cancellationToken)
             .ConfigureAwait(false);
 
         IReadOnlySet<int>? effectiveFilter = chunkIndicesFilter;
-        var pending = await PendingChunksReader.TryLoadAndConsumeAsync(artifactRoot, cancellationToken).ConfigureAwait(false);
+        var pending = await _artifacts.TryLoadAndConsumePendingChunksAsync(artifactRoot, cancellationToken).ConfigureAwait(false);
         if (pending != null && pending.Count > 0)
         {
             if (effectiveFilter == null)
@@ -200,7 +200,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         var progress = new ChunkProgress(chunkInfos.Count, config.Get<string>("progress_time_format") ?? "HH:MM:SS.M");
         var totalChunks = chunkInfos.Count;
-        var cancellation = _cancellationFactory.Get(jobId ?? "_pipeline", artifactRoot);
+        var cancellation = _artifacts.GetCancellationManager(jobId ?? "_pipeline", artifactRoot);
         var parallelConfigured = config.Get<int?>("parallel_transcription_workers") ?? 4;
         var parallel = Math.Clamp(parallelConfigured, 1, 64);
         if (parallel != parallelConfigured)
@@ -224,7 +224,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             await stateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                await TranscriptionWorkStateFile.UpsertChunkAsync(
+                await _artifacts.UpsertWorkStateChunkAsync(
                     artifactRoot,
                     TranscriptionWorkStateFile.SchemaVersionLatest,
                     totalChunks,
@@ -727,7 +727,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         }
 
         var started = DateTimeOffset.UtcNow;
-        await TranscriptionWorkStateFile.UpsertSubChunkAsync(
+        await _artifacts.UpsertWorkStateSubChunkAsync(
             artifactRoot,
             TranscriptionWorkStateFile.SchemaVersionLatest,
             totalChunks,
@@ -739,7 +739,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             null,
             ct).ConfigureAwait(false);
 
-        var cancelMgr = _cancellationFactory.Get(agentJobId, artifactRoot);
+        var cancelMgr = _artifacts.GetCancellationManager(agentJobId, artifactRoot);
         if (cancelMgr.ClearSubChunkCancelFlag(parentChunkIndex, subChunkIndex))
         {
             _logger?.LogInformation(
@@ -791,7 +791,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             var completed = DateTimeOffset.UtcNow;
             if (nodeModel != null)
                 CompleteStep(nodeModel, agentJobId, transcribeParent, localKey, JobState.Completed);
-            await TranscriptionWorkStateFile.UpsertSubChunkAsync(
+            await _artifacts.UpsertWorkStateSubChunkAsync(
                 artifactRoot,
                 TranscriptionWorkStateFile.SchemaVersionLatest,
                 totalChunks,
@@ -820,7 +820,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 throw;
             if (nodeModel != null)
                 CompleteStep(nodeModel, agentJobId, transcribeParent, localKey, JobState.Cancelled);
-            await TranscriptionWorkStateFile.UpsertSubChunkAsync(
+            await _artifacts.UpsertWorkStateSubChunkAsync(
                 artifactRoot,
                 TranscriptionWorkStateFile.SchemaVersionLatest,
                 totalChunks,
@@ -836,7 +836,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         {
             if (nodeModel != null)
                 CompleteStep(nodeModel, agentJobId, transcribeParent, localKey, JobState.Failed, ex.Message);
-            await TranscriptionWorkStateFile.UpsertSubChunkAsync(
+            await _artifacts.UpsertWorkStateSubChunkAsync(
                 artifactRoot,
                 TranscriptionWorkStateFile.SchemaVersionLatest,
                 totalChunks,
@@ -896,7 +896,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             }
 
             var inferredTotal = indexMap.Keys.Max() + 1;
-            var workState = await TranscriptionWorkStateFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
+            var workState = await _artifacts.TryLoadWorkStateAsync(artifactRoot, ct).ConfigureAwait(false);
             total = workState?.TotalChunks is { } ws && ws > 0
                 ? Math.Max(ws, inferredTotal)
                 : inferredTotal;
@@ -976,7 +976,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         }
 
         var started = DateTimeOffset.UtcNow;
-        await TranscriptionWorkStateFile.UpsertChunkAsync(
+        await _artifacts.UpsertWorkStateChunkAsync(
             artifactRoot,
             TranscriptionWorkStateFile.SchemaVersionLatest,
             total,
@@ -988,7 +988,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             false,
             ct).ConfigureAwait(false);
 
-        var cancellation = _cancellationFactory.Get(agentJobId, artifactRoot);
+        var cancellation = _artifacts.GetCancellationManager(agentJobId, artifactRoot);
         using var manifestGate = new SemaphoreSlim(1, 1);
         var parallelConfigured = config.Get<int?>("parallel_transcription_workers") ?? 4;
 
@@ -1013,7 +1013,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         {
             if (nodeModel != null)
                 CompleteStep(nodeModel, agentJobId, transcribeParent, localKey, JobState.Failed, ex.Message);
-            await TranscriptionWorkStateFile.UpsertChunkAsync(
+            await _artifacts.UpsertWorkStateChunkAsync(
                 artifactRoot,
                 TranscriptionWorkStateFile.SchemaVersionLatest,
                 total,
@@ -1039,7 +1039,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         var completedAt = DateTimeOffset.UtcNow;
         if (nodeModel != null)
             CompleteStep(nodeModel, agentJobId, transcribeParent, localKey, JobState.Completed);
-        await TranscriptionWorkStateFile.UpsertChunkAsync(
+        await _artifacts.UpsertWorkStateChunkAsync(
             artifactRoot,
             TranscriptionWorkStateFile.SchemaVersionLatest,
             total,
@@ -1099,7 +1099,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         if (indexMap.Count > 0)
         {
             var inferredTotal = indexMap.Keys.Max() + 1;
-            var workState = await TranscriptionWorkStateFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
+            var workState = await _artifacts.TryLoadWorkStateAsync(artifactRoot, ct).ConfigureAwait(false);
             total = workState?.TotalChunks is int ws && ws > 0 ? Math.Max(ws, inferredTotal) : inferredTotal;
             var list = new List<ChunkInfo>(total);
             for (var i = 0; i < total; i++)
