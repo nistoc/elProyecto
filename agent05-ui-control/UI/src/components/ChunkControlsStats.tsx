@@ -14,7 +14,7 @@ import type {
 import {
   buildChunkGroups,
   chunkArtifactsTranscriptionComplete,
-  chunkHasBlockingOperatorSplitArtifacts,
+  chunkHasBlockingSplitArtifacts,
 } from '../utils/chunkArtifactGroups';
 import {
   elapsedSeconds,
@@ -104,6 +104,8 @@ function SubChunkVmTelemetry({
   onRetranscribeSub,
   onSkipSub,
   onSplitParent,
+  skipEnabled,
+  splitEnabled,
 }: {
   vm: ChunkVirtualModelEntry;
   locale: 'en' | 'ru' | 'es';
@@ -115,6 +117,8 @@ function SubChunkVmTelemetry({
   readOnly: boolean;
   cancelEnabled: boolean;
   retranscribeEnabled: boolean;
+  skipEnabled: boolean;
+  splitEnabled: boolean;
   onCancelSub: () => void;
   onRetranscribeSub: () => void;
   onSkipSub: () => void;
@@ -126,8 +130,6 @@ function SubChunkVmTelemetry({
   const elapsed = sec === null ? t('chunkVmNoStarted') : formatMmSs(sec);
   const errFull = vm.errorMessage?.trim() ?? '';
   const detailText = errFull ? errFull : t('chunkVmNoStarted');
-  const subSkipDisabled = true;
-  const subSplitDisabled = true;
   return (
     <div className="chunk-stats__vm chunk-stats__vm--sub">
       <div className="chunk-stats__vm-title">{t('chunkStatsVmBlockTitle')}</div>
@@ -190,7 +192,7 @@ function SubChunkVmTelemetry({
             </button>
             <button
               type="button"
-              disabled={busy || readOnly || subSkipDisabled}
+              disabled={busy || readOnly || !skipEnabled}
               title={t('chunkSkip')}
               onClick={onSkipSub}
             >
@@ -206,7 +208,7 @@ function SubChunkVmTelemetry({
             </button>
             <button
               type="button"
-              disabled={busy || readOnly || subSplitDisabled}
+              disabled={busy || readOnly || !splitEnabled}
               title={t('chunkSplitTitle')}
               onClick={onSplitParent}
             >
@@ -230,8 +232,6 @@ export interface ChunkControlsStatsProps {
   files: JobProjectFiles | null;
   filesLoading: boolean;
   filesError: string | null;
-  /** Same index as Chunk controls (operator row). */
-  chunkOperatorIndex: number;
   locale: 'en' | 'ru' | 'es';
   t: (key: string) => string;
   /** After saving a file in the editor, refresh GET .../files (e.g. jobFiles.reload). */
@@ -256,7 +256,6 @@ export function ChunkControlsStats({
   files,
   filesLoading,
   filesError,
-  chunkOperatorIndex,
   locale,
   t,
   onProjectFilesChanged,
@@ -305,11 +304,7 @@ export function ChunkControlsStats({
   const total = job.chunks?.total ?? 0;
   const readOnly =
     job.status === 'failed' && (vmAll?.length ?? 0) > 0;
-  const live =
-    transcriberRunning &&
-    total > 0 &&
-    chunkOperatorIndex >= 0 &&
-    chunkOperatorIndex < total;
+  const live = transcriberRunning && total > 0;
 
   const fileData = files ?? emptyFiles;
   const groups = buildChunkGroups(job, fileData);
@@ -417,14 +412,12 @@ export function ChunkControlsStats({
             const errFull = vm?.errorMessage?.trim() ?? '';
             const detailText = errFull ? errFull : t('chunkVmNoStarted');
 
-            const isOperatorChunk = g.index === chunkOperatorIndex;
             const chunkIsCancelled =
               vmIsCancelled(vm?.state) ||
               (job.chunks?.cancelled?.includes(g.index) ?? false);
             const showCancelledSplitRetranscribe =
               chunkIsCancelled && canPostDoneChunkOps && !readOnly;
-            const showFullOperator =
-              live && isOperatorChunk && !readOnly;
+            const liveInteractive = live && !readOnly;
             const chunkVmPending =
               !vm ||
               vmStateNorm(vm.state) === '' ||
@@ -434,32 +427,28 @@ export function ChunkControlsStats({
               !readOnly &&
               !chunkMainRunning &&
               !showCancelledSplitRetranscribe &&
-              !showFullOperator &&
+              !liveInteractive &&
               (hasVmTelemetry || showArtifactDone || chunkVmPending);
             const showRunningOnlyCancel =
-              live &&
-              vmIsRunning(vm?.state) &&
-              !(isOperatorChunk && !readOnly);
-            const hasSplitArtifacts = chunkHasBlockingOperatorSplitArtifacts(
+              transcriberRunning && total > 0 && vmIsRunning(vm?.state);
+            const hasSplitArtifacts = chunkHasBlockingSplitArtifacts(
               fileData,
               g.index
             );
-            const mainVmActionsInPanel = true;
             const mainCancelEnabled =
               live && chunkMainRunning && !readOnly;
-            const mainSkipEnabled =
-              live && isOperatorChunk && !readOnly;
+            const mainSkipEnabled = live && !readOnly;
             const mainRetranscribeEnabled =
               !readOnly &&
               !hasSplitArtifacts &&
-              (showFullOperator ||
+              (liveInteractive ||
                 showCancelledSplitRetranscribe ||
                 showRetryMainRetranscribe);
             const mainSplitEnabled =
               !readOnly &&
               !hasSplitArtifacts &&
               canPostDoneChunkOps &&
-              (showFullOperator || showCancelledSplitRetranscribe);
+              (liveInteractive || showCancelledSplitRetranscribe);
 
             return (
               <li key={g.index} className="chunk-stats__card">
@@ -473,46 +462,7 @@ export function ChunkControlsStats({
                       </span>
                     ) : null}
                   </span>
-                  {isOperatorChunk && (
-                    <span className="chunk-stats__op-badge" title={t('chunkStatsOperatorChunk')}>
-                      {t('chunkStatsOperatorChunk')}
-                    </span>
-                  )}
                 </div>
-
-                {showCancelledSplitRetranscribe && !mainVmActionsInPanel && (
-                  <div className="chunk-stats__cancelled-actions">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void runAction('retranscribe', g.index)}
-                    >
-                      {t('chunkRetranscribe')}
-                    </button>
-                    {!hasSplitArtifacts && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        title={t('chunkSplitTitle')}
-                        onClick={() => void runSplit(g.index)}
-                      >
-                        {t('chunkSplit')}
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {showRetryMainRetranscribe && !mainVmActionsInPanel && (
-                  <div className="chunk-stats__cancelled-actions">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void runAction('retranscribe', g.index)}
-                    >
-                      {t('chunkRetranscribe')}
-                    </button>
-                  </div>
-                )}
 
                 <div className="chunk-stats__vm">
                   <div className="chunk-stats__vm-title">
@@ -752,6 +702,8 @@ export function ChunkControlsStats({
                               readOnly={readOnly}
                               cancelEnabled={subCancelEnabled}
                               retranscribeEnabled={subRetranscribeEnabled}
+                              skipEnabled={mainSkipEnabled}
+                              splitEnabled={mainSplitEnabled}
                               onCancelSub={() => {
                                 if (subIdxResolved == null) return;
                                 void runAction('cancel', g.index, {
@@ -968,26 +920,6 @@ export function ChunkControlsStats({
         .chunk-stats__stem {
           font-weight: 500;
           color: var(--color-text-secondary);
-        }
-        .chunk-stats__op-badge {
-          font-size: 0.65rem;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-          padding: 0.1rem 0.35rem;
-          border-radius: 4px;
-          border: 1px solid var(--color-border-strong);
-          color: var(--color-info);
-          background: var(--color-subtle-panel);
-        }
-        .chunk-stats__cancelled-actions {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.35rem;
-          margin-bottom: 0.4rem;
-        }
-        .chunk-stats__cancelled-actions button {
-          font-size: 0.75rem;
-          padding: 0.2rem 0.5rem;
         }
         .chunk-stats__artifact-done {
           margin-bottom: 0.35rem;

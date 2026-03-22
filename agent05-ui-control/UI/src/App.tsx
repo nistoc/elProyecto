@@ -1,4 +1,3 @@
-import { useState, useCallback, useEffect } from 'react';
 import { I18nProvider, useI18n } from './contexts/I18nContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { useJob, type StepId } from './hooks/useJob';
@@ -9,7 +8,6 @@ import { JobsList } from './components/JobsList';
 import { LogsSection } from './components/LogsSection';
 import { ResultSection } from './components/ResultSection';
 import { ProjectFilesPanel } from './components/ProjectFilesPanel';
-import { ChunkControlPanel } from './components/ChunkControlPanel';
 import { ChunkControlsStats } from './components/ChunkControlsStats';
 
 function AppContent() {
@@ -41,28 +39,6 @@ function AppContent() {
   } = useJob();
 
   const jobFiles = useJobProjectFiles(jobId, jobSnapshotRevision);
-
-  const [chunkFileFilter, setChunkFileFilter] = useState<number | null>(null);
-  const onChunkFileFilterChange = useCallback((v: number | null) => {
-    setChunkFileFilter(v);
-  }, []);
-
-  const [chunkOperatorIndex, setChunkOperatorIndex] = useState(0);
-
-  useEffect(() => {
-    if (activeStep !== 'transcriber') setChunkFileFilter(null);
-  }, [activeStep]);
-
-  useEffect(() => {
-    setChunkFileFilter(null);
-    setChunkOperatorIndex(0);
-  }, [jobId]);
-
-  useEffect(() => {
-    const total = job?.chunks?.total ?? 0;
-    if (total <= 0) return;
-    setChunkOperatorIndex((i) => Math.min(Math.max(0, i), total - 1));
-  }, [job?.chunks?.total]);
 
   const steps: { id: StepId; title: string }[] = [
     { id: 'transcriber', title: t('transcriber') },
@@ -183,7 +159,6 @@ function AppContent() {
                           files={jobFiles.data}
                           filesLoading={jobFiles.loading}
                           filesError={jobFiles.error}
-                          chunkOperatorIndex={chunkOperatorIndex}
                           locale={locale}
                           t={t}
                           refreshJobSnapshot={refreshJobSnapshot}
@@ -192,16 +167,6 @@ function AppContent() {
                             await refreshJobSnapshot();
                           }}
                         />
-                        <ChunkControlPanel
-                          jobId={jobId}
-                          job={job}
-                          t={t}
-                          chunkIndex={chunkOperatorIndex}
-                          onChunkIndexChange={setChunkOperatorIndex}
-                          fileFilterChunkIndex={chunkFileFilter}
-                          onFileFilterChunkChange={onChunkFileFilterChange}
-                          projectFiles={jobFiles.data}
-                        />
                         <h4 className="step-panel__files-heading">
                           {t('projectFiles')}
                         </h4>
@@ -209,7 +174,6 @@ function AppContent() {
                           jobId={jobId}
                           mode="full"
                           t={t}
-                          chunkIndexFilter={chunkFileFilter}
                           filesRefreshKey={jobSnapshotRevision}
                           managedFiles={jobFiles}
                           hideChunkSections

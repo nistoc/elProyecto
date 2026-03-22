@@ -206,10 +206,10 @@ export function chunkHasSplitArtifacts(
 /**
  * True when operator-split **blocking** artifacts exist for Retranscribe / server guard:
  * sub-chunk files under `split_chunks/chunk_N/` excluding root-level `chunk_N_merged.*`.
- * Matches agent05 `OperatorSplitArtifactPresence` (sub_chunks files or `sub_chunk_*_result.json`).
+ * Matches agent05 split-presence check (sub_chunks files or `sub_chunk_*_result.json`).
  * Leftover merged JSON/MD alone does **not** block — those are not removed by "delete sub-chunk".
  */
-export function chunkHasBlockingOperatorSplitArtifacts(
+export function chunkHasBlockingSplitArtifacts(
   files: JobProjectFiles | null | undefined,
   chunkIndex: number
 ): boolean {

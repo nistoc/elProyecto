@@ -23,25 +23,6 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function filterProjectFilesByChunk(
-  data: JobProjectFiles,
-  chunkIndex: number
-): JobProjectFiles {
-  const by = (files: JobProjectFile[]) =>
-    files.filter(
-      (f) => f.index === chunkIndex || f.parentIndex === chunkIndex
-    );
-  return {
-    ...data,
-    chunks: by(data.chunks),
-    chunkJson: by(data.chunkJson),
-    transcripts: by(data.transcripts),
-    intermediate: by(data.intermediate),
-    converted: by(data.converted),
-    splitChunks: by(data.splitChunks),
-  };
-}
-
 /** Section title with chunk count or 1-based index range when all rows have `index`. */
 function indexedSectionTitle(
   items: JobProjectFile[],
@@ -283,8 +264,6 @@ interface ProjectFilesViewProps {
   data: JobProjectFiles;
   mode: ProjectFilesMode;
   t: (key: string) => string;
-  /** When set, chunk-related file sections are narrowed to this 0-based chunk index. */
-  chunkIndexFilter?: number | null;
   /** Called after a text file is saved (refresh lists / line counts). */
   onFilesMutated?: () => void;
   /** Hide chunks + chunk JSON (shown in Chunk controls Stats). */
@@ -297,7 +276,6 @@ export function ProjectFilesView({
   data,
   mode,
   t,
-  chunkIndexFilter = null,
   onFilesMutated,
   hideChunkSections = false,
 }: ProjectFilesViewProps) {
@@ -306,15 +284,10 @@ export function ProjectFilesView({
     name: string;
   } | null>(null);
 
-  const viewData =
-    chunkIndexFilter != null
-      ? filterProjectFilesByChunk(data, chunkIndexFilter)
-      : data;
-
   const openEditor = (f: JobProjectFile) =>
     setEditTarget({ relativePath: f.relativePath, name: f.name });
 
-  const splitTranscripts = viewData.splitChunks.filter((x) => x.isTranscript);
+  const splitTranscripts = data.splitChunks.filter((x) => x.isTranscript);
 
   const body =
     mode === 'transcripts' ? (
@@ -322,7 +295,7 @@ export function ProjectFilesView({
         <Section
           title={t('sectionTranscripts')}
           jobId={jobId}
-          items={viewData.transcripts}
+          items={data.transcripts}
           t={t}
           onEditText={openEditor}
         />
@@ -333,7 +306,7 @@ export function ProjectFilesView({
           t={t}
           onEditText={openEditor}
         />
-        {!viewData.transcripts.length && !splitTranscripts.length && (
+        {!data.transcripts.length && !splitTranscripts.length && (
           <p className="pf-status">{t('noTranscriptFiles')}</p>
         )}
       </>
@@ -349,26 +322,26 @@ export function ProjectFilesView({
         <Section
           title={t('sectionTranscripts')}
           jobId={jobId}
-          items={viewData.transcripts}
+          items={data.transcripts}
           t={t}
           onEditText={openEditor}
         />
         {!hideChunkSections && (
           <>
             <Section
-              title={indexedSectionTitle(viewData.chunks, t('sectionChunks'))}
+              title={indexedSectionTitle(data.chunks, t('sectionChunks'))}
               jobId={jobId}
-              items={viewData.chunks}
+              items={data.chunks}
               t={t}
               onEditText={openEditor}
             />
             <Section
               title={indexedSectionTitle(
-                viewData.chunkJson,
+                data.chunkJson,
                 t('sectionChunkJson')
               )}
               jobId={jobId}
-              items={viewData.chunkJson}
+              items={data.chunkJson}
               t={t}
               onEditText={openEditor}
             />
@@ -377,21 +350,21 @@ export function ProjectFilesView({
         <Section
           title={t('sectionIntermediate')}
           jobId={jobId}
-          items={viewData.intermediate}
+          items={data.intermediate}
           t={t}
           onEditText={openEditor}
         />
         <Section
           title={t('sectionConverted')}
           jobId={jobId}
-          items={viewData.converted}
+          items={data.converted}
           t={t}
           onEditText={openEditor}
         />
         <Section
           title={t('sectionSplitChunks')}
           jobId={jobId}
-          items={viewData.splitChunks}
+          items={data.splitChunks}
           t={t}
           onEditText={openEditor}
         />
@@ -419,7 +392,6 @@ interface ProjectFilesPanelProps {
   jobId: string;
   mode: ProjectFilesMode;
   t: (key: string) => string;
-  chunkIndexFilter?: number | null;
   /** When this changes (e.g. SSE job snapshot), refetch GET .../files so new disk artifacts appear without switching tabs. */
   filesRefreshKey?: number;
   /** When set, file list state comes from parent (shared with Chunk controls Stats). */
@@ -431,7 +403,6 @@ export function ProjectFilesPanel({
   jobId,
   mode,
   t,
-  chunkIndexFilter = null,
   filesRefreshKey = 0,
   managedFiles,
   hideChunkSections = false,
@@ -562,7 +533,6 @@ export function ProjectFilesPanel({
         data={effectiveData}
         mode={mode}
         t={t}
-        chunkIndexFilter={chunkIndexFilter}
         onFilesMutated={() => reloadFiles()}
         hideChunkSections={hideChunkSections}
       />
