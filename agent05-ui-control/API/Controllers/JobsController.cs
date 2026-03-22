@@ -247,6 +247,67 @@ public class JobsController : ControllerBase
         return Ok(new { ok = true, message = "file saved successfully" });
     }
 
+    /// <summary>Delete a single file under the job directory (not a directory).</summary>
+    [HttpDelete("{id}/files/content")]
+    public async Task<IActionResult> DeleteProjectFileContent(string id, [FromQuery] string? path, CancellationToken ct = default)
+    {
+        if (!TryResolveJobContentPath(id, path, out var fullPath, out var error))
+            return error!;
+        if (!System.IO.File.Exists(fullPath))
+            return NotFound(new { error = "file not found" });
+        var attrs = System.IO.File.GetAttributes(fullPath);
+        if ((attrs & FileAttributes.Directory) != 0)
+            return BadRequest(new { error = "path must be a file, not a directory" });
+        try
+        {
+            System.IO.File.Delete(fullPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "DeleteProjectFileContent({Id}): failed for {Path}", id, fullPath);
+            return StatusCode(500, new { error = "failed to delete file" });
+        }
+
+        await PublishEnrichedSnapshotAsync(id, ct).ConfigureAwait(false);
+        return Ok(new { ok = true, message = "file deleted" });
+    }
+
+    /// <summary>Delete operator-split sub-chunk artifacts (audio, result json, cancel flag, work-state row).</summary>
+    [HttpDelete("{id}/chunks/{parentIndex:int}/sub-chunks/{subIndex:int}")]
+    public async Task<IActionResult> DeleteSubChunkArtifacts(
+        string id,
+        int parentIndex,
+        int subIndex,
+        CancellationToken ct = default)
+    {
+        if (parentIndex < 0 || subIndex < 0)
+            return BadRequest(new { error = "parentIndex and subIndex must be >= 0" });
+        var job = await _store.GetAsync(id, ct);
+        if (job == null)
+            return NotFound();
+        var jobDir = _workspace.GetJobDirectoryPath(id);
+        if (!Directory.Exists(jobDir))
+            return NotFound(new { error = "job directory not found" });
+
+        if (OperatorSubChunkArtifacts.IsSubChunkRunning(job, parentIndex, subIndex))
+            return Conflict(new { error = "sub_chunk_running" });
+
+        var (ok, message) = await OperatorSubChunkArtifacts.TryDeleteBundleAsync(
+            jobDir,
+            job.Agent04JobId,
+            parentIndex,
+            subIndex,
+            "split_chunks",
+            job,
+            _logger,
+            ct).ConfigureAwait(false);
+        if (!ok)
+            return StatusCode(500, new { error = message });
+
+        await PublishEnrichedSnapshotAsync(id, ct).ConfigureAwait(false);
+        return Ok(new { ok = true, message });
+    }
+
     /// <summary>Resolves <paramref name="path"/> to an absolute file path under the job directory, or sets <paramref name="error"/>.</summary>
     private bool TryResolveJobContentPath(string id, string? path, out string fullPath, out IActionResult? error)
     {
@@ -339,7 +400,7 @@ public class JobsController : ControllerBase
 
         var action = ParseChunkAction(body.Action.Trim());
         if (action == null)
-            return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "skip", "retranscribe", "split", "transcribe_sub" } });
+            return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "skip", "retranscribe", "split", "transcribe_sub", "rebuild_combined" } });
 
         var allowAfterDone = action == TranscriptionChunkAction.Split
             || action == TranscriptionChunkAction.TranscribeSub
@@ -359,6 +420,14 @@ public class JobsController : ControllerBase
             return BadRequest(new { error = "transcribe_sub requires subChunkIndex >= 0" });
         if (action == TranscriptionChunkAction.Cancel && body.SubChunkIndex is int badSub && badSub < 0)
             return BadRequest(new { error = "subChunkIndex must be >= 0 when provided for cancel" });
+
+        if (action == TranscriptionChunkAction.Retranscribe)
+        {
+            var jobDir = _workspace.GetJobDirectoryPath(id);
+            if (Directory.Exists(jobDir) &&
+                OperatorSplitArtifactPresence.HasArtifactsForChunk(jobDir, body.ChunkIndex))
+                return Conflict(new { error = "retranscribe_blocked_operator_split_present" });
+        }
 
         try
         {

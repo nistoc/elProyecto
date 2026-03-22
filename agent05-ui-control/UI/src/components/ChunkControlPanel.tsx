@@ -9,7 +9,7 @@ import type {
   JobProjectFiles,
   JobSnapshot,
 } from '../types';
-import { chunkHasSplitArtifacts } from '../utils/chunkArtifactGroups';
+import { chunkHasBlockingOperatorSplitArtifacts } from '../utils/chunkArtifactGroups';
 import { elapsedSeconds, formatMmSs } from '../utils/chunkVmFormat';
 
 function labelForChunkState(state: string, t: (key: string) => string): string {
@@ -40,7 +40,7 @@ export interface ChunkControlPanelProps {
   /** When set, project file lists can narrow to this chunk index. */
   fileFilterChunkIndex: number | null;
   onFileFilterChunkChange: (index: number | null) => void;
-  /** From useJobProjectFiles; Split hidden when chunk already has split_chunks artifacts. */
+  /** From useJobProjectFiles; Retranscribe/Split gated when blocking operator-split artifacts exist (not merged-only). */
   projectFiles: JobProjectFiles | null;
 }
 
@@ -126,7 +126,7 @@ export function ChunkControlPanel({
     await runAction('split', idx, { splitParts: n });
   };
 
-  const operatorChunkHasSplitArtifacts = chunkHasSplitArtifacts(
+  const operatorChunkHasSplitArtifacts = chunkHasBlockingOperatorSplitArtifacts(
     projectFiles,
     chunkIndex
   );
@@ -314,7 +314,12 @@ export function ChunkControlPanel({
           </button>
           <button
             type="button"
-            disabled={!live || busy}
+            disabled={!live || busy || operatorChunkHasSplitArtifacts}
+            title={
+              operatorChunkHasSplitArtifacts
+                ? t('chunkRetranscribeBlockedSplit')
+                : undefined
+            }
             onClick={() => runAction('retranscribe')}
           >
             {t('chunkRetranscribe')}

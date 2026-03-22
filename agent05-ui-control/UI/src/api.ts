@@ -108,6 +108,52 @@ export async function putJobFileContent(
   }
 }
 
+/** Delete a single file under the job directory (not a directory). */
+export async function deleteJobProjectFile(
+  jobId: string,
+  relativePath: string
+): Promise<void> {
+  const q = new URLSearchParams({ path: relativePath });
+  const r = await fetch(
+    `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/files/content?${q}`,
+    { method: 'DELETE' }
+  );
+  if (!r.ok) {
+    const textBody = await r.text();
+    let msg = textBody || `HTTP ${r.status}`;
+    try {
+      const j = JSON.parse(textBody) as { error?: string };
+      if (j?.error) msg = j.error;
+    } catch {
+      /* keep msg */
+    }
+    throw new Error(msg);
+  }
+}
+
+/** Delete one operator-split sub-chunk bundle (audio, JSON, work-state row, cancel flag). */
+export async function deleteJobSubChunk(
+  jobId: string,
+  parentChunkIndex: number,
+  subChunkIndex: number
+): Promise<void> {
+  const r = await fetch(
+    `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/chunks/${parentChunkIndex}/sub-chunks/${subChunkIndex}`,
+    { method: 'DELETE' }
+  );
+  if (!r.ok) {
+    const textBody = await r.text();
+    let msg = textBody || `HTTP ${r.status}`;
+    try {
+      const j = JSON.parse(textBody) as { error?: string };
+      if (j?.error) msg = j.error;
+    } catch {
+      /* keep msg */
+    }
+    throw new Error(msg);
+  }
+}
+
 export async function createJob(
   file: File,
   tags?: string[]

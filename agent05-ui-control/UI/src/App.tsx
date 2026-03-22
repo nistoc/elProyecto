@@ -375,8 +375,9 @@ function AppContent() {
           min-width: 0;
           min-height: 0;
           padding: 1rem;
-          overflow-x: hidden;
-          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
         }
         .status-bar {
           flex-shrink: 0;
@@ -409,8 +410,20 @@ function AppContent() {
           word-break: break-all;
           white-space: normal;
         }
-        .steps-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
-        .step-content { margin-top: 0.5rem; }
+        .steps-row {
+          flex-shrink: 0;
+          display: flex;
+          gap: 0.5rem;
+          margin-bottom: 1rem;
+          flex-wrap: wrap;
+        }
+        .step-content {
+          flex: 1;
+          min-height: 0;
+          margin-top: 0.5rem;
+          overflow-x: hidden;
+          overflow-y: auto;
+        }
         .step-panel { padding: 1rem; }
         .step-panel__meta { margin: 0 0 0.5rem 0; font-size: 0.875rem; color: var(--color-text-secondary); }
         .step-panel__files-heading { margin: 1rem 0 0.35rem 0; font-size: 0.9rem; color: var(--color-heading); }

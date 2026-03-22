@@ -127,6 +127,13 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkCancelChunk: 'Cancel chunk',
     chunkSkip: 'Skip',
     chunkRetranscribe: 'Retranscribe',
+    chunkRetranscribeBlockedSplit:
+      'Retranscribe is disabled while operator split artifacts exist for this chunk. Remove sub-chunks first.',
+    chunkDeleteSubChunk: 'Delete sub-chunk',
+    chunkDeleteSubChunkTitle:
+      'Remove this sub-chunk’s audio, transcript JSON, work-state row, and cancel flag',
+    chunkDeleteSubChunkConfirm:
+      'Delete sub-chunk {sub} of chunk {parent}? This removes its files and work-state row.',
     chunkSplit: 'Split',
     chunkActionOk: 'OK',
     chunkActionRejected: 'Rejected',
@@ -281,6 +288,13 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkCancelChunk: 'Отменить чанк',
     chunkSkip: 'Пропустить',
     chunkRetranscribe: 'Перетранскрибировать',
+    chunkRetranscribeBlockedSplit:
+      'Перетранскрибирование недоступно, пока для этого чанка есть артефакты операторского сплита. Сначала удалите субчанки.',
+    chunkDeleteSubChunk: 'Удалить субчанк',
+    chunkDeleteSubChunkTitle:
+      'Удалить аудио, JSON транскрипта, строку в work-state и флаг отмены для этого субчанка',
+    chunkDeleteSubChunkConfirm:
+      'Удалить субчанк {sub} чанка {parent}? Будут удалены файлы и строка в work-state.',
     chunkSplit: 'Разбить',
     chunkActionOk: 'Готово',
     chunkActionRejected: 'Отклонено',
@@ -435,6 +449,13 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkCancelChunk: 'Cancelar fragmento',
     chunkSkip: 'Omitir',
     chunkRetranscribe: 'Retranscribir',
+    chunkRetranscribeBlockedSplit:
+      'Retranscribir está desactivado mientras existan artefactos de división del operador para este fragmento. Elimine primero los subfragmentos.',
+    chunkDeleteSubChunk: 'Eliminar subfragmento',
+    chunkDeleteSubChunkTitle:
+      'Quita el audio, el JSON de transcripción, la fila en work-state y la bandera de cancelación de este subfragmento',
+    chunkDeleteSubChunkConfirm:
+      '¿Eliminar el subfragmento {sub} del fragmento {parent}? Se borrarán sus archivos y la fila en work-state.',
     chunkSplit: 'Dividir',
     chunkActionOk: 'Correcto',
     chunkActionRejected: 'Rechazado',

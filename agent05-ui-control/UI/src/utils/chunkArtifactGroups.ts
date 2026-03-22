@@ -193,7 +193,7 @@ export function buildSubChunkGroups(
 }
 
 /** True when every chunk audio has a JSON with the same basename (stem) — legacy completion signal. */
-/** Any `split_chunks/` artifact tied to this parent chunk (sub-chunks or merged split output). */
+/** Any `split_chunks/` file row for this parent (includes merged `chunk_N_merged.*`). */
 export function chunkHasSplitArtifacts(
   files: JobProjectFiles | null | undefined,
   chunkIndex: number
@@ -201,6 +201,25 @@ export function chunkHasSplitArtifacts(
   const list = files?.splitChunks;
   if (!list?.length) return false;
   return list.some((f) => f.parentIndex === chunkIndex);
+}
+
+/**
+ * True when operator-split **blocking** artifacts exist for Retranscribe / server guard:
+ * sub-chunk files under `split_chunks/chunk_N/` excluding root-level `chunk_N_merged.*`.
+ * Matches agent05 `OperatorSplitArtifactPresence` (sub_chunks files or `sub_chunk_*_result.json`).
+ * Leftover merged JSON/MD alone does **not** block — those are not removed by "delete sub-chunk".
+ */
+export function chunkHasBlockingOperatorSplitArtifacts(
+  files: JobProjectFiles | null | undefined,
+  chunkIndex: number
+): boolean {
+  const list = files?.splitChunks;
+  if (!list?.length) return false;
+  return list.some(
+    (f) =>
+      f.parentIndex === chunkIndex &&
+      !isSplitParentMergedArtifact(f, chunkIndex)
+  );
 }
 
 export function chunkArtifactsTranscriptionComplete(

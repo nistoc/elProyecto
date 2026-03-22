@@ -466,6 +466,9 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             return new ChunkCommandResponse { Ok = false, Message = "config load failed: " + ex.Message };
         }
 
+        if (OperatorSplitArtifactPresence.HasArtifactsForChunk(artifactRoot, config.SplitChunksDir, request.ChunkIndex))
+            return new ChunkCommandResponse { Ok = false, Message = "retranscribe_blocked_operator_split_present" };
+
         var jobId = request.JobId;
         var chunkIndex = request.ChunkIndex;
         _ = Task.Run(async () =>

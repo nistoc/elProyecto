@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  deleteJobSubChunk,
   postJobChunkAction,
   type ChunkActionName,
   type PostChunkActionOptions,
@@ -13,7 +14,7 @@ import type {
 import {
   buildChunkGroups,
   chunkArtifactsTranscriptionComplete,
-  chunkHasSplitArtifacts,
+  chunkHasBlockingOperatorSplitArtifacts,
 } from '../utils/chunkArtifactGroups';
 import {
   elapsedSeconds,
@@ -439,7 +440,10 @@ export function ChunkControlsStats({
               live &&
               vmIsRunning(vm?.state) &&
               !(isOperatorChunk && !readOnly);
-            const hasSplitArtifacts = chunkHasSplitArtifacts(fileData, g.index);
+            const hasSplitArtifacts = chunkHasBlockingOperatorSplitArtifacts(
+              fileData,
+              g.index
+            );
             const mainVmActionsInPanel = true;
             const mainCancelEnabled =
               live && chunkMainRunning && !readOnly;
@@ -447,6 +451,7 @@ export function ChunkControlsStats({
               live && isOperatorChunk && !readOnly;
             const mainRetranscribeEnabled =
               !readOnly &&
+              !hasSplitArtifacts &&
               (showFullOperator ||
                 showCancelledSplitRetranscribe ||
                 showRetryMainRetranscribe);
@@ -590,7 +595,11 @@ export function ChunkControlsStats({
                         <button
                           type="button"
                           disabled={busy || !mainRetranscribeEnabled}
-                          title={t('chunkRetranscribe')}
+                          title={
+                            hasSplitArtifacts
+                              ? t('chunkRetranscribeBlockedSplit')
+                              : t('chunkRetranscribe')
+                          }
                           onClick={() =>
                             void runAction('retranscribe', g.index)
                           }
@@ -827,6 +836,53 @@ export function ChunkControlsStats({
                               </div>
                             </div>
                           )}
+                          {canPostDoneChunkOps &&
+                            !readOnly &&
+                            subIdxResolved != null &&
+                            !subVmRunning && (
+                              <div className="chunk-stats__sub-delete-wrap">
+                                <button
+                                  type="button"
+                                  className="chunk-stats__sub-delete-btn"
+                                  disabled={busy}
+                                  title={t('chunkDeleteSubChunkTitle')}
+                                  onClick={() => {
+                                    if (
+                                      !window.confirm(
+                                        t('chunkDeleteSubChunkConfirm')
+                                          .replace(
+                                            '{parent}',
+                                            String(g.index)
+                                          )
+                                          .replace(
+                                            '{sub}',
+                                            String(subIdxResolved)
+                                          )
+                                      )
+                                    )
+                                      return;
+                                    void (async () => {
+                                      try {
+                                        await deleteJobSubChunk(
+                                          jobId,
+                                          g.index,
+                                          subIdxResolved!
+                                        );
+                                        await onProjectFilesChanged?.();
+                                      } catch (e) {
+                                        setMessage(
+                                          e instanceof Error
+                                            ? e.message
+                                            : t('chunkActionFailed')
+                                        );
+                                      }
+                                    })();
+                                  }}
+                                >
+                                  {t('chunkDeleteSubChunk')}
+                                </button>
+                              </div>
+                            )}
                         </li>
                         );
                       })}
@@ -1203,6 +1259,27 @@ export function ChunkControlsStats({
           background: var(--color-surface-hover);
         }
         .chunk-stats__sub-actions button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .chunk-stats__sub-delete-wrap {
+          margin-top: 0.4rem;
+          padding-top: 0.35rem;
+          border-top: 1px dashed color-mix(in srgb, var(--color-border) 80%, transparent);
+        }
+        .chunk-stats__sub-delete-btn {
+          padding: 0.28rem 0.5rem;
+          font-size: 0.72rem;
+          border: 1px solid var(--color-border-strong);
+          border-radius: 4px;
+          background: var(--color-surface);
+          cursor: pointer;
+          color: var(--color-label);
+        }
+        .chunk-stats__sub-delete-btn:hover:not(:disabled) {
+          background: var(--color-surface-hover);
+        }
+        .chunk-stats__sub-delete-btn:disabled {
           opacity: 0.5;
           cursor: not-allowed;
         }
