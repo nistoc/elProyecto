@@ -96,7 +96,10 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
     {
         if (_nodeModel == null || string.IsNullOrEmpty(agentJobId) || chunkIndex < 0)
             return;
-        var line = $"{DateTimeOffset.UtcNow:o} {message}";
+        var suffix = message.Contains("Transcribe HTTP OK", StringComparison.Ordinal)
+            ? " ✅"
+            : "";
+        var line = $"{DateTimeOffset.UtcNow:o} {message}{suffix}";
         var nodeId = subChunkIndex is >= 0
             ? $"{agentJobId}:transcribe:chunk-{chunkIndex}:sub-{subChunkIndex.Value}"
             : $"{agentJobId}:transcribe:chunk-{chunkIndex}";

@@ -10,6 +10,7 @@ import { LogsSection } from './components/LogsSection';
 import { ResultSection } from './components/ResultSection';
 import { ProjectFilesPanel } from './components/ProjectFilesPanel';
 import { ChunkControlsStats } from './components/ChunkControlsStats';
+import { playTranscriptionChunkDoneChime } from './utils/playTranscriptionChunkDoneChime';
 
 function AppContent() {
   const { t, locale, setLocale } = useI18n();
@@ -248,16 +249,27 @@ function AppContent() {
       </div>
 
       <footer className="status-bar" role="status" aria-label={t('statusBarAriaLabel')}>
-        <span
-          className={
-            job?.transcriptionFooterHint?.trim()
-              ? 'status-bar__text status-bar__text--hint'
-              : 'status-bar__text'
-          }
-          title={job?.transcriptionFooterHint?.trim() || undefined}
-        >
-          {job?.transcriptionFooterHint?.trim() || t('statusBarDefaultMessage')}
-        </span>
+        <div className="status-bar__row">
+          <span
+            className={
+              job?.transcriptionFooterHint?.trim()
+                ? 'status-bar__text status-bar__text--hint'
+                : 'status-bar__text'
+            }
+            title={job?.transcriptionFooterHint?.trim() || undefined}
+          >
+            {job?.transcriptionFooterHint?.trim() || t('statusBarDefaultMessage')}
+          </span>
+          <button
+            type="button"
+            className="status-bar__chime-btn"
+            onClick={() => playTranscriptionChunkDoneChime()}
+            title={t('statusBarChimeHint')}
+            aria-label={t('statusBarChimeAria')}
+          >
+            {t('statusBarChime')}
+          </button>
+        </div>
         {job?.transcriptionSyncDebug?.trim() ? (
           <span
             className="status-bar__debug"
@@ -357,12 +369,31 @@ function AppContent() {
           color: var(--color-text-secondary);
           font-size: 0.75rem;
         }
+        .status-bar__row {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          min-width: 0;
+        }
         .status-bar__text {
           flex: 1;
           min-width: 0;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+        }
+        .status-bar__chime-btn {
+          flex-shrink: 0;
+          padding: 0.2rem 0.5rem;
+          border-radius: 6px;
+          border: 1px solid var(--color-border-strong);
+          background: var(--color-surface);
+          color: var(--color-text);
+          font-size: 0.72rem;
+          cursor: pointer;
+        }
+        .status-bar__chime-btn:hover {
+          background: var(--color-surface-hover);
         }
         .status-bar__text--hint {
           color: var(--color-warning, #b8860b);
@@ -378,9 +409,15 @@ function AppContent() {
         .steps-row {
           flex-shrink: 0;
           display: flex;
+          flex-direction: row;
+          flex-wrap: wrap;
+          align-items: stretch;
           gap: 0.5rem;
           margin-bottom: 1rem;
-          flex-wrap: wrap;
+        }
+        .steps-row .step-card {
+          flex: 1 1 8rem;
+          min-width: 0;
         }
         .step-content {
           flex: 1;

@@ -164,11 +164,14 @@ export function FileRow({
   f,
   t,
   onEditText,
+  hideAudioActions,
 }: {
   jobId: string;
   f: JobProjectFile;
   t: (key: string) => string;
   onEditText?: (f: JobProjectFile) => void;
+  /** When true, audio rows omit the inline player (render it separately, e.g. under the media row). */
+  hideAudioActions?: boolean;
 }) {
   const url = jobProjectFileContentUrl(jobId, f.relativePath);
   const nameTitle =
@@ -219,7 +222,7 @@ export function FileRow({
         </div>
         <span className="pf-file-meta">{fileMeta(f, t)}</span>
       </div>
-      {f.kind === 'audio' && (
+      {f.kind === 'audio' && !hideAudioActions && (
         <div className="pf-file-actions">
           <JobAudioWavePlayer src={url} t={t} />
         </div>

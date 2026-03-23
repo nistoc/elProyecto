@@ -15,6 +15,9 @@ const messages: Record<Locale, Record<string, string>> = {
     statusBarDefaultMessage: 'No notifications yet.',
     statusBarDebugTitle:
       'Last Agent04 VM merge (API). Copy this line when reporting sync issues between Agent04 and the UI.',
+    statusBarChime: 'Chime',
+    statusBarChimeAria: 'Play completion chime (same as when a chunk finishes transcribing)',
+    statusBarChimeHint: 'Test the chunk-completion sound',
     clear: 'Clear',
     upload: 'Upload',
     transcriber: 'Transcriber',
@@ -161,6 +164,9 @@ const messages: Record<Locale, Record<string, string>> = {
     statusBarDefaultMessage: 'Пока нет уведомлений.',
     statusBarDebugTitle:
       'Последний merge VM с Agent04 (API). Скопируйте строку при разборе рассинхрона UI и Agent04.',
+    statusBarChime: 'Сигнал',
+    statusBarChimeAria: 'Воспроизвести сигнал завершения (как при окончании транскрипции чанка)',
+    statusBarChimeHint: 'Проверить звук завершения чанка',
     clear: 'Очистить',
     upload: 'Загрузка',
     transcriber: 'Транскрайбер',
@@ -309,6 +315,9 @@ const messages: Record<Locale, Record<string, string>> = {
     statusBarDefaultMessage: 'Sin notificaciones por ahora.',
     statusBarDebugTitle:
       'Última fusión VM con Agent04 (API). Copie esta línea si informa problemas de sincronización con la UI.',
+    statusBarChime: 'Tono',
+    statusBarChimeAria: 'Reproducir tono de finalización (igual que al terminar un chunk)',
+    statusBarChimeHint: 'Probar el sonido de chunk completado',
     clear: 'Limpiar',
     upload: 'Subir',
     transcriber: 'Transcriptor',

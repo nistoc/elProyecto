@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type {
+  ChunkVirtualModelEntry,
   JobSnapshot,
   JobListItem,
   StreamEvent,
   StepStatus,
 } from '../types';
+import { playTranscriptionChunkDoneChime } from '../utils/playTranscriptionChunkDoneChime';
 import {
   fetchJob,
   fetchJobsList,
@@ -47,6 +49,13 @@ function getStepStatus(step: StepId, job: JobSnapshot | null): StepStatus {
 
 const ACTIVE_STEP_KEY = 'xtract-manager-active-step';
 const LAST_JOB_KEY = 'xtract-manager-last-job-id';
+
+function chunkVmRowKey(e: ChunkVirtualModelEntry): string {
+  if (e.isSubChunk === true) {
+    return `${e.parentChunkIndex ?? -1}:sub:${e.subChunkIndex ?? -1}`;
+  }
+  return `main:${e.index}`;
+}
 
 function readLastJobId(): string | null {
   try {
@@ -109,6 +118,8 @@ export function useJob(): {
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const prevJobIdsRef = useRef<Set<string>>(new Set());
   const listHydratedRef = useRef(false);
+  const prevChunkVmStateRef = useRef<Map<string, string>>(new Map());
+  const chunkVmSoundHydratedRef = useRef(false);
 
   const setJobId = useCallback((id: string | null) => {
     persistLastJobId(id);
@@ -116,6 +127,8 @@ export function useJob(): {
     setJob(null);
     setError(null);
     setJobSnapshotRevision(0);
+    prevChunkVmStateRef.current = new Map();
+    chunkVmSoundHydratedRef.current = false;
   }, []);
 
   const setActiveStep = useCallback(
@@ -152,6 +165,34 @@ export function useJob(): {
   useEffect(() => {
     refreshList();
   }, [refreshList]);
+
+  useEffect(() => {
+    prevChunkVmStateRef.current = new Map();
+    chunkVmSoundHydratedRef.current = false;
+  }, [jobId]);
+
+  /** Chime when any chunk / sub-chunk VM transitions into `completed` (after first snapshot for this job). */
+  useEffect(() => {
+    const vm = job?.chunks?.chunkVirtualModel;
+    if (!vm?.length) return;
+
+    const next = new Map<string, string>();
+    for (const e of vm) {
+      const key = chunkVmRowKey(e);
+      const state = (e.state ?? '').trim().toLowerCase();
+      next.set(key, state);
+
+      if (chunkVmSoundHydratedRef.current) {
+        const prev = prevChunkVmStateRef.current.get(key);
+        if (prev && prev !== 'completed' && state === 'completed') {
+          playTranscriptionChunkDoneChime();
+        }
+      }
+    }
+
+    chunkVmSoundHydratedRef.current = true;
+    prevChunkVmStateRef.current = next;
+  }, [job]);
 
   /** First list load: validate restored jobId; later loads: auto-select newest newly appeared job. */
   useEffect(() => {
