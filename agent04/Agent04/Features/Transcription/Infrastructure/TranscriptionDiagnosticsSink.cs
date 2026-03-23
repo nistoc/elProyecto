@@ -33,10 +33,9 @@ public sealed class TranscriptionDiagnosticsSink : ITranscriptionDiagnosticsSink
             ? FormattableString.Invariant($" sub={subChunkIndex.Value}")
             : "";
         var attempt = string.IsNullOrEmpty(httpAttemptId) ? "?" : httpAttemptId;
-        var line = string.Format(
+        var body = string.Format(
             CultureInfo.InvariantCulture,
-            "{0:o} Transcribe HTTP start HttpAttemptId={1} chunk={2}{3} model={4} workers={5} inFlight={6} file={7} bytes={8}",
-            DateTimeOffset.UtcNow,
+            "Transcribe HTTP start HttpAttemptId={0} chunk={1}{2} model={3} workers={4} inFlight={5} file={6} bytes={7}",
             attempt,
             chunkIndex,
             subPart,
@@ -46,16 +45,15 @@ public sealed class TranscriptionDiagnosticsSink : ITranscriptionDiagnosticsSink
             file,
             bytes);
 
-        if (!string.IsNullOrEmpty(agentJobId))
-            _hub.SetFooterHint(agentJobId, line);
-
-        if (_nodeModel == null || string.IsNullOrEmpty(agentJobId) || chunkIndex < 0)
-            return;
-
-        var nodeId = subChunkIndex is >= 0
-            ? $"{agentJobId}:transcribe:chunk-{chunkIndex}:sub-{subChunkIndex.Value}"
-            : $"{agentJobId}:transcribe:chunk-{chunkIndex}";
-        _nodeModel.AppendTranscriptActivityLog(nodeId, line);
+        TranscriptActivityLogVmAppender.Append(
+            _nodeModel,
+            _hub,
+            agentJobId,
+            chunkIndex,
+            subChunkIndex,
+            body,
+            TranscriptActivityLogKind.Information,
+            setFooterHint: true);
     }
 
     public void OnTranscriptionHttpRetryScheduled(
@@ -72,10 +70,9 @@ public sealed class TranscriptionDiagnosticsSink : ITranscriptionDiagnosticsSink
         var subPart = subChunkIndex is >= 0
             ? FormattableString.Invariant($" sub={subChunkIndex.Value}")
             : "";
-        var line = string.Format(
+        var body = string.Format(
             CultureInfo.InvariantCulture,
-            "{0:o} Retry {1}/3 chunk={2}{3} file={4} HTTP {5} ({6}) {7}",
-            DateTimeOffset.UtcNow,
+            "Retry {0}/3 chunk={1}{2} file={3} HTTP {4} ({5}) {6}",
             nextAttempt,
             chunkIndex,
             subPart,
@@ -84,16 +81,15 @@ public sealed class TranscriptionDiagnosticsSink : ITranscriptionDiagnosticsSink
             category,
             shortDetail);
 
-        if (!string.IsNullOrEmpty(agentJobId))
-            _hub.SetFooterHint(agentJobId, line);
-
-        if (_nodeModel == null || string.IsNullOrEmpty(agentJobId) || chunkIndex < 0)
-            return;
-
-        var nodeId = subChunkIndex is >= 0
-            ? $"{agentJobId}:transcribe:chunk-{chunkIndex}:sub-{subChunkIndex.Value}"
-            : $"{agentJobId}:transcribe:chunk-{chunkIndex}";
-        _nodeModel.AppendTranscriptActivityLog(nodeId, line);
+        TranscriptActivityLogVmAppender.Append(
+            _nodeModel,
+            _hub,
+            agentJobId,
+            chunkIndex,
+            subChunkIndex,
+            body,
+            TranscriptActivityLogKind.Warning,
+            setFooterHint: true);
     }
 
     public void OnTranscriptionHttpRetryAttemptStarting(
@@ -108,25 +104,43 @@ public sealed class TranscriptionDiagnosticsSink : ITranscriptionDiagnosticsSink
         var subPart = subChunkIndex is >= 0
             ? FormattableString.Invariant($" sub={subChunkIndex.Value}")
             : "";
-        var line = string.Format(
+        var body = string.Format(
             CultureInfo.InvariantCulture,
-            "{0:o} Retry attempt {1}/3 for model {2} chunk={3}{4} file={5}",
-            DateTimeOffset.UtcNow,
+            "Retry attempt {0}/3 for model {1} chunk={2}{3} file={4}",
             attemptNumber,
             model,
             chunkIndex,
             subPart,
             file);
 
-        if (!string.IsNullOrEmpty(agentJobId))
-            _hub.SetFooterHint(agentJobId, line);
+        TranscriptActivityLogVmAppender.Append(
+            _nodeModel,
+            _hub,
+            agentJobId,
+            chunkIndex,
+            subChunkIndex,
+            body,
+            TranscriptActivityLogKind.Information,
+            setFooterHint: true);
+    }
 
-        if (_nodeModel == null || string.IsNullOrEmpty(agentJobId) || chunkIndex < 0)
+    public void OnTranscriptionHttpDiagnosticLine(
+        string? agentJobId,
+        int chunkIndex,
+        int? subChunkIndex,
+        string messageAfterTimestamp)
+    {
+        if (string.IsNullOrWhiteSpace(messageAfterTimestamp))
             return;
 
-        var nodeId = subChunkIndex is >= 0
-            ? $"{agentJobId}:transcribe:chunk-{chunkIndex}:sub-{subChunkIndex.Value}"
-            : $"{agentJobId}:transcribe:chunk-{chunkIndex}";
-        _nodeModel.AppendTranscriptActivityLog(nodeId, line);
+        TranscriptActivityLogVmAppender.Append(
+            _nodeModel,
+            _hub,
+            agentJobId,
+            chunkIndex,
+            subChunkIndex,
+            messageAfterTimestamp.Trim(),
+            TranscriptActivityLogKind.Warning,
+            setFooterHint: true);
     }
 }

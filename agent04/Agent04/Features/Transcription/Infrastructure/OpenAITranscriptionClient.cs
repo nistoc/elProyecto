@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -198,16 +199,18 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
                 var detail = string.IsNullOrEmpty(reason)
                     ? TruncateForLog(body, 400)
                     : $"{reason} | {TruncateForLog(body, 360)}";
-                _logger?.LogWarning(
-                    "OpenAI transcription HTTP failed HttpAttemptId={AttemptId} AgentJobId={JobId} ChunkIndex={Chunk} Status={Status} Category={Category} DurationMs={Ms} InFlight={Flight} Detail={Detail}",
+                var failedMessage = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "OpenAI transcription HTTP failed HttpAttemptId={0} AgentJobId={1} ChunkIndex={2} Status={3} Category={4} DurationMs={5} InFlight={6} Detail={7}",
                     httpAttemptId,
                     logContext.AgentJobId ?? "(none)",
-                    logContext.ChunkIndex,
+                    ChunkIndexLabel(logContext),
                     (int)response.StatusCode,
                     category,
                     sw.ElapsedMilliseconds,
                     inFlight,
                     detail);
+                EmitHttpDiagnosticWarning(logContext, failedMessage);
                 throw new HttpRequestException($"{(int)response.StatusCode}: {body}");
             }
 
@@ -232,12 +235,17 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
                     logContext.ChunkIndex,
                     sw.ElapsedMilliseconds);
             else
-                _logger?.LogWarning(
-                    "OpenAI transcription HTTP timeout HttpAttemptId={AttemptId} AgentJobId={JobId} ChunkIndex={Chunk} DurationMs={Ms} Category=timeout Reason=http_client_timeout",
+            {
+                var timeoutMessage = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "OpenAI transcription HTTP timeout HttpAttemptId={0} AgentJobId={1} ChunkIndex={2} DurationMs={3} Category=timeout Reason=http_client_timeout",
                     httpAttemptId,
                     logContext.AgentJobId ?? "(none)",
-                    logContext.ChunkIndex,
+                    ChunkIndexLabel(logContext),
                     sw.ElapsedMilliseconds);
+                EmitHttpDiagnosticWarning(logContext, timeoutMessage);
+            }
+
             throw;
         }
         catch (HttpRequestException)
@@ -247,12 +255,15 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
         catch (Exception ex)
         {
             sw.Stop();
-            _logger?.LogWarning(ex,
-                "OpenAI transcription HTTP error HttpAttemptId={AttemptId} AgentJobId={JobId} ChunkIndex={Chunk} DurationMs={Ms} Category=network",
+            var networkMessage = string.Format(
+                CultureInfo.InvariantCulture,
+                "OpenAI transcription HTTP error HttpAttemptId={0} AgentJobId={1} ChunkIndex={2} DurationMs={3} Category=network Exception={4}",
                 httpAttemptId,
                 logContext.AgentJobId ?? "(none)",
-                logContext.ChunkIndex,
-                sw.ElapsedMilliseconds);
+                ChunkIndexLabel(logContext),
+                sw.ElapsedMilliseconds,
+                TruncateForLog(ex.Message, 400));
+            EmitHttpDiagnosticWarning(logContext, networkMessage, ex);
             throw;
         }
         finally
@@ -301,6 +312,33 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
         _ when (int)code >= 400 => "client_error",
         _ => "other"
     };
+
+    private static string ChunkIndexLabel(TranscriptionClientOptions logContext) =>
+        logContext.ChunkIndex.HasValue
+            ? logContext.ChunkIndex.Value.ToString(CultureInfo.InvariantCulture)
+            : "";
+
+    /// <summary>
+    /// Single path for HTTP diagnostic text: same string to <see cref="ILogger"/> and VM activity log (via sink).
+    /// </summary>
+    private void EmitHttpDiagnosticWarning(TranscriptionClientOptions logContext, string message, Exception? ex = null)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+        if (ex != null)
+            _logger?.LogWarning(ex, "{Diagnostic}", message);
+        else
+            _logger?.LogWarning("{Diagnostic}", message);
+
+        if (_diagnosticsSink == null)
+            return;
+        var chunkIdx = logContext.ChunkIndex ?? -1;
+        _diagnosticsSink.OnTranscriptionHttpDiagnosticLine(
+            logContext.AgentJobId,
+            chunkIdx,
+            logContext.SubChunkIndex,
+            message);
+    }
 
     private static string TruncateForLog(string? text, int maxLen)
     {

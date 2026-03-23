@@ -42,4 +42,14 @@ public interface ITranscriptionDiagnosticsSink
         string audioFileName,
         int attemptNumber,
         string model);
+
+    /// <summary>
+    /// Appends one line to the chunk VM transcript activity log (timeout, HTTP non-success, network error, etc.).
+    /// <paramref name="messageAfterTimestamp"/> is the text after the ISO timestamp (same style as console warn/info).
+    /// </summary>
+    void OnTranscriptionHttpDiagnosticLine(
+        string? agentJobId,
+        int chunkIndex,
+        int? subChunkIndex,
+        string messageAfterTimestamp);
 }

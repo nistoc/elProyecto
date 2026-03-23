@@ -96,13 +96,10 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
     {
         if (_nodeModel == null || string.IsNullOrEmpty(agentJobId) || chunkIndex < 0)
             return;
-        var suffix = message.Contains("Transcribe HTTP OK", StringComparison.Ordinal)
-            ? " ✅"
-            : "";
-        var line = $"{DateTimeOffset.UtcNow:o} {message}{suffix}";
-        var nodeId = subChunkIndex is >= 0
-            ? $"{agentJobId}:transcribe:chunk-{chunkIndex}:sub-{subChunkIndex.Value}"
-            : $"{agentJobId}:transcribe:chunk-{chunkIndex}";
+        var line = TranscriptActivityLogFormatter.FormatPipelineChunkLine(message, appendOkEmoji: true);
+        var nodeId = TranscriptVmNodeId.ForTranscribeChunk(agentJobId, chunkIndex, subChunkIndex);
+        if (string.IsNullOrEmpty(nodeId))
+            return;
         _nodeModel.AppendTranscriptActivityLog(nodeId, line);
     }
 
