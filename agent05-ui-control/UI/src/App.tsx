@@ -146,6 +146,23 @@ function AppContent() {
                   <>
                     <p className="step-panel__meta">
                       {t('status')}: {job.status} · {t('phase')}: {job.phase}
+                      {(() => {
+                        const detail = job.transcriptionPhaseDetail?.trim();
+                        const pct = job.transcriptionProgressPercent;
+                        if (!detail && pct == null) return null;
+                        return (
+                          <>
+                            {' '}
+                            ·{' '}
+                            {detail ?? ''}
+                            {pct != null
+                              ? detail
+                                ? ` (${pct}%)`
+                                : `${pct}%`
+                              : ''}
+                          </>
+                        );
+                      })()}
                     </p>
                     {job.transcriptionError?.trim() && (
                       <div

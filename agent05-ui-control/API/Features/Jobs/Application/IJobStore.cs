@@ -47,6 +47,12 @@ public class JobSnapshot
     /// <summary>Latest automatic-retry / telemetry line from Agent04 (not persisted; refreshed via GetJobStatus).</summary>
     public string? TranscriptionFooterHint { get; set; }
 
+    /// <summary>Agent04 <c>current_phase</c> during transcription (e.g. silence compression); not persisted.</summary>
+    public string? TranscriptionPhaseDetail { get; set; }
+
+    /// <summary>Agent04 <c>progress_percent</c> during transcription; not persisted.</summary>
+    public int? TranscriptionProgressPercent { get; set; }
+
     /// <summary>
     /// One-line debug from last live VM merge (GET / merge Agent04). Not persisted; copy into bug reports.
     /// </summary>

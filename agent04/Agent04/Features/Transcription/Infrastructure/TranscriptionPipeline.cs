@@ -71,6 +71,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
     private readonly ITranscriptionMerger _merger;
     private readonly IProjectArtifactService _artifacts;
     private readonly INodeModel? _nodeModel;
+    private readonly TranscriptionTelemetryHub? _telemetryHub;
     private readonly ILogger<TranscriptionPipeline>? _logger;
 
     public TranscriptionPipeline(
@@ -80,6 +81,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         ITranscriptionMerger merger,
         IProjectArtifactService projectArtifacts,
         INodeModel? nodeModel = null,
+        TranscriptionTelemetryHub? telemetryHub = null,
         ILogger<TranscriptionPipeline>? logger = null)
     {
         _audioUtils = audioUtils;
@@ -88,6 +90,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         _merger = merger;
         _artifacts = projectArtifacts;
         _nodeModel = nodeModel;
+        _telemetryHub = telemetryHub;
         _logger = logger;
     }
 
@@ -154,8 +157,75 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         try
         {
+        if (config.Get<bool?>("convert_to_wav") == true
+            && inputFilePath.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase))
+        {
+            UpdateProgress(JobState.Running, 1, "Converting audio", null, null, null, null, null);
+            if (jobId != null)
+                _telemetryHub?.SetFooterHint(jobId, "Audio: converting to WAV…");
+        }
+
         var workingPath = await ConvertToWavIfNeededAsync(config, inputFilePath, artifactRoot, cancellationToken);
-        workingPath = await MaybeApplySilenceProcessingAsync(config, workingPath, artifactRoot, cancellationToken);
+
+        long lastSilenceUiTick = 0;
+        IProgress<SilenceCompressionProgress>? silenceCompressionProgress = null;
+        if (jobId != null && statusStore != null)
+        {
+            silenceCompressionProgress = new Progress<SilenceCompressionProgress>(p =>
+            {
+                var now = Environment.TickCount64;
+                var speechTotal = Math.Max(0, p.TotalSteps - 1);
+                var force = p.Stage == "concat"
+                    || p.StepCompleted <= 1
+                    || (speechTotal > 0 && p.StepCompleted % 10 == 0)
+                    || p.StepCompleted >= speechTotal;
+                if (!force && p.Stage == "segments" && now - lastSilenceUiTick < 250)
+                    return;
+                lastSilenceUiTick = now;
+
+                var pct = p.Stage == "concat"
+                    ? 4
+                    : speechTotal <= 0
+                        ? 2
+                        : 2 + (int)Math.Min(2.0, Math.Floor(p.StepCompleted * 2.0 / speechTotal));
+                UpdateProgress(JobState.Running, pct, "Compressing silence", null, null, null, null, null);
+
+                var ts = TimeSpan.FromSeconds(Math.Max(0, p.TimelinePositionSec));
+                var timeStr = ts.TotalHours >= 1
+                    ? $"{(int)ts.TotalHours:00}:{ts.Minutes:00}:{ts.Seconds:00}"
+                    : $"{ts.Minutes:00}:{ts.Seconds:00}";
+                string footer;
+                if (p.Stage == "concat")
+                {
+                    footer = p.StepCompleted >= p.TotalSteps
+                        ? "Silence: merged"
+                        : "Silence: merging WAV…";
+                }
+                else
+                    footer = $"Silence: segment {p.StepCompleted}/{speechTotal} (~ {timeStr} timeline)";
+
+                _telemetryHub?.SetFooterHint(jobId, footer);
+            });
+        }
+
+        workingPath = await MaybeApplySilenceProcessingAsync(
+            config,
+            workingPath,
+            artifactRoot,
+            cancellationToken,
+            onDetectingStart: () =>
+            {
+                UpdateProgress(JobState.Running, 1, "Detecting silence", null, null, null, null, null);
+                if (jobId != null)
+                    _telemetryHub?.SetFooterHint(jobId, "Silence: detecting…");
+            },
+            onCompressStart: () =>
+            {
+                UpdateProgress(JobState.Running, 2, "Compressing silence", null, null, null, null, null);
+                if (jobId != null)
+                    _telemetryHub?.SetFooterHint(jobId, "Silence: preparing segments…");
+            },
+            compressionProgress: silenceCompressionProgress);
         var baseName = Path.GetFileNameWithoutExtension(Path.GetFileName(inputFilePath));
         var concatMarkdown = config.Get<bool?>("concat_markdown") == true;
         var mdPath = "";
@@ -178,6 +248,9 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         EnsureDirectoryFor(cacheDirFull);
         var manifestPath = Path.Combine(cacheDirFull, baseName + ".manifest.json");
         var manifest = await _cache.LoadManifestAsync(manifestPath, cancellationToken);
+
+        if (jobId != null)
+            _telemetryHub?.ClearFooterHint(jobId);
 
         StepStart(jobId ?? "", "chunking", "phase");
         var splitWorkdirFull = Path.Combine(artifactRoot, config.SplitWorkdir);
@@ -495,7 +568,10 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         TranscriptionConfig config,
         string workingPath,
         string artifactRoot,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action? onDetectingStart,
+        Action? onCompressStart,
+        IProgress<SilenceCompressionProgress>? compressionProgress)
     {
         var silence = SilenceJobSettings.FromConfig(config);
         if (!silence.ShouldRun)
@@ -507,29 +583,34 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         var ffmpeg = _audioUtils.WhichOr(config.FfmpegPath, "ffmpeg") ?? "ffmpeg";
         var ffprobe = _audioUtils.WhichOr(config.FfprobePath, "ffprobe") ?? "ffprobe";
 
-        return await Task.Run(() =>
+        onDetectingStart?.Invoke();
+
+        IReadOnlyList<SilenceInterval> intervals;
+        try
         {
-            IReadOnlyList<SilenceInterval> intervals;
-            try
-            {
-                intervals = _audioUtils.DetectSilence(ffmpeg, workingPath, silence.DetectOptions, ct);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex, "Silence detection failed for {Path}; continuing with original audio.", workingPath);
-                return workingPath;
-            }
+            intervals = await Task.Run(
+                () => _audioUtils.DetectSilence(ffmpeg, workingPath, silence.DetectOptions, ct),
+                ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Silence detection failed for {Path}; continuing with original audio.", workingPath);
+            return workingPath;
+        }
 
-            SilenceProcessingSupport.LogDetectSummary(_logger, workingPath, intervals, silence);
-            SilenceProcessingSupport.TryWriteDetectReportJson(_logger, workingPath, artifactRoot, intervals, silence);
+        SilenceProcessingSupport.LogDetectSummary(_logger, workingPath, intervals, silence);
+        SilenceProcessingSupport.TryWriteDetectReportJson(_logger, workingPath, artifactRoot, intervals, silence);
 
-            if (!silence.CompressOn)
-                return workingPath;
+        if (!silence.CompressOn)
+            return workingPath;
 
-            var outPath = SilenceProcessingSupport.ResolveCompressedWavPath(workingPath, artifactRoot, silence);
-            try
-            {
-                var report = _audioUtils.WriteWavWithCompressedSilence(
+        var outPath = SilenceProcessingSupport.ResolveCompressedWavPath(workingPath, artifactRoot, silence);
+        onCompressStart?.Invoke();
+
+        try
+        {
+            var report = await Task.Run(
+                () => _audioUtils.WriteWavWithCompressedSilence(
                     ffmpeg,
                     ffprobe,
                     workingPath,
@@ -537,17 +618,18 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                     silence.DetectOptions,
                     silence.KeepSilenceSec,
                     intervals,
-                    ct);
-                SilenceProcessingSupport.LogCompressionResult(_logger, report, silence.KeepSilenceSec);
-                SilenceProcessingSupport.TryWriteCompressionReportJson(_logger, outPath, artifactRoot, report, silence);
-                return outPath;
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex, "Silence compression failed for {Path}; continuing with original audio.", workingPath);
-                return workingPath;
-            }
-        }, ct);
+                    ct,
+                    compressionProgress),
+                ct).ConfigureAwait(false);
+            SilenceProcessingSupport.LogCompressionResult(_logger, report, silence.KeepSilenceSec);
+            SilenceProcessingSupport.TryWriteCompressionReportJson(_logger, outPath, artifactRoot, report, silence);
+            return outPath;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Silence compression failed for {Path}; continuing with original audio.", workingPath);
+            return workingPath;
+        }
     }
 
     private async Task<IReadOnlyList<ChunkInfo>> PrepareChunksAsync(TranscriptionConfig config, string filePath, string splitWorkdirFull, CancellationToken ct)

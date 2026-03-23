@@ -21,4 +21,11 @@ public sealed class TranscriptionTelemetryHub
 
     public string GetFooterHint(string agentJobId) =>
         _footerByJob.TryGetValue(agentJobId, out var v) ? v : "";
+
+    public void ClearFooterHint(string agentJobId)
+    {
+        if (string.IsNullOrWhiteSpace(agentJobId))
+            return;
+        _footerByJob.TryRemove(agentJobId, out _);
+    }
 }

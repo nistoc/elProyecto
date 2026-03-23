@@ -270,16 +270,31 @@ export function useJob(): {
           ev.payload &&
           typeof ev.payload === 'object'
         ) {
-          const p = ev.payload as { phase?: string; status?: string };
-          setJob((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  phase: p.phase ?? prev.phase,
-                  status: p.status ?? prev.status,
-                }
-              : null
-          );
+          const p = ev.payload as {
+            phase?: string;
+            status?: string;
+            progressPercent?: number;
+            progress_percent?: number;
+            transcriptionPhaseDetail?: string | null;
+          };
+          setJob((prev) => {
+            if (!prev) return null;
+            const next = {
+              ...prev,
+              phase: p.phase ?? prev.phase,
+              status: p.status ?? prev.status,
+            };
+            const pct = p.progressPercent ?? p.progress_percent;
+            const hasTranscriptionTelemetry =
+              p.transcriptionPhaseDetail !== undefined || p.phase === 'transcriber';
+            if (hasTranscriptionTelemetry) {
+              if (pct !== undefined && pct !== null)
+                next.transcriptionProgressPercent = pct;
+              if (p.transcriptionPhaseDetail !== undefined)
+                next.transcriptionPhaseDetail = p.transcriptionPhaseDetail;
+            }
+            return next;
+          });
           // Same tick as snapshot would duplicate bump (harmless). If the server ever sends only
           // `status` without a full snapshot, this still nudges refiner live panels (snapshotRevision).
           const ph = p.phase;

@@ -1,3 +1,4 @@
+using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Infrastructure;
 using Xunit;
 
@@ -69,5 +70,28 @@ public class AudioUtilsTests
     {
         var result = _sut.WhichOr("", "ffprobe");
         Assert.True(result == null || result.Length > 0);
+    }
+
+    [Fact]
+    public void SilenceCompressionSegmentCounter_NoSilence_OneTailSegment()
+    {
+        var n = SilenceCompressionSegmentCounter.CountSpeechExtractions(Array.Empty<SilenceInterval>(), durationSeconds: 10.0);
+        Assert.Equal(1, n);
+    }
+
+    [Fact]
+    public void SilenceCompressionSegmentCounter_OneSilenceGap_SplitsIntoTwoSpeechParts()
+    {
+        var intervals = new[] { new SilenceInterval(4.0, 6.0, 2.0) };
+        var n = SilenceCompressionSegmentCounter.CountSpeechExtractions(intervals, durationSeconds: 10.0);
+        Assert.Equal(2, n);
+    }
+
+    [Fact]
+    public void SilenceCompressionSegmentCounter_IgnoresTinySpeechRuns()
+    {
+        var intervals = new[] { new SilenceInterval(0.01, 2.0, 1.99) };
+        var n = SilenceCompressionSegmentCounter.CountSpeechExtractions(intervals, durationSeconds: 5.0);
+        Assert.Equal(1, n);
     }
 }

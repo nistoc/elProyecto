@@ -80,6 +80,7 @@ public static class Agent04ServiceRegistration
             sp.GetRequiredService<ITranscriptionMerger>(),
             sp.GetRequiredService<IProjectArtifactService>(),
             sp.GetRequiredService<INodeModel>(),
+            sp.GetService<TranscriptionTelemetryHub>(),
             sp.GetRequiredService<ILoggerFactory>().CreateLogger<TranscriptionPipeline>()));
         services.AddSingleton<IOutboundJobNotifier, NoOpOutboundJobNotifier>();
 

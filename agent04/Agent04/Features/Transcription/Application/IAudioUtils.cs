@@ -45,5 +45,6 @@ public interface IAudioUtils
         SilenceDetectOptions detectOptions,
         double keepSilenceSec,
         IReadOnlyList<SilenceInterval>? precomputedSilence = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IProgress<SilenceCompressionProgress>? silenceCompressionProgress = null);
 }

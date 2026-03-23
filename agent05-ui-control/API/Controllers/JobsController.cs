@@ -231,6 +231,13 @@ public class JobsController : ControllerBase
 
             if (!string.IsNullOrWhiteSpace(live.TranscriptionFooterHint))
                 snap.TranscriptionFooterHint = live.TranscriptionFooterHint;
+
+            if (string.Equals(live.State, "Running", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(live.State, "Pending", StringComparison.OrdinalIgnoreCase))
+            {
+                snap.TranscriptionProgressPercent = live.ProgressPercent;
+                snap.TranscriptionPhaseDetail = string.IsNullOrWhiteSpace(live.CurrentPhase) ? null : live.CurrentPhase;
+            }
         }
         catch (Exception ex)
         {

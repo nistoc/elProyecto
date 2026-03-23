@@ -11,9 +11,6 @@ namespace Agent04.Features.Transcription.Infrastructure;
 /// </summary>
 public sealed class AudioUtils : IAudioUtils
 {
-    /// <summary>ffmpeg rejects very small <c>-t</c>; float gaps between silence markers can be ~1e-5 s.</summary>
-    private const double MinSpeechSegmentSec = 0.02;
-
     public string? WhichOr(string? pathKey, string defaultName)
     {
         var name = pathKey ?? defaultName;
@@ -273,7 +270,8 @@ public sealed class AudioUtils : IAudioUtils
         SilenceDetectOptions detectOptions,
         double keepSilenceSec,
         IReadOnlyList<SilenceInterval>? precomputedSilence = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<SilenceCompressionProgress>? silenceCompressionProgress = null)
     {
         if (string.IsNullOrEmpty(inputPath) || !File.Exists(inputPath))
             throw new FileNotFoundException("Audio file not found for silence compression", inputPath);
@@ -293,6 +291,8 @@ public sealed class AudioUtils : IAudioUtils
 
         var totalSilence = intervals.Sum(x => x.DurationSec);
         var shortened = totalSilence - intervals.Count * Math.Max(0, keepSilenceSec);
+        var speechExtractCount = SilenceCompressionSegmentCounter.CountSpeechExtractions(intervals, durationSeconds);
+        var progressTotalSteps = speechExtractCount + 1;
 
         var tempRoot = Path.Combine(Path.GetTempPath(), "agent04_silence_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -305,7 +305,9 @@ public sealed class AudioUtils : IAudioUtils
                 intervals,
                 durationSeconds,
                 keepSilenceSec,
-                cancellationToken);
+                cancellationToken,
+                silenceCompressionProgress,
+                progressTotalSteps);
             if (concatLines.Count == 0)
                 throw new InvalidOperationException("Silence compression produced no audio segments.");
 
@@ -320,6 +322,12 @@ public sealed class AudioUtils : IAudioUtils
             if (!string.IsNullOrEmpty(dirOut))
                 Directory.CreateDirectory(dirOut);
 
+            silenceCompressionProgress?.Report(new SilenceCompressionProgress(
+                speechExtractCount,
+                progressTotalSteps,
+                durationSeconds,
+                "concat"));
+
             RunFfmpeg(ffmpegPath, new[]
             {
                 "-y", "-hide_banner", "-loglevel", "error",
@@ -328,6 +336,12 @@ public sealed class AudioUtils : IAudioUtils
                 "-c", "copy",
                 workOut
             });
+
+            silenceCompressionProgress?.Report(new SilenceCompressionProgress(
+                progressTotalSteps,
+                progressTotalSteps,
+                durationSeconds,
+                "concat"));
 
             if (!string.Equals(workOut, outFull, StringComparison.OrdinalIgnoreCase))
                 File.Move(workOut, outFull, overwrite: true);
@@ -400,8 +414,11 @@ public sealed class AudioUtils : IAudioUtils
         List<SilenceInterval> intervals,
         double durationSeconds,
         double keepSilenceSec,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IProgress<SilenceCompressionProgress>? silenceCompressionProgress,
+        int progressTotalSteps)
     {
+        var minSpeech = SilenceCompressionSegmentCounter.MinSpeechSegmentSec;
         var concatLines = new List<string>();
         var gapPath = Path.Combine(tempRoot, "gap.wav");
         if (keepSilenceSec > 1e-6)
@@ -409,17 +426,24 @@ public sealed class AudioUtils : IAudioUtils
 
         var segIndex = 0;
         var cursor = 0.0;
+        var speechCompleted = 0;
         foreach (var iv in intervals)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (iv.StartSec > cursor + 1e-9)
             {
                 var speechDur = iv.StartSec - cursor;
-                if (speechDur >= MinSpeechSegmentSec)
+                if (speechDur >= minSpeech)
                 {
                     var seg = Path.Combine(tempRoot, $"seg_{segIndex++:D5}.wav");
                     ExtractPcm16kMonoWavSegment(ffmpegPath, inputPath, cursor, speechDur, seg);
                     concatLines.Add(FormatConcatDemuxerLine(seg));
+                    speechCompleted++;
+                    silenceCompressionProgress?.Report(new SilenceCompressionProgress(
+                        speechCompleted,
+                        progressTotalSteps,
+                        iv.StartSec,
+                        "segments"));
                 }
             }
 
@@ -430,11 +454,17 @@ public sealed class AudioUtils : IAudioUtils
         }
 
         var tailDur = durationSeconds - cursor;
-        if (tailDur >= MinSpeechSegmentSec)
+        if (tailDur >= minSpeech)
         {
             var seg = Path.Combine(tempRoot, $"seg_{segIndex++:D5}.wav");
             ExtractPcm16kMonoWavSegment(ffmpegPath, inputPath, cursor, tailDur, seg);
             concatLines.Add(FormatConcatDemuxerLine(seg));
+            speechCompleted++;
+            silenceCompressionProgress?.Report(new SilenceCompressionProgress(
+                speechCompleted,
+                progressTotalSteps,
+                durationSeconds,
+                "segments"));
         }
 
         return concatLines;

@@ -175,6 +175,8 @@ public sealed class TranscriptionRefinerPipeline : IPipeline, IRefinerOrchestrat
                     s.Phase = "awaiting_refiner";
                     s.MdOutputPath = update.MdOutputPath;
                     s.TranscriptionError = null;
+                    s.TranscriptionProgressPercent = 100;
+                    s.TranscriptionPhaseDetail = null;
                 }
                 else if (update.State == "Failed" || update.State == "Cancelled")
                 {
@@ -182,13 +184,30 @@ public sealed class TranscriptionRefinerPipeline : IPipeline, IRefinerOrchestrat
                     s.TranscriptionError = string.IsNullOrEmpty(update.ErrorMessage)
                         ? (update.State == "Cancelled" ? "Transcription cancelled." : "Transcription failed.")
                         : update.ErrorMessage;
+                    s.TranscriptionProgressPercent = null;
+                    s.TranscriptionPhaseDetail = null;
+                }
+                else
+                {
+                    s.TranscriptionProgressPercent = update.ProgressPercent;
+                    s.TranscriptionPhaseDetail = string.IsNullOrWhiteSpace(update.CurrentPhase)
+                        ? null
+                        : update.CurrentPhase;
                 }
             }, ct);
             Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
             var evtPhase = update.State == "Completed"
                 ? "awaiting_refiner"
                 : (update.State is "Failed" or "Cancelled" ? "idle" : "transcriber");
-            Broadcast(jobId, "status", JsonSerializer.Serialize(new { status = MapState(update.State), phase = evtPhase, progress_percent = update.ProgressPercent }, ApiJson.CamelCase));
+            Broadcast(jobId, "status", JsonSerializer.Serialize(new
+            {
+                status = MapState(update.State),
+                phase = evtPhase,
+                progressPercent = update.ProgressPercent,
+                transcriptionPhaseDetail = update.State is "Completed" or "Failed" or "Cancelled"
+                    ? null
+                    : update.CurrentPhase
+            }, ApiJson.CamelCase));
             if (update.State is "Completed" or "Failed" or "Cancelled")
                 break;
         }
