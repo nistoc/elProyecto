@@ -62,8 +62,11 @@ public interface IProjectArtifactService
         int totalChunksHint,
         CancellationToken ct);
 
-    /// <summary>Full project file catalog under <paramref name="artifactRoot"/> (UI parity with Xtract GET .../files).</summary>
-    Task<ProjectFilesCatalogResult> GetProjectFilesCatalogAsync(string artifactRoot, CancellationToken ct);
+    /// <summary>
+    /// Full project file catalog under <paramref name="artifactRoot"/> (UI parity with Xtract GET .../files).
+    /// Entries that appear in chunk artifact groups are omitted from <c>chunks</c>, <c>chunk_json</c>, <c>intermediate</c>, and <c>split_chunks</c>.
+    /// </summary>
+    Task<ProjectFilesCatalogResult> GetProjectFilesCatalogAsync(string artifactRoot, int totalChunksHint, CancellationToken ct);
 
     // --- Phase 4: transcription outputs + operator split (facade over existing writers / ffmpeg) ---
 

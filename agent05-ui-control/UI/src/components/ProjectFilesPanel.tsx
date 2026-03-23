@@ -8,10 +8,6 @@ import {
 import type { JobChunkArtifactGroupsState } from '../hooks/useJobChunkArtifactGroups';
 import type { JobProjectFilesState } from '../hooks/useJobProjectFiles';
 import type { JobProjectFile, JobProjectFiles } from '../types';
-import {
-  splitChunksForProjectFilesOrphansOnly,
-  type ChunkArtifactGroup,
-} from '../utils/chunkArtifactGroups';
 import { JobAudioWavePlayer } from './JobAudioWavePlayer';
 
 export type ProjectFilesMode = 'full' | 'transcripts';
@@ -273,8 +269,6 @@ interface ProjectFilesViewProps {
   onFilesMutated?: () => void;
   /** Hide chunks + chunk JSON (shown in Chunk controls Stats). */
   hideChunkSections?: boolean;
-  /** When set, split-chunk rows under these parent indices are omitted here (they appear under Chunk controls). */
-  chunkArtifactGroups?: ChunkArtifactGroup[] | null;
 }
 
 /** Renders structured file lists (no fetch). */
@@ -285,7 +279,6 @@ export function ProjectFilesView({
   t,
   onFilesMutated,
   hideChunkSections = false,
-  chunkArtifactGroups = null,
 }: ProjectFilesViewProps) {
   const [editTarget, setEditTarget] = useState<{
     relativePath: string;
@@ -295,11 +288,7 @@ export function ProjectFilesView({
   const openEditor = (f: JobProjectFile) =>
     setEditTarget({ relativePath: f.relativePath, name: f.name });
 
-  const splitChunksForPanel = splitChunksForProjectFilesOrphansOnly(
-    data.splitChunks,
-    chunkArtifactGroups
-  );
-  const splitTranscripts = splitChunksForPanel.filter((x) => x.isTranscript);
+  const splitTranscripts = data.splitChunks.filter((x) => x.isTranscript);
 
   const body =
     mode === 'transcripts' ? (
@@ -376,7 +365,7 @@ export function ProjectFilesView({
         <Section
           title={t('sectionSplitChunks')}
           jobId={jobId}
-          items={splitChunksForPanel}
+          items={data.splitChunks}
           t={t}
           onEditText={openEditor}
         />
@@ -556,7 +545,6 @@ export function ProjectFilesPanel({
         t={t}
         onFilesMutated={() => refreshFilesAndGroups()}
         hideChunkSections={hideChunkSections}
-        chunkArtifactGroups={managedChunkGroups?.data ?? null}
       />
     </>
   );

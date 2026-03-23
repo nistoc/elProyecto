@@ -323,8 +323,8 @@ export function ChunkControlsStats({
   };
 
   return (
-    <section className="chunk-stats" aria-label={t('chunkStatsTitle')}>
-      <h4 className="chunk-stats__title">{t('chunkStatsTitle')}</h4>
+    <>
+      <h4 className="step-panel__files-heading">{t('chunkStatsTitle')}</h4>
       {showList && canPostDoneChunkOps && !readOnly && (
         <div className="chunk-stats__global-actions">
           <button
@@ -827,19 +827,6 @@ export function ChunkControlsStats({
         />
       )}
       <style>{`
-        .chunk-stats {
-          margin: 1rem 0;
-          padding: 0.75rem 1rem;
-          border: 1px solid var(--color-border);
-          border-radius: 8px;
-          background: var(--color-subtle-panel);
-          color: var(--color-text);
-        }
-        .chunk-stats__title {
-          margin: 0 0 0.65rem 0;
-          font-size: 0.9rem;
-          color: var(--color-heading);
-        }
         .chunk-stats__global-actions {
           margin: -0.25rem 0 0.55rem 0;
         }
@@ -1204,6 +1191,6 @@ export function ChunkControlsStats({
           color: var(--color-label);
         }
       `}</style>
-    </section>
+    </>
   );
 }

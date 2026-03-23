@@ -6,18 +6,10 @@ namespace Agent04.Features.Transcription.Infrastructure;
 /// <summary>Port of agent05 <c>chunkArtifactGroups.ts</c> (file partitioning only; no VM rows).</summary>
 public static class ChunkArtifactGrouping
 {
-    private static readonly Regex PartBound = new(@"\bpart_(\d+)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex PartUnderscore = new(@"_part_(\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex ChunkMerged = new(@"^chunk_(\d+)_merged\.(json|md)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public static int? InferChunkIndexFromName(string fileName)
-    {
-        var m = PartBound.Match(fileName);
-        if (!m.Success)
-            m = PartUnderscore.Match(fileName);
-        if (!m.Success) return null;
-        return int.TryParse(m.Groups[1].Value, out var n) ? n : null;
-    }
+    public static int? InferChunkIndexFromName(string fileName) =>
+        ChunkArtifactFileNameInference.InferChunkIndexFromName(fileName);
 
     public static bool FileBelongsToChunkIndex(ArtifactFileEntry f, int index, int total)
     {
@@ -40,6 +32,7 @@ public static class ChunkArtifactGrouping
         var set = new SortedSet<int>();
         foreach (var f in files.Chunks) AddIndexFromFile(f, set);
         foreach (var f in files.ChunkJson) AddIndexFromFile(f, set);
+        foreach (var f in files.Intermediate) AddIndexFromFile(f, set);
         foreach (var f in files.SplitChunks)
         {
             if (f.ParentIndex.HasValue)
@@ -54,6 +47,30 @@ public static class ChunkArtifactGrouping
         var inferred = InferChunkIndexFromName(f.Name);
         if (inferred.HasValue) set.Add(inferred.Value);
         else if (f.Index.HasValue) set.Add(f.Index.Value);
+    }
+
+    private static List<ArtifactFileEntry> MergeJsonFilesForChunk(
+        JobArtifactDirectoryScanner.ScanResult files,
+        int index,
+        int totalChunksForBelongs)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var list = new List<ArtifactFileEntry>();
+        foreach (var f in files.ChunkJson)
+        {
+            if (!FileBelongsToChunkIndex(f, index, totalChunksForBelongs)) continue;
+            var key = f.RelativePath ?? f.Name;
+            if (seen.Add(key)) list.Add(f);
+        }
+
+        foreach (var f in files.Intermediate)
+        {
+            if (!FileBelongsToChunkIndex(f, index, totalChunksForBelongs)) continue;
+            var key = f.RelativePath ?? f.Name;
+            if (seen.Add(key)) list.Add(f);
+        }
+
+        return list;
     }
 
     public static bool IsSplitParentMergedArtifact(ArtifactFileEntry f, int parentIndex)
@@ -128,7 +145,7 @@ public static class ChunkArtifactGrouping
         foreach (var index in indices)
         {
             var audioFiles = files.Chunks.Where(f => FileBelongsToChunkIndex(f, index, totalChunksForBelongs)).ToList();
-            var jsonFiles = files.ChunkJson.Where(f => FileBelongsToChunkIndex(f, index, totalChunksForBelongs)).ToList();
+            var jsonFiles = MergeJsonFilesForChunk(files, index, totalChunksForBelongs);
             var splitForParent = files.SplitChunks.Where(f => f.ParentIndex == index).ToList();
             var mergedSplitFiles = splitForParent.Where(f => IsSplitParentMergedArtifact(f, index)).ToList();
             var splitForSubRows = splitForParent.Where(f => !IsSplitParentMergedArtifact(f, index)).ToList();
@@ -145,5 +162,31 @@ public static class ChunkArtifactGrouping
         }
 
         return list;
+    }
+
+    /// <summary>All <see cref="ArtifactFileEntry.RelativePath"/> values assigned to chunk artifact groups (for flat catalog deduplication).</summary>
+    public static HashSet<string> CollectGroupedRelativePaths(IReadOnlyList<ChunkArtifactGroupResult> groups)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var g in groups)
+        {
+            foreach (var f in g.AudioFiles) AddPath(set, f);
+            foreach (var f in g.JsonFiles) AddPath(set, f);
+            foreach (var f in g.MergedSplitFiles) AddPath(set, f);
+            foreach (var sc in g.SubChunks)
+            {
+                foreach (var f in sc.AudioFiles) AddPath(set, f);
+                foreach (var f in sc.JsonFiles) AddPath(set, f);
+            }
+        }
+
+        return set;
+    }
+
+    private static void AddPath(HashSet<string> set, ArtifactFileEntry f)
+    {
+        var key = string.IsNullOrEmpty(f.RelativePath) ? f.Name : f.RelativePath;
+        if (!string.IsNullOrEmpty(key))
+            set.Add(key);
     }
 }

@@ -145,14 +145,6 @@ function AppContent() {
                         </p>
                       </div>
                     )}
-                    <LogsSection
-                      title={t('logs')}
-                      logs={job.logs ?? []}
-                      paused={logsPaused}
-                      bufferedCount={bufferedCount}
-                      onTogglePause={toggleLogsPause}
-                      onClearLogs={clearLogsForStep}
-                    />
                     {jobId && (
                       <>
                         <ChunkControlsStats
@@ -220,7 +212,6 @@ function AppContent() {
                       job={job}
                       t={t}
                       variant="refiner"
-                      chunkArtifactGroups={jobChunkGroups.data}
                     />
                   </>
                 ) : (
@@ -245,7 +236,6 @@ function AppContent() {
                   jobId={jobId}
                   job={job}
                   t={t}
-                  chunkArtifactGroups={jobChunkGroups.data}
                 />
               </div>
             )}

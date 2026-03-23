@@ -100,6 +100,7 @@ internal sealed class RecordingTranscriptionClient : ITranscriptionServiceClient
     public Task<JobProjectFiles?> GetProjectFilesAsync(
         string agent04JobId,
         string jobDirectoryRelative,
+        int totalChunks = 0,
         CancellationToken ct = default) =>
         Task.FromResult<JobProjectFiles?>(null);
 }

@@ -201,6 +201,8 @@ message GetChunkArtifactGroupsResponse {
 message GetProjectFilesRequest {
   string job_id = 1;
   string job_directory_relative = 2;
+  /// If > 0, matches GetChunkArtifactGroups total_chunks. If 0, Agent04 uses work state like chunk groups.
+  int32 total_chunks = 3;
 }
 
 message GetProjectFilesResponse {

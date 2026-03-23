@@ -17,6 +17,45 @@ public class ChunkArtifactGroupingTests
     }
 
     [Fact]
+    public void InferChunkIndexFromName_chunk_NNN_result_json()
+    {
+        Assert.Equal(0, ChunkArtifactGrouping.InferChunkIndexFromName("2026-02-25 20.23.46_chunk_000_result.json"));
+        Assert.Equal(12, ChunkArtifactGrouping.InferChunkIndexFromName("prefix_chunk_012_result.json"));
+    }
+
+    [Fact]
+    public void InferChunkIndexFromName_sub_chunk_result_is_not_main_chunk()
+    {
+        Assert.Null(ChunkArtifactGrouping.InferChunkIndexFromName("sub_chunk_01_result.json"));
+    }
+
+    [Fact]
+    public void BuildChunkGroups_includes_intermediate_results_json()
+    {
+        var scan = new JobArtifactDirectoryScanner.ScanResult
+        {
+            Chunks =
+            [
+                new ArtifactFileEntry { Name = "a_part_001.wav", Kind = "audio", RelativePath = "chunks/a.wav" },
+            ],
+            ChunkJson = [],
+            Intermediate =
+            [
+                new ArtifactFileEntry
+                {
+                    Name = "2026_chunk_001_result.json",
+                    Kind = "text",
+                    RelativePath = "intermediate_results/2026_chunk_001_result.json",
+                },
+            ],
+        };
+        var groups = ChunkArtifactGrouping.BuildChunkGroups(scan, [1], 1);
+        Assert.Single(groups);
+        Assert.Single(groups[0].JsonFiles);
+        Assert.Equal("2026_chunk_001_result.json", groups[0].JsonFiles[0].Name);
+    }
+
+    [Fact]
     public void FileBelongsToChunkIndex_prefers_part_over_scanner_index()
     {
         var f = new ArtifactFileEntry { Name = "2026-02-25_part_000.wav", Index = 2026, Kind = "audio" };
@@ -61,6 +100,89 @@ public class ChunkArtifactGroupingTests
         };
         var indices = ChunkArtifactGrouping.ComputeChunkIndices(0, scan);
         Assert.Equal(new[] { 1, 2 }, indices);
+    }
+
+    [Fact]
+    public void CollectGroupedRelativePaths_unions_all_grouped_files()
+    {
+        var groups = new List<ChunkArtifactGroupResult>
+        {
+            new()
+            {
+                Index = 0,
+                AudioFiles = [new ArtifactFileEntry { RelativePath = "chunks/a.wav", Name = "a.wav" }],
+                JsonFiles = [new ArtifactFileEntry { RelativePath = "chunks_json/a.json", Name = "a.json" }],
+                MergedSplitFiles =
+                [
+                    new ArtifactFileEntry
+                    {
+                        RelativePath = "split_chunks/chunk_0/chunk_0_merged.json",
+                        Name = "chunk_0_merged.json",
+                    },
+                ],
+                SubChunks =
+                [
+                    new SubChunkArtifactGroupResult
+                    {
+                        AudioFiles =
+                        [
+                            new ArtifactFileEntry
+                            {
+                                RelativePath = "split_chunks/chunk_0/sub_chunks/s.wav",
+                                Name = "s.wav",
+                            },
+                        ],
+                        JsonFiles = [],
+                    },
+                ],
+            },
+        };
+
+        var paths = ChunkArtifactGrouping.CollectGroupedRelativePaths(groups);
+        Assert.Equal(4, paths.Count);
+        Assert.Contains("chunks/a.wav", paths);
+        Assert.Contains("chunks_json/a.json", paths);
+        Assert.Contains("split_chunks/chunk_0/chunk_0_merged.json", paths);
+        Assert.Contains("split_chunks/chunk_0/sub_chunks/s.wav", paths);
+    }
+
+    [Fact]
+    public void ProjectFilesCatalogExclusion_removes_grouped_paths()
+    {
+        var catalog = new ProjectFilesCatalogResult
+        {
+            Chunks = [new ArtifactFileEntry { RelativePath = "chunks/a.wav", Name = "a.wav" }],
+            ChunkJson = [new ArtifactFileEntry { RelativePath = "chunks_json/a.json", Name = "a.json" }],
+            Intermediate =
+            [
+                new ArtifactFileEntry
+                {
+                    RelativePath = "intermediate_results/x_chunk_000_result.json",
+                    Name = "x_chunk_000_result.json",
+                },
+            ],
+            SplitChunks =
+            [
+                new ArtifactFileEntry
+                {
+                    RelativePath = "split_chunks/chunk_0/sub_chunks/s.wav",
+                    Name = "s.wav",
+                },
+            ],
+        };
+        var grouped = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "chunks/a.wav",
+            "chunks_json/a.json",
+            "intermediate_results/x_chunk_000_result.json",
+            "split_chunks/chunk_0/sub_chunks/s.wav",
+        };
+
+        var filtered = ProjectFilesCatalogExclusion.ExcludeGrouped(catalog, grouped);
+        Assert.Empty(filtered.Chunks);
+        Assert.Empty(filtered.ChunkJson);
+        Assert.Empty(filtered.Intermediate);
+        Assert.Empty(filtered.SplitChunks);
     }
 
     [Fact]

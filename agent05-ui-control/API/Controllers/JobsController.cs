@@ -196,8 +196,9 @@ public class JobsController : ControllerBase
         var scopeJobId = job != null && !string.IsNullOrWhiteSpace(job.Agent04JobId)
             ? job.Agent04JobId.Trim()
             : id;
+        var totalChunks = job?.Chunks?.Total ?? 0;
         var remote = await _transcription
-            .GetProjectFilesAsync(scopeJobId, id, ct)
+            .GetProjectFilesAsync(scopeJobId, id, totalChunks, ct)
             .ConfigureAwait(false);
         JobProjectFiles files;
         if (remote != null)

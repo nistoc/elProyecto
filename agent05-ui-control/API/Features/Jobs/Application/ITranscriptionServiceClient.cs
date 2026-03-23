@@ -35,9 +35,11 @@ public interface ITranscriptionServiceClient
         CancellationToken ct = default);
 
     /// <summary>Structured file tree from Agent04 (null if unavailable — caller may fall back to local scan).</summary>
+    /// <param name="totalChunks">Pass job chunk total when known (same hint as GetChunkArtifactGroups); 0 lets Agent04 use work state.</param>
     Task<JobProjectFiles?> GetProjectFilesAsync(
         string agent04JobId,
         string jobDirectoryRelative,
+        int totalChunks = 0,
         CancellationToken ct = default);
 }
 

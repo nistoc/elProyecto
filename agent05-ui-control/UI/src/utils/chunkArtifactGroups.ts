@@ -132,21 +132,6 @@ export function mergeVmRowPreferInformative(
  * Fills vmRow from the job snapshot where the API omitted it or sent a weak Pending placeholder.
  * Strong server rows (Rentgen / merged Agent04) win.
  */
-/**
- * For GET .../files `splitChunks`: omit rows already shown under a parent chunk in Chunk controls (chunk-artifact-groups).
- * If groups are missing (API error / not loaded), returns the full scan so nothing is hidden without data.
- */
-export function splitChunksForProjectFilesOrphansOnly(
-  splitChunks: JobProjectFile[],
-  chunkArtifactGroups: ChunkArtifactGroup[] | null | undefined
-): JobProjectFile[] {
-  if (!chunkArtifactGroups?.length) return splitChunks;
-  const parentsInStats = new Set(chunkArtifactGroups.map((g) => g.index));
-  return splitChunks.filter(
-    (f) => f.parentIndex == null || !parentsInStats.has(f.parentIndex)
-  );
-}
-
 export function overlayVmFromJobWhenMissing(
   groups: ChunkArtifactGroup[],
   job: JobSnapshot

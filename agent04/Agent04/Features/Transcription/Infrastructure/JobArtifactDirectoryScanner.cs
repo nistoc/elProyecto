@@ -22,6 +22,7 @@ public static class JobArtifactDirectoryScanner
     {
         public IReadOnlyList<ArtifactFileEntry> Chunks { get; init; } = Array.Empty<ArtifactFileEntry>();
         public IReadOnlyList<ArtifactFileEntry> ChunkJson { get; init; } = Array.Empty<ArtifactFileEntry>();
+        public IReadOnlyList<ArtifactFileEntry> Intermediate { get; init; } = Array.Empty<ArtifactFileEntry>();
         public IReadOnlyList<ArtifactFileEntry> SplitChunks { get; init; } = Array.Empty<ArtifactFileEntry>();
     }
 
@@ -33,11 +34,13 @@ public static class JobArtifactDirectoryScanner
 
         var chunksDir = Path.Combine(jobDir, "chunks");
         var chunksJsonDir = Path.Combine(jobDir, "chunks_json");
+        var intermediateDir = Path.Combine(jobDir, "intermediate_results");
 
         return new ScanResult
         {
             Chunks = ScanChunkFolder(chunksDir, "chunks"),
             ChunkJson = ScanChunkFolder(chunksJsonDir, "chunks_json"),
+            Intermediate = ScanChunkFolder(intermediateDir, "intermediate_results"),
             SplitChunks = ScanSplitChunks(jobDir),
         };
     }
@@ -51,7 +54,8 @@ public static class JobArtifactDirectoryScanner
         foreach (var fi in EnumerateFilesSorted(folder))
         {
             var file = ToEntry(fi, $"{relativeFolder}/{fi.Name}");
-            var withIndex = file with { Index = ParseFirstInt(fi.Name) };
+            var inferred = ChunkArtifactFileNameInference.InferChunkIndexFromName(fi.Name);
+            var withIndex = file with { Index = inferred ?? ParseFirstInt(fi.Name) };
             list.Add(withIndex);
         }
 

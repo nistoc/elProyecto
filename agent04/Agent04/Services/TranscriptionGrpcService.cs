@@ -357,8 +357,9 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         if (!Directory.Exists(artifactRoot))
             throw new RpcException(new Status(StatusCode.NotFound, "Job artifact directory not found"));
 
+        // Same total hint as GetChunkArtifactGroups → GetChunkArtifactGroupsAsync (domain groups, not VM-only hint).
         var catalog = await _projectArtifactService
-            .GetProjectFilesCatalogAsync(artifactRoot, context.CancellationToken)
+            .GetProjectFilesCatalogAsync(artifactRoot, request.TotalChunks, context.CancellationToken)
             .ConfigureAwait(false);
 
         var resp = new GetProjectFilesResponse();

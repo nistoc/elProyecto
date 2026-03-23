@@ -214,10 +214,16 @@ public sealed class ProjectArtifactService : IProjectArtifactService
     }
 
     /// <inheritdoc />
-    public Task<ProjectFilesCatalogResult> GetProjectFilesCatalogAsync(string artifactRoot, CancellationToken ct)
+    public async Task<ProjectFilesCatalogResult> GetProjectFilesCatalogAsync(
+        string artifactRoot,
+        int totalChunksHint,
+        CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult(ProjectFilesCatalogScanner.Scan(artifactRoot));
+        var catalog = ProjectFilesCatalogScanner.Scan(artifactRoot);
+        var groups = await GetChunkArtifactGroupsAsync(artifactRoot, totalChunksHint, ct).ConfigureAwait(false);
+        var paths = ChunkArtifactGrouping.CollectGroupedRelativePaths(groups);
+        return ProjectFilesCatalogExclusion.ExcludeGrouped(catalog, paths);
     }
 
     /// <inheritdoc />

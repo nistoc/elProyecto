@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { ChunkVirtualModelEntry, JobProjectFile, JobSnapshot } from '../types';
+import type { ChunkVirtualModelEntry, JobSnapshot } from '../types';
 import {
   type ChunkArtifactGroup,
   isWeakPlaceholderVm,
   mergeVmRowPreferInformative,
   overlayVmFromJobWhenMissing,
-  splitChunksForProjectFilesOrphansOnly,
 } from './chunkArtifactGroups';
 
 function vm(partial: Partial<ChunkVirtualModelEntry> & Pick<ChunkVirtualModelEntry, 'index' | 'state'>): ChunkVirtualModelEntry {
@@ -58,68 +57,6 @@ describe('mergeVmRowPreferInformative', () => {
       completedAt: '2020-01-01T00:01:00Z',
     });
     expect(mergeVmRowPreferInformative(server, snap)).toBe(server);
-  });
-});
-
-function pf(partial: Partial<JobProjectFile> & Pick<JobProjectFile, 'name' | 'relativePath'>): JobProjectFile {
-  return {
-    name: partial.name,
-    relativePath: partial.relativePath,
-    kind: partial.kind ?? 'audio',
-    sizeBytes: partial.sizeBytes ?? 0,
-    parentIndex: partial.parentIndex ?? null,
-    subIndex: partial.subIndex ?? null,
-    isTranscript: partial.isTranscript ?? false,
-    hasTranscript: partial.hasTranscript ?? false,
-    index: partial.index ?? null,
-    lineCount: partial.lineCount ?? null,
-    durationSeconds: partial.durationSeconds ?? null,
-  };
-}
-
-describe('splitChunksForProjectFilesOrphansOnly', () => {
-  it('returns full list when groups are missing', () => {
-    const split = [pf({ name: 'a.wav', relativePath: 'split_chunks/chunk_0/sub_chunks/a.wav', parentIndex: 0 })];
-    expect(splitChunksForProjectFilesOrphansOnly(split, null)).toBe(split);
-    expect(splitChunksForProjectFilesOrphansOnly(split, undefined)).toBe(split);
-    expect(splitChunksForProjectFilesOrphansOnly(split, [])).toBe(split);
-  });
-
-  it('drops split rows whose parent index has a chunk group', () => {
-    const split = [
-      pf({ name: 'a.wav', relativePath: 's/c0/a.wav', parentIndex: 0 }),
-      pf({ name: 'b.wav', relativePath: 's/c9/b.wav', parentIndex: 9 }),
-    ];
-    const groups: ChunkArtifactGroup[] = [
-      {
-        index: 0,
-        displayStem: 'x',
-        audioFiles: [],
-        jsonFiles: [],
-        subChunks: [],
-        mergedSplitFiles: [],
-        vmRow: null,
-      },
-    ];
-    const out = splitChunksForProjectFilesOrphansOnly(split, groups);
-    expect(out).toHaveLength(1);
-    expect(out[0].parentIndex).toBe(9);
-  });
-
-  it('keeps rows without parentIndex when groups exist', () => {
-    const split = [pf({ name: 'x.json', relativePath: 'split_chunks/x.json', parentIndex: null })];
-    const groups: ChunkArtifactGroup[] = [
-      {
-        index: 0,
-        displayStem: 'x',
-        audioFiles: [],
-        jsonFiles: [],
-        subChunks: [],
-        mergedSplitFiles: [],
-        vmRow: null,
-      },
-    ];
-    expect(splitChunksForProjectFilesOrphansOnly(split, groups)).toEqual(split);
   });
 });
 

@@ -225,6 +225,7 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
     public async Task<Application.JobProjectFiles?> GetProjectFilesAsync(
         string agent04JobId,
         string jobDirectoryRelative,
+        int totalChunks = 0,
         CancellationToken ct = default)
     {
         using var channel = GrpcChannel.ForAddress(_address);
@@ -235,7 +236,8 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
                     new GetProjectFilesRequest
                     {
                         JobId = agent04JobId,
-                        JobDirectoryRelative = jobDirectoryRelative ?? ""
+                        JobDirectoryRelative = jobDirectoryRelative ?? "",
+                        TotalChunks = totalChunks
                     },
                     cancellationToken: ct)
                 .ResponseAsync.ConfigureAwait(false);

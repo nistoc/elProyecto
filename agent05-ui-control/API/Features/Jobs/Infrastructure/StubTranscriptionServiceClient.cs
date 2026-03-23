@@ -46,6 +46,7 @@ public sealed class StubTranscriptionServiceClient : Application.ITranscriptionS
     public Task<Application.JobProjectFiles?> GetProjectFilesAsync(
         string agent04JobId,
         string jobDirectoryRelative,
+        int totalChunks = 0,
         CancellationToken ct = default) =>
         Task.FromResult<Application.JobProjectFiles?>(null);
 }

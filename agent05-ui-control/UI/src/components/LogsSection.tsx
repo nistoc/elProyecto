@@ -20,7 +20,7 @@ export function LogsSection({
   onClearLogs,
 }: LogsSectionProps) {
   return (
-    <div className="logs-section">
+    <>
       <div className="logs-section__header">
         <h3 className="logs-section__title">{title}</h3>
         <div className="logs-section__actions">
@@ -52,8 +52,12 @@ export function LogsSection({
         )}
       </div>
       <style>{`
-        .logs-section { margin-top: 1rem; }
-        .logs-section__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .logs-section__header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin: 1rem 0 0.5rem 0;
+        }
         .logs-section__title { margin: 0; font-size: 0.875rem; color: var(--color-text); }
         .logs-section__actions { display: flex; gap: 0.5rem; }
         .logs-section__actions button { font-size: 0.75rem; padding: 0.25rem 0.5rem; border-radius: 4px; border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
@@ -73,6 +77,6 @@ export function LogsSection({
         .logs-section__ts { color: var(--color-text-secondary); margin-right: 0.5rem; }
         .logs-section__empty { color: var(--color-text-muted); margin: 0; }
       `}</style>
-    </div>
+    </>
   );
 }
