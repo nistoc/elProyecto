@@ -1,0 +1,214 @@
+syntax = "proto3";
+
+option csharp_namespace = "Agent04.Proto";
+
+package agent04.transcription;
+
+// VM: GetJobStatus / StreamJobStatus accept client_chunk_virtual_model; server merges with Rentgen VM — see docs/CHUNK_VM_MERGE.md.
+
+service TranscriptionService {
+  rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse);
+  rpc GetJobStatus(GetJobStatusRequest) returns (JobStatusResponse);
+  rpc StreamJobStatus(StreamJobStatusRequest) returns (stream JobStatusUpdate);
+  rpc QueryJobs(QueryJobsRequest) returns (QueryJobsResponse);
+  /// Chunk-level operator actions (cancel is implemented; others may return ok=false).
+  rpc ChunkCommand(ChunkCommandRequest) returns (ChunkCommandResponse);
+  /// Enqueue chunk indices for the next pipeline run (writes pending_chunks.json under the job artifact root).
+  rpc EnqueueTranscriptionWork(EnqueueTranscriptionWorkRequest) returns (EnqueueTranscriptionWorkResponse);
+  /// Chunk / split artifact grouping for Stats (file metadata only; VM comes from GetJobStatus / stream).
+  rpc GetChunkArtifactGroups(GetChunkArtifactGroupsRequest) returns (GetChunkArtifactGroupsResponse);
+  rpc GetProjectFiles(GetProjectFilesRequest) returns (GetProjectFilesResponse);
+}
+
+// Paths in config_path and input_file_path are relative to the instance's workspace_root (from config).
+// workspace_root is not sent in the request; it is read from the server's appsettings/environment.
+message SubmitJobRequest {
+  string config_path = 1;
+  string input_file_path = 2;
+  repeated string tags = 3;
+  string callback_url = 4;  // Optional. If set, HTTP POST is sent to this URL when job completes or fails.
+}
+
+message SubmitJobResponse {
+  string job_id = 1;
+}
+
+message GetJobStatusRequest {
+  string job_id = 1;
+  repeated ChunkVirtualModelEntry client_chunk_virtual_model = 2;
+}
+
+/// Per-chunk row from the in-process virtual model (RENTGEN / INodeStore): stable timestamps across refresh.
+message ChunkVirtualModelEntry {
+  int32 chunk_index = 1;
+  string started_at = 2;   // ISO8601, empty if not started
+  string completed_at = 3; // ISO8601, empty if not completed
+  string state = 4;        // Pending, Running, Completed, Failed, Cancelled
+  string error_message = 5; // optional; set when state is Failed (truncated server-side if needed)
+  /// True for split sub-chunk rows (same chunk_index may appear twice: main row + sub rows).
+  bool is_sub_chunk = 6;
+  int32 parent_chunk_index = 7; // main chunk index when is_sub_chunk; otherwise 0
+  int32 sub_chunk_index = 8;    // sub index within parent when is_sub_chunk; otherwise 0
+  /// Multi-line diagnostic: retries, HTTP errors, completion (cleared when chunk restarts).
+  string transcript_activity_log = 9;
+}
+
+message JobStatusResponse {
+  string job_id = 1;
+  string state = 2;  // Pending, Running, Completed, Failed, Cancelled
+  int32 progress_percent = 3;
+  string current_phase = 4;
+  int32 total_chunks = 12;
+  int32 processed_chunks = 13;
+  string created_at = 5;
+  string started_at = 6;
+  string completed_at = 7;
+  string updated_at = 8;
+  string md_output_path = 9;
+  string json_output_path = 10;
+  string error_message = 11;
+  repeated ChunkVirtualModelEntry chunk_virtual_model = 14;
+  /// Latest concise line for operator UI (e.g. automatic transcription HTTP retry).
+  string transcription_footer_hint = 15;
+}
+
+message QueryJobsRequest {
+  string semantic_key = 1;  // Filter jobs by this semantic key (one of the job's tags)
+  string status = 2;       // Pending, Running, Completed, Failed, Cancelled
+  string from = 3;          // ISO8601
+  string to = 4;            // ISO8601
+  int32 limit = 5;
+  int32 offset = 6;
+}
+
+message QueryJobsResponse {
+  repeated JobStatusResponse jobs = 1;
+}
+
+message StreamJobStatusRequest {
+  string job_id = 1;
+  repeated ChunkVirtualModelEntry client_chunk_virtual_model = 2;
+}
+
+message JobStatusUpdate {
+  string job_id = 1;
+  string state = 2;
+  int32 progress_percent = 3;
+  string current_phase = 4;
+  int32 total_chunks = 9;
+  int32 processed_chunks = 10;
+  string updated_at = 5;
+  string md_output_path = 6;
+  string json_output_path = 7;
+  string error_message = 8;
+  repeated ChunkVirtualModelEntry chunk_virtual_model = 11;
+  string transcription_footer_hint = 12;
+}
+
+enum ChunkCommandAction {
+  CHUNK_COMMAND_ACTION_UNSPECIFIED = 0;
+  CHUNK_COMMAND_ACTION_CANCEL = 1;
+  reserved 2;
+  reserved "CHUNK_COMMAND_ACTION_SKIP";
+  CHUNK_COMMAND_ACTION_RETRANSCRIBE = 3;
+  CHUNK_COMMAND_ACTION_SPLIT = 4;
+  /// Transcribe one operator split sub-file under split_chunks/chunk_{chunk_index}/sub_chunks/ (writes results/sub_chunk_XX_result.json).
+  CHUNK_COMMAND_ACTION_TRANSCRIBE_SUB = 5;
+  /// Rebuild combined transcript.md + openai_response.json from per-chunk JSON only (chunk_index ignored).
+  CHUNK_COMMAND_ACTION_REBUILD_COMBINED = 6;
+  /// Remove one operator-split sub-chunk (audio, result json, merged split, cancel flag, work-state row). chunk_index = parent, sub_chunk_index = sub.
+  CHUNK_COMMAND_ACTION_DELETE_SUB_CHUNK = 7;
+  /// Rebuild split_chunks/chunk_{chunk_index}/chunk_{chunk_index}_merged.json and .md (and job-level combined outputs when present). chunk_index = parent; all sub_chunk_XX_result.json required.
+  CHUNK_COMMAND_ACTION_REBUILD_SPLIT_MERGED = 8;
+}
+
+message ChunkCommandRequest {
+  string job_id = 1;
+  ChunkCommandAction action = 2;
+  int32 chunk_index = 3;
+  /// Optional. Single path segment under workspace_root (Xtract job folder name). Required after Agent04 restart if in-process registry is cold.
+  string job_directory_relative = 4;
+  /// For SPLIT: number of sub-chunks (>= 2). Ignored if 0 or unset.
+  int32 split_parts = 5;
+  /// For TRANSCRIBE_SUB / DELETE_SUB_CHUNK: 0-based sub-chunk index (matches _sub_XX in filename).
+  int32 sub_chunk_index = 6;
+}
+
+message ChunkCommandResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message EnqueueTranscriptionWorkRequest {
+  string job_id = 1;
+  /// Indices to transcribe on the next run (0-based). Written to pending_chunks.json next to job artifacts.
+  repeated int32 chunk_indices = 2;
+  /// Same as ChunkCommand: single segment under workspace_root when registry is cold.
+  string job_directory_relative = 3;
+}
+
+message EnqueueTranscriptionWorkResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message JobArtifactFileEntry {
+  string name = 1;
+  string relative_path = 2;
+  string kind = 3;
+  int64 size_bytes = 4;
+  optional int32 line_count = 5;
+  optional double duration_seconds = 6;
+  /// Chunk index from chunks/ or chunks_json/ scan (first digits in filename).
+  optional int32 file_chunk_index = 7;
+  optional int32 parent_index = 8;
+  optional int32 sub_index = 9;
+  optional bool has_transcript = 10;
+  optional bool is_transcript = 11;
+}
+
+message SubChunkArtifactGroup {
+  optional int32 sub_index = 1;
+  string display_stem = 2;
+  repeated JobArtifactFileEntry audio_files = 3;
+  repeated JobArtifactFileEntry json_files = 4;
+  optional ChunkVirtualModelEntry sub_virtual_model = 5;
+}
+
+message ChunkArtifactGroup {
+  int32 index = 1;
+  string display_stem = 2;
+  repeated JobArtifactFileEntry audio_files = 3;
+  repeated JobArtifactFileEntry json_files = 4;
+  repeated SubChunkArtifactGroup sub_chunks = 5;
+  repeated JobArtifactFileEntry merged_split_files = 6;
+  optional ChunkVirtualModelEntry main_virtual_model = 7;
+}
+
+message GetChunkArtifactGroupsRequest {
+  string job_id = 1;
+  string job_directory_relative = 2;
+  /// If > 0, group rows are 0..total_chunks-1. If 0, total_chunks is read from transcription_work_state.json; if still 0, indices come from chunk files + split_chunks only.
+  int32 total_chunks = 3;
+  /// Last known VM from the job snapshot (Xtract); merged with Rentgen live VM then transcription_work_state (disk) so Pending placeholders do not hide completed timings.
+  repeated ChunkVirtualModelEntry client_chunk_virtual_model = 4;
+}
+
+message GetChunkArtifactGroupsResponse {
+  repeated ChunkArtifactGroup groups = 1;
+}
+
+message GetProjectFilesRequest {
+  string job_id = 1;
+  string job_directory_relative = 2;
+}
+
+message GetProjectFilesResponse {
+  repeated JobArtifactFileEntry original = 1;
+  repeated JobArtifactFileEntry transcripts = 2;
+  repeated JobArtifactFileEntry chunks = 3;
+  repeated JobArtifactFileEntry chunk_json = 4;
+  repeated JobArtifactFileEntry intermediate = 5;
+  repeated JobArtifactFileEntry converted = 6;
+  repeated JobArtifactFileEntry split_chunks = 7;
+}

@@ -26,6 +26,11 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+
+node_modules
+_build_verify
+_build_verify_tests
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
@@ -206,7 +211,29 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+runtime
+сhunks
+chunks_json
 
-.runtime/
-.chunks/
-.chunks_json/
+# .NET build artifacts
+*.bak
+*.csproj.user
+*.sln.DotSettings.user
+*.suo
+*.userprefs
+.fake/
+.vs/
+.idea/
+Sources/**/AssemblyInfo.cs
+StyleCop.Cache
+TestResults.xml
+bin
+build/*
+log
+obj
+packages/*
+paket-files/
+temp/
+tools/
+publish/
+.cursor/
