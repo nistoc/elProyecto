@@ -57,12 +57,33 @@ public class JobSnapshot
 
     /// <summary>Path to transcript.md from agent04 (relative to agent04 workspace).</summary>
     public string? MdOutputPath { get; set; }
+    /// <summary>Agent06 refine job id (gRPC SubmitRefineJob); set when refiner starts.</summary>
+    public string? Agent06RefineJobId { get; set; }
+    /// <summary>Latest OpenAI request preview (system + user) streamed from Agent06 before each batch call.</summary>
+    public string? RefinerOpenAiRequestPreview { get; set; }
+    /// <summary>From refiner_threads/checkpoint.json when present (progress after pause or Agent06 restart).</summary>
+    public int? RefinerCheckpointNextBatchIndex0 { get; set; }
+    public int? RefinerCheckpointTotalBatches { get; set; }
+    /// <summary>Batches left to run per checkpoint (total − next).</summary>
+    public int? RefinerCheckpointRemainingBatches { get; set; }
     /// <summary>Full path to the job directory (workspace folder for this job). Used for debugging and UI to show where files are looked for.</summary>
     public string? JobDirectoryPath { get; set; }
     /// <summary>
     /// Deprecated: no longer populated. Use <c>GET /api/jobs/{id}/files</c> for structured project files. Kept for JSON backward compatibility with older clients.
     /// </summary>
     public IReadOnlyList<JobFileInfo>? Files { get; set; }
+
+    /// <summary>Live refiner batch rows (from Agent06 gRPC stream); 0-based batch index.</summary>
+    public IReadOnlyList<RefinerThreadBatchEntry>? RefinerThreadBatches { get; set; }
+}
+
+public sealed class RefinerThreadBatchEntry
+{
+    public int BatchIndex { get; set; }
+    public int TotalBatches { get; set; }
+    public string BeforeText { get; set; } = "";
+    /// <summary>Null until output_ready for this batch.</summary>
+    public string? AfterText { get; set; }
 }
 
 /// <summary>Legacy flat file row (root-only scan). Prefer <see cref="JobProjectFiles"/> via GET /api/jobs/:id/files.</summary>

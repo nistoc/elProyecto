@@ -22,6 +22,8 @@ public static class JobArtifactDirectoryScanner
     {
         public IReadOnlyList<ArtifactFileEntry> Chunks { get; init; } = Array.Empty<ArtifactFileEntry>();
         public IReadOnlyList<ArtifactFileEntry> ChunkJson { get; init; } = Array.Empty<ArtifactFileEntry>();
+        /// <summary>Per-chunk markdown transcripts (<c>chunks_md/</c>), same index rules as <see cref="ChunkJson"/>.</summary>
+        public IReadOnlyList<ArtifactFileEntry> ChunkMd { get; init; } = Array.Empty<ArtifactFileEntry>();
         public IReadOnlyList<ArtifactFileEntry> Intermediate { get; init; } = Array.Empty<ArtifactFileEntry>();
         public IReadOnlyList<ArtifactFileEntry> SplitChunks { get; init; } = Array.Empty<ArtifactFileEntry>();
     }
@@ -34,12 +36,14 @@ public static class JobArtifactDirectoryScanner
 
         var chunksDir = Path.Combine(jobDir, "chunks");
         var chunksJsonDir = Path.Combine(jobDir, "chunks_json");
+        var chunksMdDir = Path.Combine(jobDir, "chunks_md");
         var intermediateDir = Path.Combine(jobDir, "intermediate_results");
 
         return new ScanResult
         {
             Chunks = ScanChunkFolder(chunksDir, "chunks"),
             ChunkJson = ScanChunkFolder(chunksJsonDir, "chunks_json"),
+            ChunkMd = ScanChunkFolder(chunksMdDir, "chunks_md"),
             Intermediate = ScanChunkFolder(intermediateDir, "intermediate_results"),
             SplitChunks = ScanSplitChunks(jobDir),
         };

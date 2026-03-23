@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using XtractManager.Features.Jobs.Application;
 using XtractManager.Infrastructure;
@@ -36,6 +37,7 @@ public static class JobSnapshotDiskEnricher
         try
         {
             TryApplyUiStateFile(snap, jobDirectoryPath, logger);
+            TryEnrichRefinerCheckpointProgress(snap, jobDirectoryPath);
 
             var needsChunks =
                 snap.Chunks == null
@@ -45,38 +47,43 @@ public static class JobSnapshotDiskEnricher
             if (!needsChunks)
             {
                 TryMergeSubChunkVirtualModelFromDisk(snap, jobDirectoryPath, logger);
-                return;
             }
-
-            var artifactRoot = ResolveArtifactRoot(jobDirectoryPath);
-            var statePath = Path.Combine(artifactRoot, TranscriptionWorkStateFileName);
-            TranscriptionWorkStateDocument? doc = null;
-            if (File.Exists(statePath))
+            else
             {
-                try
+                var artifactRoot = ResolveArtifactRoot(jobDirectoryPath);
+                var statePath = Path.Combine(artifactRoot, TranscriptionWorkStateFileName);
+                TranscriptionWorkStateDocument? doc = null;
+                if (File.Exists(statePath))
                 {
-                    var json = File.ReadAllText(statePath);
-                    doc = JsonSerializer.Deserialize<TranscriptionWorkStateDocument>(json, JsonOptions);
+                    try
+                    {
+                        var json = File.ReadAllText(statePath);
+                        doc = JsonSerializer.Deserialize<TranscriptionWorkStateDocument>(json, JsonOptions);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Could not read {File} for job {JobId}", statePath, snap.Id);
+                    }
                 }
-                catch (Exception ex)
+
+                if (doc != null && (doc.TotalChunks > 0 || doc.Chunks is { Count: > 0 }))
                 {
-                    logger.LogWarning(ex, "Could not read {File} for job {JobId}", statePath, snap.Id);
+                    ApplyWorkStateDocument(snap, doc);
+                    logger.LogDebug("Disk enrich: loaded chunk VM from {Path} for job {JobId}", statePath, snap.Id);
+                }
+                else
+                {
+                    var heuristic = TryBuildChunksFromChunkFolders(artifactRoot);
+                    if (heuristic != null)
+                    {
+                        snap.Chunks = heuristic;
+                        logger.LogDebug("Disk enrich: heuristic chunks for job {JobId} under {Root}", snap.Id, artifactRoot);
+                    }
                 }
             }
 
-            if (doc != null && (doc.TotalChunks > 0 || doc.Chunks is { Count: > 0 }))
-            {
-                ApplyWorkStateDocument(snap, doc);
-                logger.LogDebug("Disk enrich: loaded chunk VM from {Path} for job {JobId}", statePath, snap.Id);
-                return;
-            }
-
-            var heuristic = TryBuildChunksFromChunkFolders(artifactRoot);
-            if (heuristic != null)
-            {
-                snap.Chunks = heuristic;
-                logger.LogDebug("Disk enrich: heuristic chunks for job {JobId} under {Root}", snap.Id, artifactRoot);
-            }
+            TryHydrateRefinerThreadBatchesFromDisk(snap, jobDirectoryPath, logger);
+            TryInferRefinerPhaseFromArtifacts(snap, jobDirectoryPath, logger);
         }
         catch (Exception ex)
         {
@@ -97,6 +104,8 @@ public static class JobSnapshotDiskEnricher
                 Phase = snap.Phase,
                 Status = snap.Status,
                 Agent04JobId = snap.Agent04JobId,
+                Agent06RefineJobId = snap.Agent06RefineJobId,
+                MdOutputPath = snap.MdOutputPath,
                 UpdatedAt = DateTime.UtcNow.ToString("O")
             };
             var tmp = path + ".tmp";
@@ -108,6 +117,20 @@ public static class JobSnapshotDiskEnricher
         {
             /* best-effort */
         }
+    }
+
+    private static void TryEnrichRefinerCheckpointProgress(JobSnapshot snap, string jobDirectoryPath)
+    {
+        if (!RefinerCheckpointProgressReader.TryRead(jobDirectoryPath, out var sum) || sum == null || !sum.CanResume)
+        {
+            snap.RefinerCheckpointNextBatchIndex0 = null;
+            snap.RefinerCheckpointTotalBatches = null;
+            snap.RefinerCheckpointRemainingBatches = null;
+            return;
+        }
+        snap.RefinerCheckpointNextBatchIndex0 = sum.NextBatchIndex0;
+        snap.RefinerCheckpointTotalBatches = sum.TotalBatches;
+        snap.RefinerCheckpointRemainingBatches = sum.RemainingBatches;
     }
 
     private static void TryApplyUiStateFile(JobSnapshot snap, string jobDirectoryPath, ILogger logger)
@@ -129,6 +152,10 @@ public static class JobSnapshotDiskEnricher
                 snap.Status = ui.Status;
             if (!string.IsNullOrEmpty(ui.Agent04JobId))
                 snap.Agent04JobId = ui.Agent04JobId;
+            if (!string.IsNullOrEmpty(ui.Agent06RefineJobId))
+                snap.Agent06RefineJobId = ui.Agent06RefineJobId;
+            if (!string.IsNullOrEmpty(ui.MdOutputPath))
+                snap.MdOutputPath = ui.MdOutputPath;
         }
         catch (Exception ex)
         {
@@ -288,6 +315,118 @@ public static class JobSnapshotDiskEnricher
         };
     }
 
+    /// <summary>
+    /// True when the job directory has a markdown that can be used as refiner input (excludes refiner outputs).
+    /// Matches UI fallback: any job-root .md except <c>transcript_fixed*</c>.
+    /// </summary>
+    public static bool JobDirectoryHasTranscriptMarkdown(string jobDirectoryPath)
+    {
+        if (string.IsNullOrWhiteSpace(jobDirectoryPath) || !Directory.Exists(jobDirectoryPath))
+            return false;
+        foreach (var f in Directory.EnumerateFiles(jobDirectoryPath, "*.md", SearchOption.TopDirectoryOnly))
+        {
+            var n = Path.GetFileName(f);
+            if (IsRefinerOutputMarkdown(n)) continue;
+            return true;
+        }
+        return false;
+    }
+
+    private static bool IsRefinerOutputMarkdown(string fileName)
+    {
+        if (fileName.Equals("transcript_fixed.md", StringComparison.OrdinalIgnoreCase)) return true;
+        return Regex.IsMatch(fileName, @"^transcript_fixed_\d+\.md$", RegexOptions.IgnoreCase);
+    }
+
+    private static bool JobRootHasTranscriptFixed(string jobDirectoryPath)
+    {
+        if (!Directory.Exists(jobDirectoryPath)) return false;
+        if (File.Exists(Path.Combine(jobDirectoryPath, "transcript_fixed.md"))) return true;
+        return Directory.GetFiles(jobDirectoryPath, "transcript_fixed_*.md").Length > 0;
+    }
+
+    private static void TryHydrateRefinerThreadBatchesFromDisk(
+        JobSnapshot snap,
+        string jobDirectoryPath,
+        ILogger logger)
+    {
+        if (snap.RefinerThreadBatches is { Count: > 0 })
+            return;
+
+        // Live run: StartRefiner clears batches; every GetAsync (snapshot broadcast) hits this with Count==0.
+        // On-disk batch_*.json often still has afterText=null until Agent06 finishes that batch — loading here
+        // replaces the in-memory list and races the gRPC stream so early batches never get AFTER in the UI.
+        // Paused / archive: still hydrate when empty so refresh shows checkpoint progress from disk.
+        if (string.Equals(snap.Phase, "refiner", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var threadsDir = Path.Combine(jobDirectoryPath, "refiner_threads");
+        if (!Directory.Exists(threadsDir))
+            return;
+        var files = Directory.GetFiles(threadsDir, "batch_*.json").OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+        if (files.Count == 0)
+            return;
+        var list = new List<RefinerThreadBatchEntry>();
+        foreach (var path in files)
+        {
+            try
+            {
+                var json = File.ReadAllText(path);
+                var row = JsonSerializer.Deserialize<RefinerThreadBatchEntry>(json, JsonOptions);
+                if (row == null) continue;
+                list.Add(row);
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Skip invalid refiner thread batch {Path} for job {JobId}", path, snap.Id);
+            }
+        }
+        if (list.Count == 0)
+            return;
+        list.Sort((a, b) => a.BatchIndex.CompareTo(b.BatchIndex));
+        snap.RefinerThreadBatches = list;
+        logger.LogDebug("Disk enrich: loaded {Count} refiner thread batch(es) for job {JobId}", list.Count, snap.Id);
+    }
+
+    private static void TryInferRefinerPhaseFromArtifacts(
+        JobSnapshot snap,
+        string jobDirectoryPath,
+        ILogger logger)
+    {
+        if (!string.Equals(snap.Phase, "idle", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(snap.Status, "completed", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (JobRootHasTranscriptFixed(jobDirectoryPath))
+        {
+            snap.Phase = "completed";
+            snap.Status = "done";
+            logger.LogDebug("Disk enrich: inferred phase completed from transcript_fixed for job {JobId}", snap.Id);
+        }
+        else if (snap.RefinerThreadBatches is { Count: > 0 })
+        {
+            var allAfter = snap.RefinerThreadBatches.All(b => b.AfterText != null);
+            if (allAfter)
+            {
+                snap.Phase = "completed";
+                snap.Status = "done";
+                logger.LogDebug("Disk enrich: inferred completed from refiner batches for job {JobId}", snap.Id);
+            }
+            else
+            {
+                snap.Phase = "refiner_paused";
+                snap.Status = "running";
+                logger.LogDebug("Disk enrich: inferred refiner_paused from partial batches for job {JobId}", snap.Id);
+            }
+        }
+        else if (JobDirectoryHasTranscriptMarkdown(jobDirectoryPath))
+        {
+            snap.Phase = "awaiting_refiner";
+            snap.Status = "done";
+            logger.LogDebug("Disk enrich: inferred awaiting_refiner for job {JobId}", snap.Id);
+        }
+    }
+
     private sealed class TranscriptionWorkStateDocument
     {
         public int SchemaVersion { get; set; }
@@ -313,6 +452,10 @@ public static class JobSnapshotDiskEnricher
         public string? Phase { get; set; }
         public string? Status { get; set; }
         public string? Agent04JobId { get; set; }
+        /// <summary>Agent06 gRPC refine job id — needed to Resume after API restart.</summary>
+        public string? Agent06RefineJobId { get; set; }
+        /// <summary>Agent04 transcript path (relative) — restores stem selection for Refine row after refresh.</summary>
+        public string? MdOutputPath { get; set; }
         public string? UpdatedAt { get; set; }
     }
 }

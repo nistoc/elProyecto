@@ -21,4 +21,6 @@ public sealed class RefineJobRequest
     public IReadOnlyList<string>? Tags { get; set; }
     /// <summary>Optional. Single segment under workspace (Xtract job folder). When set, file I/O uses this directory; prompt paths still use workspace root.</summary>
     public string? JobDirectoryRelative { get; set; }
+    /// <summary>Optional. When set (e.g. by Agent05), replaces configured WorkspaceRoot for this job so artifacts align with the caller's job directory.</summary>
+    public string? WorkspaceRootOverride { get; set; }
 }

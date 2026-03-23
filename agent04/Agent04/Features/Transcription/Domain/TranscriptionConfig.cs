@@ -117,6 +117,11 @@ public sealed class TranscriptionConfig
     public string CacheDir => Get<string>("cache_dir") ?? "cache";
     public string? FfmpegPath => Get<string>("ffmpeg_path");
     public string? FfprobePath => Get<string>("ffprobe_path");
+    /// <summary>
+    /// Relative path template for the job-level transcript markdown. Placeholders: <c>{base}</c> (input audio stem),
+    /// <c>{jobId}</c>, <c>{timestamp}</c> (UTC <c>yyyyMMdd_HHmmss_fff</c>). When the pattern omits <c>{jobId}</c> and a
+    /// gRPC job id is present, Agent04 appends <c>_{timestamp}</c> before the extension so each completed stitch/write
+    /// creates a new file and prior finals remain (see <see cref="Infrastructure.TranscriptionMdOutputPath"/>).
+    /// </summary>
     public string MdOutputPath => Get<string>("md_output_path") ?? "transcript.md";
-    public string RawJsonOutputPath => Get<string>("raw_json_output_path") ?? "openai_response.json";
 }

@@ -118,8 +118,10 @@ enum ChunkCommandAction {
   CHUNK_COMMAND_ACTION_REBUILD_COMBINED = 6;
   /// Remove one operator-split sub-chunk (audio, result json, merged split, cancel flag, work-state row). chunk_index = parent, sub_chunk_index = sub.
   CHUNK_COMMAND_ACTION_DELETE_SUB_CHUNK = 7;
-  /// Rebuild split_chunks/chunk_{chunk_index}/chunk_{chunk_index}_merged.json and .md (and job-level combined outputs when present). chunk_index = parent; all sub_chunk_XX_result.json required.
+  /// Rebuild split_chunks/chunk_{chunk_index}/chunk_{chunk_index}_merged.md from sub results. chunk_index = parent.
   CHUNK_COMMAND_ACTION_REBUILD_SPLIT_MERGED = 8;
+  /// Write chunks_md for one chunk from chunks_json when missing. chunk_index = main chunk.
+  CHUNK_COMMAND_ACTION_WRITE_CHUNK_MD = 9;
 }
 
 message ChunkCommandRequest {

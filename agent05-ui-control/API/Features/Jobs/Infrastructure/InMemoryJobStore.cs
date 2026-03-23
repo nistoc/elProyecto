@@ -4,7 +4,8 @@ namespace XtractManager.Features.Jobs.Infrastructure;
 
 public sealed class InMemoryJobStore : Application.IJobStore
 {
-    private readonly ConcurrentDictionary<string, Application.JobSnapshot> _jobs = new();
+    /// <summary>Case-insensitive: HTTP routes and workspace dir names may not match the casing used at create time.</summary>
+    private readonly ConcurrentDictionary<string, Application.JobSnapshot> _jobs = new(StringComparer.OrdinalIgnoreCase);
 
     public Task<Application.JobSnapshot?> GetAsync(string jobId, CancellationToken ct = default)
     {
@@ -75,5 +76,12 @@ public sealed class InMemoryJobStore : Application.IJobStore
     public Task<bool> DeleteAsync(string jobId, CancellationToken ct = default)
     {
         return Task.FromResult(_jobs.TryRemove(jobId, out _));
+    }
+
+    /// <summary>Inserts a snapshot only if the job id is not already in memory (archive hydration).</summary>
+    public bool TryInsertIfAbsent(string jobId, Application.JobSnapshot snapshot)
+    {
+        snapshot.Id = jobId;
+        return _jobs.TryAdd(jobId, snapshot);
     }
 }

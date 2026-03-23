@@ -53,6 +53,8 @@ public enum TranscriptionChunkAction
     RebuildCombined = 6,
     DeleteSubChunk = 7,
     RebuildSplitMerged = 8,
+    /// <summary>Write <c>chunks_md</c> for one chunk from <c>chunks_json</c> (Agent04).</summary>
+    WriteChunkMd = 9,
 }
 
 public record ChunkCommandResult(bool Ok, string Message);

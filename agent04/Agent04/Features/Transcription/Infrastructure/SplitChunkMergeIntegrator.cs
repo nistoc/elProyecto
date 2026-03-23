@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using Agent04.Features.Transcription.Application;
 using Agent04.Features.Transcription.Domain;
@@ -8,13 +7,14 @@ using Microsoft.Extensions.Logging;
 namespace Agent04.Features.Transcription.Infrastructure;
 
 /// <summary>
-/// When all operator sub-chunks for <c>chunk_N</c> have results, merges them (overlap dedupe),
-/// writes <c>split_chunks/chunk_N/chunk_N_merged.*</c>, and rebuilds job-level <c>transcript.md</c> / combined JSON if artifacts exist.
+/// Merges operator sub-chunk results into <c>split_chunks/chunk_N/chunk_N_merged.md</c> (stable sub-order + in-file segment order),
+/// and optionally rebuilds job-level <c>transcript.md</c> by stitching per-chunk markdown when pipeline + artifacts are provided.
+/// Uses every existing <c>results/sub_chunk_XX_result.json</c> (at least one required), in index order.
 /// </summary>
 public static class SplitChunkMergeIntegrator
 {
-    private static readonly Regex SubAudioIndex = new(
-        @"_sub_(\d{2})(?:\.[^.]+)?$",
+    private static readonly Regex SubResultFileName = new(
+        @"^sub_chunk_(\d{2})_result\.json$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> MergeLocksByArtifactAndParent =
@@ -26,7 +26,7 @@ public static class SplitChunkMergeIntegrator
             static _ => new SemaphoreSlim(1, 1));
 
     /// <summary>
-    /// Idempotent merge for operator split: all expected <c>sub_chunk_XX_result.json</c> must exist (from <c>sub_chunks/</c> audio indices).
+    /// Merges all existing <c>sub_chunk_XX_result.json</c> under <c>split_chunks/chunk_N/results</c> (at least one required).
     /// Uses the same per-(artifactRoot, parent) lock as <see cref="TryAfterSubChunkCompletedAsync"/>.
     /// </summary>
     /// <returns><c>(true, rebuild_split_merged_ok)</c> on success; otherwise a stable <c>split_merge_*</c> reason.</returns>
@@ -37,29 +37,29 @@ public static class SplitChunkMergeIntegrator
         int parentChunkIndex,
         ITranscriptionMerger merger,
         ILogger? logger,
-        CancellationToken ct)
+        CancellationToken ct,
+        ITranscriptionPipeline? pipeline = null,
+        IProjectArtifactService? artifacts = null)
     {
         var splitRoot = Path.Combine(artifactRoot, config.SplitChunksDir);
         var chunkFolder = Path.Combine(splitRoot, $"chunk_{parentChunkIndex}");
-        var subChunksDir = Path.Combine(chunkFolder, "sub_chunks");
         var resultsDir = Path.Combine(chunkFolder, "results");
-        if (!Directory.Exists(subChunksDir) || !Directory.Exists(resultsDir))
+
+        if (!Directory.Exists(resultsDir))
             return (false, "split_merge_no_split_layout");
 
         var sem = MergeLock(artifactRoot, parentChunkIndex);
         await sem.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var expectedSubs = CountExpectedSubChunks(subChunksDir);
-            if (expectedSubs <= 0)
-                return (false, "split_merge_no_expected_sub_chunks");
+            var indices = DiscoverExistingSubResultIndices(resultsDir);
+            if (indices.Count == 0)
+                return (false, "split_merge_no_sub_results");
 
             var pairs = new List<(int SubIdx, TranscriptionResult Result)>();
-            for (var i = 0; i < expectedSubs; i++)
+            foreach (var i in indices)
             {
                 var path = Path.Combine(resultsDir, $"sub_chunk_{i:D2}_result.json");
-                if (!File.Exists(path))
-                    return (false, "split_merge_incomplete_sub_results");
                 var tr = SubChunkResultReader.TryLoad(path);
                 if (tr == null)
                     return (false, "split_merge_invalid_sub_result");
@@ -69,7 +69,13 @@ public static class SplitChunkMergeIntegrator
             double parentOffset;
             try
             {
-                parentOffset = await ResolveParentChunkOffsetAsync(config, artifactRoot, agentJobId, parentChunkIndex, ct)
+                parentOffset = await ResolveParentChunkOffsetAsync(
+                        config,
+                        artifactRoot,
+                        agentJobId,
+                        parentChunkIndex,
+                        pipeline,
+                        ct)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -91,15 +97,7 @@ public static class SplitChunkMergeIntegrator
 
             await SaveChunkMergedArtifactsAsync(chunkFolder, parentChunkIndex, mergedAbs, logger, ct).ConfigureAwait(false);
 
-            await TryRebuildMainJobOutputsAsync(
-                    config,
-                    artifactRoot,
-                    agentJobId,
-                    parentChunkIndex,
-                    mergedAbs,
-                    parentOffset,
-                    logger,
-                    ct)
+            await TryRebuildMainJobOutputsAsync(config, artifactRoot, agentJobId, logger, ct, pipeline, artifacts)
                 .ConfigureAwait(false);
 
             return (true, "rebuild_split_merged_ok");
@@ -110,7 +108,7 @@ public static class SplitChunkMergeIntegrator
         }
     }
 
-    /// <summary>Called after a sub-chunk transcription finishes; merges when every expected sub has a result (silent no-op if not).</summary>
+    /// <summary>Called after a sub-chunk transcription finishes; attempts merge from whatever <c>sub_chunk_XX_result.json</c> files exist (no-op if merge fails).</summary>
     public static async Task TryAfterSubChunkCompletedAsync(
         TranscriptionConfig config,
         string artifactRoot,
@@ -119,7 +117,9 @@ public static class SplitChunkMergeIntegrator
         int totalChunks,
         ITranscriptionMerger merger,
         ILogger? logger,
-        CancellationToken ct)
+        CancellationToken ct,
+        ITranscriptionPipeline? pipeline = null,
+        IProjectArtifactService? artifacts = null)
     {
         _ = totalChunks;
         await TryRebuildSplitMergedForChunkAsync(
@@ -129,22 +129,26 @@ public static class SplitChunkMergeIntegrator
                 parentChunkIndex,
                 merger,
                 logger,
-                ct)
+                ct,
+                pipeline,
+                artifacts)
             .ConfigureAwait(false);
     }
 
-    private static int CountExpectedSubChunks(string subChunksDir)
+    /// <summary>Indices of <c>sub_chunk_XX_result.json</c> that exist under <paramref name="resultsDir"/>.</summary>
+    private static List<int> DiscoverExistingSubResultIndices(string resultsDir)
     {
-        var max = -1;
-        foreach (var path in Directory.EnumerateFiles(subChunksDir))
+        var list = new List<int>();
+        foreach (var path in Directory.EnumerateFiles(resultsDir))
         {
-            var m = SubAudioIndex.Match(Path.GetFileName(path));
+            var m = SubResultFileName.Match(Path.GetFileName(path));
             if (!m.Success || !int.TryParse(m.Groups[1].Value, out var idx))
                 continue;
-            if (idx > max) max = idx;
+            list.Add(idx);
         }
 
-        return max < 0 ? 0 : max + 1;
+        list.Sort();
+        return list;
     }
 
     private static async Task<double> ResolveParentChunkOffsetAsync(
@@ -152,34 +156,21 @@ public static class SplitChunkMergeIntegrator
         string artifactRoot,
         string agentJobId,
         int parentChunkIndex,
+        ITranscriptionPipeline? pipeline,
         CancellationToken ct)
     {
-        var baseName = TryInferAudioBaseName(artifactRoot, config);
-        if (string.IsNullOrEmpty(baseName))
+        if (pipeline == null)
             return 0;
 
-        var jsonRel = ResolveOutputRel(config.RawJsonOutputPath, baseName, agentJobId);
-        var jsonPath = Path.Combine(artifactRoot, jsonRel);
-        if (!File.Exists(jsonPath))
-            return 0;
-
-        await using var fs = File.OpenRead(jsonPath);
-        var doc = await JsonDocument.ParseAsync(fs, cancellationToken: ct).ConfigureAwait(false);
-        if (!doc.RootElement.TryGetProperty("chunks", out var chunksEl) ||
-            chunksEl.ValueKind != JsonValueKind.Array)
-            return 0;
-
-        var idx = 0;
-        foreach (var el in chunksEl.EnumerateArray())
+        try
         {
-            if (idx == parentChunkIndex)
-            {
-                if (el.TryGetProperty("offset", out var o) && o.TryGetDouble(out var off))
-                    return off;
-                return 0;
-            }
-
-            idx++;
+            var chunkInfos = await pipeline.ResolveChunkInfosForRebuildAsync(config, artifactRoot, ct).ConfigureAwait(false);
+            if (parentChunkIndex >= 0 && parentChunkIndex < chunkInfos.Count)
+                return chunkInfos[parentChunkIndex].Offset;
+        }
+        catch
+        {
+            /* best-effort */
         }
 
         return 0;
@@ -202,59 +193,30 @@ public static class SplitChunkMergeIntegrator
         return first != null ? Path.GetFileNameWithoutExtension(first) : null;
     }
 
-    private static string ResolveOutputRel(string pattern, string baseName, string? jobId)
-    {
-        var s = pattern.Replace("{base}", baseName, StringComparison.OrdinalIgnoreCase)
-            .Replace("{jobId}", jobId ?? "", StringComparison.OrdinalIgnoreCase);
-        if (!string.IsNullOrEmpty(jobId) && !pattern.Contains("{jobId}", StringComparison.OrdinalIgnoreCase))
-            s = Path.Combine(Path.GetDirectoryName(s) ?? ".", Path.GetFileNameWithoutExtension(s) + "_" + jobId + Path.GetExtension(s));
-        return s;
-    }
-
-    private static async Task SaveChunkMergedArtifactsAsync(
+    private static Task SaveChunkMergedArtifactsAsync(
         string chunkFolder,
         int parentChunkIndex,
         TranscriptionResult mergedAbs,
         ILogger? logger,
         CancellationToken ct)
     {
-        var baseName = $"chunk_{parentChunkIndex}_merged";
-        var jsonPath = Path.Combine(chunkFolder, $"{baseName}.json");
-        var mdPath = Path.Combine(chunkFolder, $"{baseName}.md");
-
-        var segDtos = mergedAbs.Segments.Select(s => new
-        {
-            start = s.Start,
-            end = s.End,
-            text = s.Text,
-            speaker = s.Speaker
-        }).ToList();
-        var jsonObj = new
-        {
-            chunk_basename = mergedAbs.ChunkBasename,
-            offset = mergedAbs.Offset,
-            emit_guard = mergedAbs.EmitGuard,
-            segments = segDtos
-        };
-        await File.WriteAllTextAsync(jsonPath, JsonSerializer.Serialize(jsonObj, TranscriptionJsonSerializerOptions.Indented), ct)
-            .ConfigureAwait(false);
-
+        var mdPath = Path.Combine(chunkFolder, $"chunk_{parentChunkIndex}_merged.md");
         var writer = new TranscriptionOutputWriter();
         writer.InitializeMarkdown(mdPath);
         writer.AppendSegmentsToMarkdown(mdPath, mergedAbs.Segments, 0, 0);
         writer.FinalizeMarkdown(mdPath);
-        logger?.LogInformation("Split merge: wrote {Json} and {Md}", jsonPath, mdPath);
+        logger?.LogInformation("Split merge: wrote {Md}", mdPath);
+        return Task.CompletedTask;
     }
 
     private static async Task TryRebuildMainJobOutputsAsync(
         TranscriptionConfig config,
         string artifactRoot,
         string agentJobId,
-        int parentChunkIndex,
-        TranscriptionResult mergedAbs,
-        double parentOffset,
         ILogger? logger,
-        CancellationToken ct)
+        CancellationToken ct,
+        ITranscriptionPipeline? pipeline,
+        IProjectArtifactService? artifacts)
     {
         var baseName = TryInferAudioBaseName(artifactRoot, config);
         if (string.IsNullOrEmpty(baseName))
@@ -263,108 +225,17 @@ public static class SplitChunkMergeIntegrator
             return;
         }
 
-        var jsonRel = ResolveOutputRel(config.RawJsonOutputPath, baseName, agentJobId);
-        var mdRel = ResolveOutputRel(config.MdOutputPath, baseName, agentJobId);
-        var combinedJsonPath = Path.Combine(artifactRoot, jsonRel);
+        if (pipeline == null || artifacts == null)
+        {
+            logger?.LogDebug("Split merge: skip main transcript stitch — pipeline or artifacts missing");
+            return;
+        }
+
+        var mdRel = TranscriptionMdOutputPath.ResolveRelative(config.MdOutputPath, baseName, agentJobId);
         var mdPath = Path.Combine(artifactRoot, mdRel);
-        if (!File.Exists(combinedJsonPath))
-        {
-            logger?.LogDebug("Split merge: no combined JSON at {Path}; skip main integration", combinedJsonPath);
-            return;
-        }
-
-        // Read fully then close before overwriting the same path (Windows blocks WriteAllText while OpenRead is active).
-        var jsonBytes = await File.ReadAllBytesAsync(combinedJsonPath, ct).ConfigureAwait(false);
-        using var doc = JsonDocument.Parse(jsonBytes);
-        if (!doc.RootElement.TryGetProperty("chunks", out var chunksEl) ||
-            chunksEl.ValueKind != JsonValueKind.Array)
-            return;
-
-        var entries = chunksEl.EnumerateArray().ToList();
-        if (parentChunkIndex < 0 || parentChunkIndex >= entries.Count)
-        {
-            logger?.LogWarning(
-                "Split merge: parent index {Parent} out of range (chunks={Count})",
-                parentChunkIndex,
-                entries.Count);
-            return;
-        }
-
-        var rebuilt = new List<TranscriptionResult>();
-        var idx = 0;
-        foreach (var el in entries)
-        {
-            if (idx == parentChunkIndex)
-            {
-                var relSegs = mergedAbs.Segments
-                    .Select(s => new ASRSegment(
-                        s.Start - parentOffset,
-                        s.End - parentOffset,
-                        s.Text,
-                        s.Speaker))
-                    .ToList();
-                var mergedRaw = BuildSyntheticRawFromSegments(mergedAbs.Segments);
-                rebuilt.Add(new TranscriptionResult(mergedAbs.ChunkBasename, parentOffset, 0, relSegs, mergedRaw));
-            }
-            else
-            {
-                var chunkName = el.TryGetProperty("chunk", out var cEl) ? cEl.GetString() ?? "" : "";
-                var offset = el.TryGetProperty("offset", out var oEl) && oEl.TryGetDouble(out var o) ? o : 0.0;
-                var guard = el.TryGetProperty("emit_guard", out var gEl) && gEl.TryGetDouble(out var g) ? g : 0.0;
-                if (!el.TryGetProperty("response", out var respEl))
-                {
-                    logger?.LogWarning("Split merge: chunk {Idx} missing response; abort main rebuild", idx);
-                    return;
-                }
-
-                var dict = JsonElementToObjectDict(respEl);
-                var segments = OpenAITranscriptionClient.ParseSegments(dict);
-                rebuilt.Add(new TranscriptionResult(chunkName, offset, guard, segments, dict));
-            }
-
-            idx++;
-        }
-
-        var outWriter = new TranscriptionOutputWriter();
-        outWriter.InitializeMarkdown(mdPath);
-        foreach (var r in rebuilt)
-            outWriter.AppendSegmentsToMarkdown(mdPath, r.Segments, r.Offset, r.EmitGuard);
-        outWriter.FinalizeMarkdown(mdPath);
-        outWriter.SaveCombinedJson(combinedJsonPath, rebuilt);
-        logger?.LogInformation("Split merge: rebuilt main {Md} and {Json}", mdPath, combinedJsonPath);
+        await pipeline.EnsurePerChunkMarkdownFromJsonAsync(config, artifactRoot, null, ct).ConfigureAwait(false);
+        var chunkInfos = await pipeline.ResolveChunkInfosForRebuildAsync(config, artifactRoot, ct).ConfigureAwait(false);
+        artifacts.StitchChunkMarkdownFiles(config, artifactRoot, chunkInfos, mdPath);
+        logger?.LogInformation("Split merge: rebuilt main {Md} via chunk markdown stitch", mdPath);
     }
-
-    private static Dictionary<string, object?> BuildSyntheticRawFromSegments(IReadOnlyList<ASRSegment> absoluteSegments)
-    {
-        var arr = absoluteSegments.Select(s => new Dictionary<string, object?>
-        {
-            ["start"] = s.Start,
-            ["end"] = s.End,
-            ["text"] = s.Text,
-            ["speaker"] = s.Speaker ?? ""
-        }).ToArray();
-        return new Dictionary<string, object?> { ["segments"] = arr };
-    }
-
-    private static Dictionary<string, object?> JsonElementToObjectDict(JsonElement el)
-    {
-        var d = new Dictionary<string, object?>();
-        if (el.ValueKind != JsonValueKind.Object) return d;
-        foreach (var p in el.EnumerateObject())
-            d[p.Name] = JsonToObject(p.Value);
-        return d;
-    }
-
-    private static object? JsonToObject(JsonElement e) =>
-        e.ValueKind switch
-        {
-            JsonValueKind.String => e.GetString(),
-            JsonValueKind.Number => e.TryGetDouble(out var d) ? d : e.GetInt32(),
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.Null => null,
-            JsonValueKind.Array => e.EnumerateArray().Select(JsonToObject).ToArray(),
-            JsonValueKind.Object => JsonElementToObjectDict(e),
-            _ => null
-        };
 }

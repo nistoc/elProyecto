@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using TranslationImprover.Application;
 using TranslationImprover.Features.Refine.Application;
 using TranslationImprover.Features.Refine.Domain;
 
@@ -13,6 +14,8 @@ public sealed class RefinePipeline : IRefinePipeline
     private readonly IRefineJobStore _store;
     private readonly IOpenAIRefineClient _client;
     private readonly IPromptLoader _promptLoader;
+    private readonly IRefineJobPause _pause;
+    private readonly WorkspaceRoot _serviceWorkspaceRoot;
     private readonly INodeModel? _nodeModel;
     private readonly IHttpClientFactory? _httpClientFactory;
     private readonly ILogger<RefinePipeline>? _logger;
@@ -21,6 +24,8 @@ public sealed class RefinePipeline : IRefinePipeline
         IRefineJobStore store,
         IOpenAIRefineClient client,
         IPromptLoader promptLoader,
+        IRefineJobPause pause,
+        WorkspaceRoot serviceWorkspaceRoot,
         INodeModel? nodeModel = null,
         IHttpClientFactory? httpClientFactory = null,
         ILogger<RefinePipeline>? logger = null)
@@ -28,12 +33,14 @@ public sealed class RefinePipeline : IRefinePipeline
         _store = store;
         _client = client;
         _promptLoader = promptLoader;
+        _pause = pause;
+        _serviceWorkspaceRoot = serviceWorkspaceRoot;
         _nodeModel = nodeModel;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
-    public async Task RunAsync(string jobId, RefineJobRequest request, string workspaceRoot, string artifactRoot, CancellationToken cancellationToken = default)
+    public async Task RunAsync(string jobId, RefineJobRequest request, string artifactRoot, CancellationToken cancellationToken = default)
     {
         IReadOnlyList<string> contentLines;
         IReadOnlyList<string> headerLines;
@@ -58,54 +65,194 @@ public sealed class RefinePipeline : IRefinePipeline
             return;
         }
 
-        _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Running, CurrentPhase = "Starting" });
-        _nodeModel?.EnsureNode(jobId, null, jobId, "job");
-        _nodeModel?.StartNode(jobId);
-
         var batchSize = request.BatchSize > 0 ? request.BatchSize : 10;
-        var contextLines = request.ContextLines >= 0 ? request.ContextLines : 3;
-        var batches = TranscriptParser.CreateBatches(contentLines, batchSize);
-        _store.Update(jobId, new RefineJobStatusUpdate { TotalBatches = batches.Count });
+        var batches = TranscriptParser.CreateBatches(contentLines.ToList(), batchSize);
+        await RunBatchLoopAsync(
+            jobId,
+            request,
+            artifactRoot,
+            batches,
+            headerLines.ToList(),
+            footerLines.ToList(),
+            contentLines.ToList(),
+            startBatchIndex: 0,
+            new List<string>(),
+            previousContext: null,
+            cancellationToken);
+    }
 
+    public async Task ResumeAsync(string jobId, CancellationToken cancellationToken = default)
+    {
+        var job = _store.Get(jobId);
+        if (job == null)
+            throw new InvalidOperationException("Job not found");
+        if (job.State != RefineJobState.Paused)
+            throw new InvalidOperationException("Job is not paused");
+
+        var rootForResolve = string.IsNullOrWhiteSpace(job.WorkspaceRootOverride)
+            ? _serviceWorkspaceRoot.RootPath
+            : Path.GetFullPath(job.WorkspaceRootOverride.Trim());
+        var artifactRoot = RefineWorkspacePaths.ResolveEffectiveArtifactRoot(rootForResolve, job.JobDirectoryRelative);
+        var checkpointPath = RefinePaths.CheckpointFile(artifactRoot);
+        var ck = RefineCheckpoint.TryLoad(checkpointPath);
+        if (ck == null || ck.JobId != jobId)
+            throw new InvalidOperationException("Checkpoint missing or invalid");
+
+        var request = ck.ToRequest();
+        var batches = TranscriptParser.CreateBatches(ck.ContentLines, request.BatchSize > 0 ? request.BatchSize : 10);
+        if (batches.Count == 0 || ck.NextBatchIndex >= batches.Count)
+        {
+            _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Completed, ProgressPercent = 100, ErrorMessage = "Nothing to resume" });
+            return;
+        }
+
+        _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Running, CurrentPhase = "Resuming" });
+
+        await RunBatchLoopAsync(
+            jobId,
+            request,
+            artifactRoot,
+            batches,
+            ck.HeaderLines,
+            ck.FooterLines,
+            ck.ContentLines,
+            startBatchIndex: ck.NextBatchIndex,
+            ck.FixedLines.ToList(),
+            ck.PreviousContextLines,
+            cancellationToken);
+    }
+
+    public async Task ResumeFromCheckpointAsync(
+        string jobId,
+        string artifactRoot,
+        RefineCheckpoint ck,
+        CancellationToken cancellationToken = default)
+    {
+        var request = ck.ToRequest();
+        var batches = TranscriptParser.CreateBatches(ck.ContentLines, request.BatchSize > 0 ? request.BatchSize : 10);
+        if (batches.Count == 0 || ck.NextBatchIndex >= batches.Count)
+        {
+            _store.Update(jobId, new RefineJobStatusUpdate
+            {
+                State = RefineJobState.Failed,
+                ErrorMessage = "Nothing to resume from checkpoint"
+            });
+            return;
+        }
+
+        _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Running, CurrentPhase = "Resuming" });
+
+        await RunBatchLoopAsync(
+            jobId,
+            request,
+            artifactRoot,
+            batches,
+            ck.HeaderLines,
+            ck.FooterLines,
+            ck.ContentLines,
+            startBatchIndex: ck.NextBatchIndex,
+            ck.FixedLines.ToList(),
+            ck.PreviousContextLines,
+            cancellationToken);
+    }
+
+    private async Task RunBatchLoopAsync(
+        string jobId,
+        RefineJobRequest request,
+        string artifactRoot,
+        IReadOnlyList<BatchInfo> batches,
+        List<string> headerLines,
+        List<string> footerLines,
+        List<string> contentLines,
+        int startBatchIndex,
+        List<string> fixedContent,
+        IReadOnlyList<string>? previousContext,
+        CancellationToken cancellationToken)
+    {
         var refineParent = jobId + ":refine";
-        _nodeModel?.EnsureNode(refineParent, jobId, jobId, "phase");
-        _nodeModel?.StartNode(refineParent);
+        var contextLines = request.ContextLines >= 0 ? request.ContextLines : 3;
 
-        var promptTemplate = await _promptLoader.LoadAsync(request.PromptFile, workspaceRoot, cancellationToken);
+        _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Running, CurrentPhase = startBatchIndex > 0 ? "Resuming" : "Starting", TotalBatches = batches.Count });
+        _nodeModel?.EnsureNode(jobId, null, jobId, "job");
+        if (startBatchIndex == 0)
+            _nodeModel?.StartNode(jobId);
+
+        _nodeModel?.EnsureNode(refineParent, jobId, jobId, "phase");
+        if (startBatchIndex == 0)
+            _nodeModel?.StartNode(refineParent);
+
+        var promptTemplate = await _promptLoader.LoadAsync(request.PromptFile, _serviceWorkspaceRoot.RootPath, cancellationToken);
         var intermediateDir = request.SaveIntermediate && !string.IsNullOrEmpty(request.IntermediateDir)
             ? Path.Combine(artifactRoot, request.IntermediateDir.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
             : null;
         if (intermediateDir != null)
             Directory.CreateDirectory(intermediateDir);
 
-        var fixedContent = new List<string>();
-        IReadOnlyList<string>? previousContext = null;
+        var threadsDir = RefinePaths.RefinerThreadsDir(artifactRoot);
+        Directory.CreateDirectory(threadsDir);
+
+        RefineDebugLog.Append(
+            artifactRoot,
+            $"Refine run jobId={jobId} batches={batches.Count} startBatch={startBatchIndex} resume={startBatchIndex > 0}");
+
         string? outputPathFull = null;
+        IReadOnlyList<string>? prevCtx = previousContext;
 
         try
         {
-            for (var i = 0; i < batches.Count; i++)
+            for (var i = startBatchIndex; i < batches.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var batchInfo = batches[i];
-                if (previousContext != null && contextLines > 0)
-                    batchInfo = new BatchInfo { Index = batchInfo.Index, StartLine = batchInfo.StartLine, EndLine = batchInfo.EndLine, Lines = batchInfo.Lines, Context = previousContext.TakeLast(contextLines).ToList() };
+                if (prevCtx != null && contextLines > 0)
+                    batchInfo = new BatchInfo
+                    {
+                        Index = batchInfo.Index,
+                        StartLine = batchInfo.StartLine,
+                        EndLine = batchInfo.EndLine,
+                        Lines = batchInfo.Lines,
+                        Context = prevCtx.TakeLast(contextLines).ToList()
+                    };
+
+                var beforeText = string.Concat(batchInfo.Lines);
+                var userMsg = RefinePromptComposer.BuildUserMessageContent(batchInfo, promptTemplate);
+                var openAiPreview = RefinePromptComposer.BuildOpenAiRequestPreview(SystemPrompt, userMsg);
+                const int maxOpenAiPreviewChars = 120_000;
+                if (openAiPreview.Length > maxOpenAiPreviewChars)
+                    openAiPreview = openAiPreview[..maxOpenAiPreviewChars] + "\n… [truncated]";
+                _store.Update(jobId, new RefineJobStatusUpdate
+                {
+                    CurrentBatch = i + 1,
+                    CurrentPhase = $"Batch {i + 1}/{batches.Count}",
+                    BatchEventKind = "input_ready",
+                    BatchEventIndex0 = i,
+                    BatchThreadsRelativePath = RefineThreadBatchFile.RelativePath(i, batches.Count),
+                    OpenAiRequestPreview = openAiPreview,
+                    HasBatchBeforeText = true,
+                    BatchBeforeText = beforeText,
+                    HasBatchAfterText = true,
+                    BatchAfterText = null,
+                    RefinerLogLine = $"batch {i + 1}/{batches.Count} input_ready"
+                });
+                RefineThreadBatchFile.Write(threadsDir, i, batches.Count, beforeText, afterText: null);
+                RefineDebugLog.Append(artifactRoot, $"Batch {i + 1}/{batches.Count}: input_ready — calling OpenAI");
 
                 var batchNodeId = refineParent + ":batch-" + i;
                 _nodeModel?.EnsureNode(batchNodeId, refineParent, jobId, "batch");
                 _nodeModel?.StartNode(batchNodeId);
 
-                _store.Update(jobId, new RefineJobStatusUpdate { CurrentBatch = i + 1, CurrentPhase = $"Batch {i + 1}/{batches.Count}" });
                 var percent = batches.Count > 0 ? (i + 1) * 100 / batches.Count : 100;
                 _nodeModel?.UpdateNodeProgress(jobId, percent, $"Batch {i + 1}/{batches.Count}");
 
-                var result = await _client.RefineBatchAsync(batchInfo, request.Model, request.Temperature, SystemPrompt, promptTemplate, request.OpenAIBaseUrl, cancellationToken);
+                var result = await _client.RefineBatchAsync(batchInfo, request.Model, request.Temperature, SystemPrompt, promptTemplate, request.OpenAIBaseUrl, artifactRoot, cancellationToken);
 
+                string afterText;
                 if (result.Success)
                 {
                     fixedContent.AddRange(result.FixedLines);
-                    previousContext = result.FixedLines;
+                    prevCtx = result.FixedLines;
+                    afterText = string.Concat(result.FixedLines);
                     if (intermediateDir != null)
                     {
                         var json = JsonSerializer.Serialize(new { batchInfo.Index, result.Success, result.Error, fixed_lines = result.FixedLines.Select(l => l.TrimEnd()).ToList() });
@@ -114,12 +261,61 @@ public sealed class RefinePipeline : IRefinePipeline
                 }
                 else
                 {
-                    fixedContent.AddRange(batchInfo.Lines);
-                    previousContext = batchInfo.Lines;
+                    afterText = string.Concat(batchInfo.Lines);
                     _logger?.LogWarning("Batch {Index} failed: {Error}", i, result.Error);
                 }
 
+                RefineThreadBatchFile.Write(threadsDir, i, batches.Count, beforeText, afterText);
+                var outLineCount = result.Success ? result.FixedLines.Count : 0;
+                RefineDebugLog.Append(
+                    artifactRoot,
+                    $"Batch {i + 1}/{batches.Count}: output_ready — success={result.Success}, outLines={outLineCount}");
+                var relPath = RefineThreadBatchFile.RelativePath(i, batches.Count);
+                _store.Update(jobId, new RefineJobStatusUpdate
+                {
+                    BatchEventKind = "output_ready",
+                    BatchEventIndex0 = i,
+                    BatchThreadsRelativePath = relPath,
+                    HasBatchBeforeText = true,
+                    BatchBeforeText = beforeText,
+                    HasBatchAfterText = true,
+                    BatchAfterText = afterText,
+                    RefinerLogLine = $"batch {i + 1}/{batches.Count} output_ready success={result.Success}"
+                });
+
                 _nodeModel?.CompleteNode(batchNodeId, result.Success ? RefineJobState.Completed : RefineJobState.Failed, DateTimeOffset.UtcNow, result.Error);
+
+                if (!result.Success)
+                {
+                    var err = string.IsNullOrEmpty(result.Error) ? "OpenAI batch failed" : result.Error;
+                    _store.Update(jobId, new RefineJobStatusUpdate
+                    {
+                        State = RefineJobState.Failed,
+                        ErrorMessage = err,
+                        ProgressPercent = percent,
+                        CurrentPhase = $"Failed at batch {i + 1}/{batches.Count}",
+                        CurrentBatch = i + 1,
+                        TotalBatches = batches.Count
+                    });
+                    _nodeModel?.CompleteNode(refineParent, RefineJobState.Failed, DateTimeOffset.UtcNow, err);
+                    _nodeModel?.CompleteNode(jobId, RefineJobState.Failed, DateTimeOffset.UtcNow, err);
+                    await FireCallbackAsync(jobId);
+                    return;
+                }
+
+                if (_pause.IsPauseRequested(jobId))
+                {
+                    _pause.ClearPauseRequest(jobId);
+                    SaveCheckpoint(jobId, artifactRoot, i + 1, batches.Count, fixedContent, prevCtx, headerLines, footerLines, contentLines, request);
+                    _store.Update(jobId, new RefineJobStatusUpdate
+                    {
+                        State = RefineJobState.Paused,
+                        CurrentPhase = $"Paused after batch {i + 1}/{batches.Count}",
+                        ProgressPercent = percent
+                    });
+                    await FireCallbackAsync(jobId);
+                    return;
+                }
             }
 
             _nodeModel?.CompleteNode(refineParent, RefineJobState.Completed, DateTimeOffset.UtcNow);
@@ -137,7 +333,16 @@ public sealed class RefinePipeline : IRefinePipeline
                 await File.WriteAllLinesAsync(outputPathFull, fullContent.Select(l => l.TrimEnd('\n')), Encoding.UTF8, cancellationToken);
             }
 
-            _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Completed, ProgressPercent = 100, CurrentBatch = batches.Count, TotalBatches = batches.Count, OutputFilePath = request.OutputFilePath });
+            TryDeleteCheckpoint(artifactRoot);
+
+            _store.Update(jobId, new RefineJobStatusUpdate
+            {
+                State = RefineJobState.Completed,
+                ProgressPercent = 100,
+                CurrentBatch = batches.Count,
+                TotalBatches = batches.Count,
+                OutputFilePath = request.OutputFilePath
+            });
             _nodeModel?.EnsureNode(jobId, null, jobId, "job", request.OutputFilePath != null ? new Dictionary<string, object?> { ["output_file_path"] = request.OutputFilePath } : null);
             _nodeModel?.CompleteNode(jobId, RefineJobState.Completed, DateTimeOffset.UtcNow);
         }
@@ -160,6 +365,47 @@ public sealed class RefinePipeline : IRefinePipeline
         }
 
         await FireCallbackAsync(jobId);
+    }
+
+    private static void SaveCheckpoint(
+        string jobId,
+        string artifactRoot,
+        int nextBatchIndex,
+        int totalBatches,
+        List<string> fixedContent,
+        IReadOnlyList<string>? previousContext,
+        List<string> headerLines,
+        List<string> footerLines,
+        List<string> contentLines,
+        RefineJobRequest request)
+    {
+        var ck = new RefineCheckpoint
+        {
+            JobId = jobId,
+            NextBatchIndex = nextBatchIndex,
+            TotalBatches = totalBatches,
+            FixedLines = fixedContent.ToList(),
+            PreviousContextLines = previousContext?.ToList(),
+            HeaderLines = headerLines,
+            FooterLines = footerLines,
+            ContentLines = contentLines,
+            Request = RefineJobRequestDto.FromModel(request)
+        };
+        ck.Save(RefinePaths.CheckpointFile(artifactRoot));
+    }
+
+    private static void TryDeleteCheckpoint(string artifactRoot)
+    {
+        try
+        {
+            var p = RefinePaths.CheckpointFile(artifactRoot);
+            if (File.Exists(p))
+                File.Delete(p);
+        }
+        catch
+        {
+            /* ignore */
+        }
     }
 
     private async Task FireCallbackAsync(string jobId)
@@ -188,4 +434,10 @@ public sealed class RefinePipeline : IRefinePipeline
             _logger?.LogWarning(ex, "Callback POST failed for job {JobId}", jobId);
         }
     }
+}
+
+internal static class RefinePaths
+{
+    public static string RefinerThreadsDir(string artifactRoot) => Path.Combine(artifactRoot, "refiner_threads");
+    public static string CheckpointFile(string artifactRoot) => Path.Combine(RefinerThreadsDir(artifactRoot), "checkpoint.json");
 }

@@ -47,26 +47,6 @@ public sealed class TranscriptionOutputWriter : ITranscriptionOutputWriter
         _logger?.LogInformation("Finalized Markdown: {Path}", mdPath);
     }
 
-    public void SaveCombinedJson(string jsonPath, IReadOnlyList<TranscriptionResult> results)
-    {
-        var dir = Path.GetDirectoryName(jsonPath);
-        if (!string.IsNullOrEmpty(dir))
-            Directory.CreateDirectory(dir);
-        var combined = new
-        {
-            chunks = results.Select(r => new
-            {
-                chunk = r.ChunkBasename,
-                offset = r.Offset,
-                emit_guard = r.EmitGuard,
-                response = r.RawResponse
-            }).ToList()
-        };
-        var json = JsonSerializer.Serialize(combined, TranscriptionJsonSerializerOptions.Indented);
-        File.WriteAllText(jsonPath, json);
-        _logger?.LogInformation("Saved combined raw JSON to: {Path}", jsonPath);
-    }
-
     public void SavePerChunkJson(string chunkBasename, IReadOnlyDictionary<string, object?> response, string outputDir)
     {
         Directory.CreateDirectory(outputDir);

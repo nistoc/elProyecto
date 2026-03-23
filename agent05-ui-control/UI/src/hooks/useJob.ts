@@ -13,8 +13,13 @@ import {
   createJob,
   deleteJob,
   subscribeToJob,
+  postRefinerStart,
+  postRefinerPause,
+  postRefinerResume,
+  postRefinerSkip,
 } from '../api';
 import { useLogBuffer } from './useLogBuffer';
+import { refinerUiDebug } from '../utils/refinerUiDebug';
 
 export type StepId = 'upload' | 'transcriber' | 'refiner' | 'result';
 
@@ -30,6 +35,7 @@ function getStepStatus(step: StepId, job: JobSnapshot | null): StepStatus {
       if (
         phase === 'awaiting_refiner' ||
         phase === 'refiner' ||
+        phase === 'refiner_paused' ||
         phase === 'completed'
       )
         return 'done';
@@ -37,6 +43,13 @@ function getStepStatus(step: StepId, job: JobSnapshot | null): StepStatus {
       return phase === 'idle' ? 'waiting' : 'done';
     case 'refiner':
       if (phase === 'refiner') return 'running';
+      if (
+        phase === 'awaiting_refiner' &&
+        typeof job.agent06RefineJobId === 'string' &&
+        job.agent06RefineJobId.trim().length > 0
+      )
+        return 'running';
+      if (phase === 'refiner_paused') return 'waiting';
       if (phase === 'completed') return 'done';
       if (phase === 'awaiting_refiner') return 'waiting';
       return phase === 'transcriber' || phase === 'idle' ? 'waiting' : 'done';
@@ -96,6 +109,11 @@ export function useJob(): {
   handleStart: (tags?: string[]) => Promise<void>;
   handleReset: () => void;
   handleDeleteJob: (id: string) => Promise<void>;
+  handleStartRefiner: (transcriptRelativePath?: string) => Promise<void>;
+  handlePauseRefiner: () => Promise<void>;
+  handleResumeRefiner: () => Promise<void>;
+  handleSkipRefiner: () => Promise<void>;
+  refinerActionBusy: boolean;
   logsPaused: boolean;
   bufferedCount: number;
   toggleLogsPause: () => void;
@@ -112,6 +130,7 @@ export function useJob(): {
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refinerActionBusy, setRefinerActionBusy] = useState(false);
   /** Bumps on each SSE snapshot so project files + chunk-artifact-groups refetch (disk artifacts). */
   const [jobSnapshotRevision, setJobSnapshotRevision] = useState(0);
   const logBuffer = useLogBuffer();
@@ -240,7 +259,9 @@ export function useJob(): {
       (ev: StreamEvent) => {
         if (cancelled) return;
         if (ev.type === 'snapshot' && ev.payload) {
-          setJob(ev.payload as JobSnapshot);
+          const snap = ev.payload as JobSnapshot;
+          refinerUiDebug('SSE snapshot');
+          setJob(snap);
           setJobSnapshotRevision((r) => r + 1);
           return;
         }
@@ -259,6 +280,13 @@ export function useJob(): {
                 }
               : null
           );
+          // Same tick as snapshot would duplicate bump (harmless). If the server ever sends only
+          // `status` without a full snapshot, this still nudges refiner live panels (snapshotRevision).
+          const ph = p.phase;
+          if (ph === 'refiner' || ph === 'refiner_paused') {
+            refinerUiDebug('SSE status (refiner) → snapshotRevision++', ph);
+            setJobSnapshotRevision((r) => r + 1);
+          }
           return;
         }
         if (ev.type === 'done') {
@@ -266,7 +294,8 @@ export function useJob(): {
           fetchJob(jobId).then((s) => {
             if (cancelled || !s) return;
             setJob(s);
-            if (s.status !== 'failed') setActiveStepState('result');
+            if (s.status !== 'failed' && s.phase === 'completed')
+              setActiveStep('result');
           });
         }
       },
@@ -278,7 +307,7 @@ export function useJob(): {
       ac.abort();
       close();
     };
-  }, [jobId]);
+  }, [jobId, setActiveStep]);
 
   const handleSelectJob = useCallback(
     (id: string) => {
@@ -319,6 +348,62 @@ export function useJob(): {
     setActiveStepState('upload');
     localStorage.removeItem(ACTIVE_STEP_KEY);
   }, [setJobId]);
+
+  const handleStartRefiner = useCallback(
+    async (transcriptRelativePath?: string) => {
+      if (!jobId) return;
+      setRefinerActionBusy(true);
+      setError(null);
+      try {
+        await postRefinerStart(jobId, transcriptRelativePath);
+        await refreshJobSnapshot();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to start refiner');
+      } finally {
+        setRefinerActionBusy(false);
+      }
+    },
+    [jobId, refreshJobSnapshot]
+  );
+
+  const handlePauseRefiner = useCallback(async () => {
+    if (!jobId) return;
+    setRefinerActionBusy(true);
+    try {
+      await postRefinerPause(jobId);
+      await refreshJobSnapshot();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to pause refiner');
+    } finally {
+      setRefinerActionBusy(false);
+    }
+  }, [jobId, refreshJobSnapshot]);
+
+  const handleResumeRefiner = useCallback(async () => {
+    if (!jobId) return;
+    setRefinerActionBusy(true);
+    try {
+      await postRefinerResume(jobId);
+      await refreshJobSnapshot();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to resume refiner');
+    } finally {
+      setRefinerActionBusy(false);
+    }
+  }, [jobId, refreshJobSnapshot]);
+
+  const handleSkipRefiner = useCallback(async () => {
+    if (!jobId) return;
+    setRefinerActionBusy(true);
+    try {
+      await postRefinerSkip(jobId);
+      await refreshJobSnapshot();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to skip refiner');
+    } finally {
+      setRefinerActionBusy(false);
+    }
+  }, [jobId, refreshJobSnapshot]);
 
   const handleDeleteJob = useCallback(
     async (id: string) => {
@@ -384,6 +469,11 @@ export function useJob(): {
     handleStart,
     handleReset,
     handleDeleteJob,
+    handleStartRefiner,
+    handlePauseRefiner,
+    handleResumeRefiner,
+    handleSkipRefiner,
+    refinerActionBusy,
     logsPaused: logBuffer.logsPaused,
     bufferedCount: logBuffer.bufferedCount,
     toggleLogsPause,

@@ -134,8 +134,32 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
     public Task<string> CreateAsync(Application.JobCreateInput input, CancellationToken ct = default)
         => _inner.CreateAsync(input, ct);
 
-    public Task<bool> UpdateAsync(string jobId, Action<Application.JobSnapshot> update, CancellationToken ct = default)
-        => _inner.UpdateAsync(jobId, update, ct);
+    public async Task<bool> UpdateAsync(string jobId, Action<Application.JobSnapshot> update, CancellationToken ct = default)
+    {
+        if (await _inner.UpdateAsync(jobId, update, ct))
+            return true;
+
+        // Archive-only jobs appear in GET/list via disk but live only as detached snapshots — refiner/transcription updates no-op'd.
+        if (_inner is not InMemoryJobStore mem)
+            return false;
+
+        var dirPath = _workspace.GetJobDirectoryPath(jobId);
+        if (string.IsNullOrWhiteSpace(dirPath) || !Directory.Exists(dirPath))
+            return false;
+
+        var snap = TryBuildArchiveSnapshot(jobId);
+        if (snap == null)
+            return false;
+
+        snap.JobDirectoryPath ??= dirPath;
+        JobSnapshotDiskEnricher.TryEnrichFromDisk(snap, dirPath, _logger);
+
+        if (mem.TryInsertIfAbsent(jobId, snap))
+            _logger.LogInformation(
+                "UpdateAsync({JobId}): materialized archive job from disk into memory (was list-only / GET-only)",
+                jobId);
+        return await _inner.UpdateAsync(jobId, update, ct);
+    }
 
     public async Task<bool> DeleteAsync(string jobId, CancellationToken ct = default)
     {

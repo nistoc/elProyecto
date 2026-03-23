@@ -4,11 +4,16 @@ option csharp_namespace = "TranslationImprover.Proto";
 
 package translation_improver.refine;
 
+// Paths (input_file_path, output_file_path, prompt_file, intermediate_dir) are relative to the instance's workspace_root (from config).
 service RefinerService {
   rpc SubmitRefineJob(SubmitRefineJobRequest) returns (SubmitRefineJobResponse);
   rpc GetRefineStatus(GetRefineStatusRequest) returns (RefineStatusResponse);
-  rpc StreamRefineStatus(StreamRefineStatusRequest) returns (stream RefineStatusUpdate);
+  rpc StreamRefineStatus(StreamRefineStatusRequest) returns (stream RefineStatusResponse);
   rpc CancelRefineJob(CancelRefineJobRequest) returns (CancelRefineJobResponse);
+  rpc PauseRefineJob(PauseRefineJobRequest) returns (PauseRefineJobResponse);
+  rpc ResumeRefineJob(ResumeRefineJobRequest) returns (ResumeRefineJobResponse);
+  /// When the in-memory job is gone (e.g. Agent06 restarted), resume by loading checkpoint.json only — creates a new job id.
+  rpc ResumeRefineFromCheckpoint(ResumeRefineFromCheckpointRequest) returns (ResumeRefineFromCheckpointResponse);
   rpc QueryRefineJobs(QueryRefineJobsRequest) returns (QueryRefineJobsResponse);
 }
 
@@ -27,8 +32,9 @@ message SubmitRefineJobRequest {
   string intermediate_dir = 12;
   string callback_url = 13;
   repeated string tags = 14;
-  /// Optional. Single segment under workspace_root (Xtract job folder). When set, input/output/intermediate paths resolve under workspace_root/job_directory_relative.
   string job_directory_relative = 15;
+  /// When set, used instead of the server's configured WorkspaceRoot so artifacts land in the caller's job folder (Agent05 Jobs:WorkspacePath).
+  string workspace_root_override = 16;
 }
 
 message SubmitRefineJobResponse {
@@ -36,6 +42,10 @@ message SubmitRefineJobResponse {
 }
 
 message GetRefineStatusRequest {
+  string job_id = 1;
+}
+
+message StreamRefineStatusRequest {
   string job_id = 1;
 }
 
@@ -53,22 +63,15 @@ message RefineStatusResponse {
   string completed_at = 11;
   string updated_at = 12;
   repeated string tags = 13;
-}
-
-message StreamRefineStatusRequest {
-  string job_id = 1;
-}
-
-message RefineStatusUpdate {
-  string job_id = 1;
-  string state = 2;
-  int32 progress_percent = 3;
-  string current_phase = 4;
-  int32 current_batch = 5;
-  int32 total_batches = 6;
-  string output_file_path = 7;
-  string error_message = 8;
-  string updated_at = 9;
+  int64 stream_sequence = 14;
+  string batch_event_kind = 15;
+  int32 batch_event_index_0 = 16;
+  string batch_threads_relative_path = 17;
+  /// Full text sent to OpenAI for the current batch (system + user messages), for UI debugging.
+  string openai_request_preview = 18;
+  string batch_before_text = 19;
+  string batch_after_text = 20;
+  string refiner_log_line = 21;
 }
 
 message CancelRefineJobRequest {
@@ -77,6 +80,31 @@ message CancelRefineJobRequest {
 
 message CancelRefineJobResponse {
   bool cancelled = 1;
+}
+
+message PauseRefineJobRequest {
+  string job_id = 1;
+}
+
+message PauseRefineJobResponse {
+  bool pause_requested = 1;
+}
+
+message ResumeRefineJobRequest {
+  string job_id = 1;
+}
+
+message ResumeRefineJobResponse {
+  bool started = 1;
+}
+
+message ResumeRefineFromCheckpointRequest {
+  string job_directory_relative = 1;
+  string workspace_root_override = 2;
+}
+
+message ResumeRefineFromCheckpointResponse {
+  string job_id = 1;
 }
 
 message QueryRefineJobsRequest {

@@ -3,7 +3,7 @@ using Agent04.Features.Transcription.Domain;
 namespace Agent04.Features.Transcription.Application;
 
 /// <summary>
-/// Merges sub-chunk transcriptions into a single result (overlap handling, deduplication).
+/// Merges sub-chunk transcriptions into a single result: sub-chunks in index order, segments in source order (no global time sort).
 /// </summary>
 public interface ITranscriptionMerger
 {

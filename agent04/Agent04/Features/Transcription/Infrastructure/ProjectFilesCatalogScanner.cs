@@ -40,15 +40,20 @@ internal static class ProjectFilesCatalogScanner
 
         var chunksDir = Path.Combine(jobDir, "chunks");
         var chunksJsonDir = Path.Combine(jobDir, "chunks_json");
+        var chunksMdDir = Path.Combine(jobDir, "chunks_md");
         var intermediateDir = Path.Combine(jobDir, "intermediate_results");
         var convertedDir = Path.Combine(jobDir, "converted_wav");
+
+        var chunkJsonCombined = new List<ArtifactFileEntry>();
+        chunkJsonCombined.AddRange(ScanChunkFolder(chunksJsonDir, "chunks_json", withIndex: true));
+        chunkJsonCombined.AddRange(ScanChunkFolder(chunksMdDir, "chunks_md", withIndex: true));
 
         return new ProjectFilesCatalogResult
         {
             Original = original,
             Transcripts = transcripts,
             Chunks = ScanChunkFolder(chunksDir, "chunks", withIndex: true),
-            ChunkJson = ScanChunkFolder(chunksJsonDir, "chunks_json", withIndex: true),
+            ChunkJson = chunkJsonCombined,
             Intermediate = ScanSimpleFolder(intermediateDir, "intermediate_results"),
             Converted = ScanSimpleFolder(convertedDir, "converted_wav"),
             SplitChunks = ScanSplitChunks(jobDir),
@@ -76,7 +81,11 @@ internal static class ProjectFilesCatalogScanner
         {
             var e = ToEntry(fi, $"{relativeFolder}/{fi.Name}");
             if (withIndex)
-                e = e with { Index = ParseFirstInt(fi.Name) };
+            {
+                var inferred = ChunkArtifactFileNameInference.InferChunkIndexFromName(fi.Name);
+                e = e with { Index = inferred ?? ParseFirstInt(fi.Name) };
+            }
+
             list.Add(e);
         }
 

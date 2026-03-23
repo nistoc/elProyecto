@@ -98,7 +98,7 @@ export async function fetchJobFileText(
   relativePath: string
 ): Promise<string> {
   const url = jobProjectFileContentUrl(jobId, relativePath);
-  const r = await fetch(url);
+  const r = await fetch(url, { cache: 'no-store' });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.text();
 }
@@ -199,13 +199,56 @@ export async function deleteJob(id: string): Promise<void> {
   await del(`/api/jobs/${id}`);
 }
 
+async function postJson(path: string, body: string = '{}'): Promise<void> {
+  const r = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    let msg = text || `HTTP ${r.status}`;
+    try {
+      const j = JSON.parse(text) as { error?: string };
+      if (j?.error) msg = j.error;
+    } catch {
+      /* keep */
+    }
+    throw new Error(msg);
+  }
+}
+
+export function postRefinerStart(
+  jobId: string,
+  transcriptRelativePath?: string
+): Promise<void> {
+  const body =
+    transcriptRelativePath != null && transcriptRelativePath.length > 0
+      ? JSON.stringify({ transcriptRelativePath })
+      : '{}';
+  return postJson(`/api/jobs/${encodeURIComponent(jobId)}/refiner/start`, body);
+}
+
+export function postRefinerPause(jobId: string): Promise<void> {
+  return postJson(`/api/jobs/${encodeURIComponent(jobId)}/refiner/pause`);
+}
+
+export function postRefinerResume(jobId: string): Promise<void> {
+  return postJson(`/api/jobs/${encodeURIComponent(jobId)}/refiner/resume`);
+}
+
+export function postRefinerSkip(jobId: string): Promise<void> {
+  return postJson(`/api/jobs/${encodeURIComponent(jobId)}/refiner/skip`);
+}
+
 export type ChunkActionName =
   | 'cancel'
   | 'retranscribe'
   | 'split'
   | 'transcribe_sub'
   | 'rebuild_combined'
-  | 'rebuild_split_merged';
+  | 'rebuild_split_merged'
+  | 'write_chunk_md';
 
 export interface ChunkActionResponseBody {
   ok: boolean;

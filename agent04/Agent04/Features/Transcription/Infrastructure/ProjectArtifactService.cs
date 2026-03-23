@@ -240,12 +240,36 @@ public sealed class ProjectArtifactService : IProjectArtifactService
     public void FinalizeJobMarkdownOutput(string mdPath) => _outputWriter.FinalizeMarkdown(mdPath);
 
     /// <inheritdoc />
-    public void SaveJobCombinedTranscriptionJson(string jsonPath, IReadOnlyList<TranscriptionResult> results) =>
-        _outputWriter.SaveCombinedJson(jsonPath, results);
-
     /// <inheritdoc />
     public void SaveJobPerChunkTranscriptionJson(string chunkBasename, IReadOnlyDictionary<string, object?> response, string outputDir) =>
         _outputWriter.SavePerChunkJson(chunkBasename, response, outputDir);
+
+    /// <inheritdoc />
+    public void SaveJobPerChunkMarkdown(
+        string outputDir,
+        string chunkAudioBasename,
+        IReadOnlyList<ASRSegment> segments,
+        double offset,
+        double emitGuard)
+    {
+        Directory.CreateDirectory(outputDir);
+        var safeBase = Path.GetFileNameWithoutExtension(chunkAudioBasename);
+        var path = Path.Combine(outputDir, safeBase + ".md");
+        _outputWriter.ResetSpeakerMap();
+        _outputWriter.InitializeMarkdown(path);
+        _outputWriter.AppendSegmentsToMarkdown(path, segments, offset, emitGuard);
+        _outputWriter.FinalizeMarkdown(path);
+    }
+
+    /// <inheritdoc />
+    public void StitchChunkMarkdownFiles(
+        TranscriptionConfig config,
+        string artifactRoot,
+        IReadOnlyList<ChunkInfo> chunkInfos,
+        string finalMdPath)
+    {
+        ChunkMarkdownStitcher.StitchFinalMarkdown(config, artifactRoot, chunkInfos, finalMdPath, _outputWriter, _logger);
+    }
 
     /// <inheritdoc />
     public void WriteSubChunkTranscriptionResult(string resultsDir, int subChunkIndex, TranscriptionResult result) =>

@@ -4,6 +4,7 @@ public enum RefineJobState
 {
     Pending,
     Running,
+    Paused,
     Completed,
     Failed,
     Cancelled

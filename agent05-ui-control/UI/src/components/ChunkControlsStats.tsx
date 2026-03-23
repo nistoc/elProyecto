@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  deleteJobProjectFile,
   deleteJobSubChunk,
   jobProjectFileContentUrl,
   postJobChunkAction,
@@ -16,9 +17,9 @@ import { JobAudioWavePlayer } from './JobAudioWavePlayer';
 import type { ChunkArtifactGroup } from '../utils/chunkArtifactGroups';
 import {
   chunkArtifactsTranscriptionComplete,
-  chunkGroupAllSubResultsPresentForMerge,
   chunkGroupHasBlockingSplitArtifacts,
   overlayVmFromJobWhenMissing,
+  subChunkGroupHasMergeResultJson,
 } from '../utils/chunkArtifactGroups';
 import {
   elapsedSeconds,
@@ -235,9 +236,10 @@ export function ChunkControlsStats({
 
   const transcriberRunning =
     job.phase === 'transcriber' && job.status === 'running';
+  /** Includes `running` so post-transcription ops (rebuild, sub-chunk, etc.) stay available when phase is e.g. `awaiting_refiner` while status is still `running`. */
   const jobStatusAllowsPostDoneChunkOps = (() => {
     const s = (job.status || '').toLowerCase();
-    return s === 'done' || s === 'completed';
+    return s === 'running' || s === 'done' || s === 'completed';
   })();
   const canTranscribeSubChunk =
     Boolean(job.agent04JobId?.trim()) &&
@@ -278,6 +280,12 @@ export function ChunkControlsStats({
   );
   const showList = groups.length > 0;
   const anyVmTelemetry = groups.some((g) => vmRowHasTelemetry(g.vmRow));
+  /** Any per-chunk or sub-chunk JSON on disk — enough to offer “rebuild combined” even if Agent04 job id was cleared. */
+  const hasAnyTranscriptJsonForCombinedRebuild = groups.some(
+    (g) =>
+      g.jsonFiles.length > 0 ||
+      g.subChunks.some((sc) => sc.jsonFiles.length > 0)
+  );
 
   const runAction = async (
     action: ChunkActionName,
@@ -315,19 +323,6 @@ export function ChunkControlsStats({
   return (
     <>
       <h4 className="step-panel__files-heading">{t('chunkStatsTitle')}</h4>
-      {showList && canPostDoneChunkOps && !readOnly && (
-        <div className="chunk-stats__global-actions">
-          <button
-            type="button"
-            className="chunk-stats__rebuild-combined"
-            disabled={busy}
-            title={t('chunkRebuildCombinedHint')}
-            onClick={() => void runAction('rebuild_combined', 0)}
-          >
-            {t('chunkRebuildCombined')}
-          </button>
-        </div>
-      )}
       {showList && anyVmTelemetry && (
         <p className="chunk-stats__hint">{t('chunkVmTimerNote')}</p>
       )}
@@ -347,6 +342,7 @@ export function ChunkControlsStats({
         <p className="chunk-stats__status">{t('chunkStatsEmpty')}</p>
       )}
       {showList && (
+        <>
         <ul className="chunk-stats__list">
           {groups.map((g) => {
             const vm = g.vmRow;
@@ -404,6 +400,18 @@ export function ChunkControlsStats({
               vmIsRunning(vm?.state) &&
               canPostDoneChunkOps;
             const hasSplitArtifacts = chunkGroupHasBlockingSplitArtifacts(g);
+            const hasChunkPipelineJson = g.jsonFiles.some((f) => {
+              const rp = (f.relativePath ?? '')
+                .toLowerCase()
+                .replace(/\\/g, '/');
+              return (
+                rp.includes('chunks_json/') &&
+                f.name.toLowerCase().endsWith('.json')
+              );
+            });
+            const showWriteChunkMd =
+              canPostDoneChunkOps && !readOnly && !hasSplitArtifacts;
+            const writeChunkMdEnabled = showWriteChunkMd && hasChunkPipelineJson;
             const mainCancelEnabled =
               chunkMainRunning && !readOnly && canPostDoneChunkOps;
             const mainRetranscribeEnabled =
@@ -411,11 +419,15 @@ export function ChunkControlsStats({
               !hasSplitArtifacts &&
               (liveInteractive || showCancelledSplitRetranscribe || showRetryMainRetranscribe);
             const mainSplitEnabled = mainRetranscribeEnabled;
+            /** Кнопка только если есть `sub_chunk_XX_result.json` хотя бы у одного субчанка (по данным API групп) или уже есть merged-артефакты. */
+            const hasAtLeastOneSubChunkTranscriptResult = g.subChunks.some((sc) =>
+              subChunkGroupHasMergeResultJson(sc)
+            );
             const showRebuildSplitMerged =
-              g.subChunks.length > 0 && canPostDoneChunkOps && !readOnly;
-            const rebuildSplitMergedEnabled =
-              showRebuildSplitMerged &&
-              chunkGroupAllSubResultsPresentForMerge(g);
+              canPostDoneChunkOps &&
+              !readOnly &&
+              (hasAtLeastOneSubChunkTranscriptResult ||
+                g.mergedSplitFiles.length > 0);
 
             return (
               <li key={g.index} className="chunk-stats__card">
@@ -457,6 +469,22 @@ export function ChunkControlsStats({
                       >
                         {t('chunkRetranscribe')}
                       </button>
+                      {showWriteChunkMd && (
+                        <button
+                          type="button"
+                          disabled={busy || !writeChunkMdEnabled}
+                          title={
+                            hasChunkPipelineJson
+                              ? t('chunkWriteChunkMdTitle')
+                              : t('chunkWriteChunkMdDisabled')
+                          }
+                          onClick={() =>
+                            void runAction('write_chunk_md', g.index)
+                          }
+                        >
+                          {t('chunkWriteChunkMd')}
+                        </button>
+                      )}
                       <button
                         type="button"
                         disabled={busy || !mainSplitEnabled}
@@ -468,15 +496,13 @@ export function ChunkControlsStats({
                       {showRebuildSplitMerged && (
                         <button
                           type="button"
-                          disabled={busy || !rebuildSplitMergedEnabled}
-                          title={
-                            rebuildSplitMergedEnabled
-                              ? t('chunkRebuildSplitMergedHint')
-                              : t('chunkRebuildSplitMergedDisabled')
-                          }
-                          onClick={() =>
-                            void runAction('rebuild_split_merged', g.index)
-                          }
+                          disabled={busy}
+                          title={t('chunkRebuildSplitMergedHint')}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void runAction('rebuild_split_merged', g.index);
+                          }}
                         >
                           {t('chunkRebuildSplitMerged')}
                         </button>
@@ -602,6 +628,40 @@ export function ChunkControlsStats({
                                   f={f}
                                   t={t}
                                   onEditText={openEditor}
+                                  deleteDisabled={busy}
+                                  onDeleteFile={
+                                    !readOnly
+                                      ? (file) => {
+                                          if (
+                                            !window.confirm(
+                                              t(
+                                                'chunkDeleteMergedFileConfirm'
+                                              ).replace('{name}', file.name)
+                                            )
+                                          )
+                                            return;
+                                          void (async () => {
+                                            setMessage(null);
+                                            setBusy(true);
+                                            try {
+                                              await deleteJobProjectFile(
+                                                jobId,
+                                                file.relativePath
+                                              );
+                                              await onProjectFilesChanged?.();
+                                            } catch (e) {
+                                              setMessage(
+                                                e instanceof Error
+                                                  ? e.message
+                                                  : t('chunkActionFailed')
+                                              );
+                                            } finally {
+                                              setBusy(false);
+                                            }
+                                          })();
+                                        }
+                                      : undefined
+                                  }
                                 />
                               ))}
                             </ul>
@@ -964,6 +1024,35 @@ export function ChunkControlsStats({
             );
           })}
         </ul>
+        {!readOnly &&
+          (canPostDoneChunkOps || hasAnyTranscriptJsonForCombinedRebuild) && (
+          <div className="chunk-stats__global-actions">
+            <button
+              type="button"
+              className="chunk-stats__rebuild-combined"
+              disabled={
+                busy ||
+                !String(job.agent04JobId ?? '').trim() ||
+                !jobStatusAllowsPostDoneChunkOps
+              }
+              title={
+                !jobStatusAllowsPostDoneChunkOps
+                  ? t('chunkRebuildCombinedBadStatus')
+                  : !String(job.agent04JobId ?? '').trim()
+                    ? t('chunkRebuildCombinedNeedsAgent04')
+                    : t('chunkRebuildCombinedHint')
+              }
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                void runAction('rebuild_combined', 0);
+              }}
+            >
+              {t('chunkRebuildCombined')}
+            </button>
+          </div>
+        )}
+        </>
       )}
       {message && <p className="chunk-stats__message">{message}</p>}
       {editTarget && (
@@ -977,11 +1066,17 @@ export function ChunkControlsStats({
       )}
       <style>{`
         .chunk-stats__global-actions {
-          margin: -0.25rem 0 0.55rem 0;
+          margin: 0.75rem 0 0 0;
+          padding-top: 0.55rem;
+          border-top: 1px solid var(--color-border);
+          position: relative;
+          z-index: 1;
         }
         .chunk-stats__rebuild-combined {
           font-size: 0.75rem;
           padding: 0.25rem 0.55rem;
+          position: relative;
+          z-index: 2;
         }
         .chunk-stats__hint {
           margin: -0.35rem 0 0.6rem 0;
@@ -1004,12 +1099,16 @@ export function ChunkControlsStats({
           display: flex;
           flex-direction: column;
           gap: 0.65rem;
+          position: relative;
+          z-index: 0;
         }
         .chunk-stats__card {
           border: 1px solid var(--color-border);
           border-radius: 6px;
           padding: 0.5rem 0.65rem;
           background: var(--color-surface);
+          position: relative;
+          z-index: 0;
         }
         .chunk-stats__card-head {
           display: flex;

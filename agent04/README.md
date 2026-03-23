@@ -1,6 +1,6 @@
 # Agent04 — Transcription service (.NET)
 
-.NET reimplementation of the agent01 transcription pipeline: OpenAI transcription (diarization), ffmpeg chunking, cache by fingerprint, merge, Markdown/JSON output. Clean Architecture, vertical slice `Features/Transcription`. **Web service only** (no CLI); **public API — gRPC only** (HTTP REST/OpenAPI removed; orchestrators such as agent05 use gRPC).
+.NET reimplementation of the agent01 transcription pipeline: OpenAI transcription (diarization), ffmpeg chunking, cache by fingerprint, merge, Markdown output. Clean Architecture, vertical slice `Features/Transcription`. **Web service only** (no CLI); **public API — gRPC only** (HTTP REST/OpenAPI removed; orchestrators such as agent05 use gRPC).
 
 ## Requirements
 
@@ -11,7 +11,7 @@
 ## Configuration
 
 - **Workspace root (required):** set `WorkspaceRoot` or `workspace_root` in `appsettings.json` or environment to an **absolute path** of the workspace directory. The app checks that this directory exists at startup and exits if it does not. All paths in gRPC requests are relative to this root.
-- **Job config:** same contract as agent01. Example: `Agent04/config/default.json`. Keys include `file`/`files`, `openai_api_key` (e.g. `env:OPENAI_API_KEY`), `model`, `md_output_path`, `raw_json_output_path`, `cache_dir`, `split_workdir`, etc. Paths in job config are relative to the workspace root.
+- **Job config:** same contract as agent01 (minus job-level combined JSON). Example: `Agent04/config/default.json`. Keys include `file`/`files`, `openai_api_key` (e.g. `env:OPENAI_API_KEY`), `model`, `md_output_path`, `cache_dir`, `split_workdir`, etc. Paths in job config are relative to the workspace root.
 
 ## Running
 

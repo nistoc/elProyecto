@@ -8,7 +8,15 @@ import {
 import type { JobChunkArtifactGroupsState } from '../hooks/useJobChunkArtifactGroups';
 import type { JobProjectFilesState } from '../hooks/useJobProjectFiles';
 import type { JobProjectFile, JobProjectFiles } from '../types';
+import { isRefinerTranscriptArtifactName } from '../utils/transcriptStemLatest';
 import { JobAudioWavePlayer } from './JobAudioWavePlayer';
+
+/** Transcript .md rows that can be sent to the refiner (excludes transcript_fixed*). */
+function isRefinerSourceTranscriptRow(f: JobProjectFile): boolean {
+  if (f.kind !== 'text') return false;
+  if (!f.name.toLowerCase().endsWith('.md')) return false;
+  return !isRefinerTranscriptArtifactName(f.name);
+}
 
 export type ProjectFilesMode = 'full' | 'transcripts';
 
@@ -165,6 +173,11 @@ export function FileRow({
   t,
   onEditText,
   hideAudioActions,
+  onDeleteFile,
+  deleteDisabled,
+  showRefine,
+  onRefineTranscript,
+  refineDisabled,
 }: {
   jobId: string;
   f: JobProjectFile;
@@ -172,6 +185,13 @@ export function FileRow({
   onEditText?: (f: JobProjectFile) => void;
   /** When true, audio rows omit the inline player (render it separately, e.g. under the media row). */
   hideAudioActions?: boolean;
+  /** When set, shows a delete control (e.g. orphan merged-split artifacts). */
+  onDeleteFile?: (f: JobProjectFile) => void;
+  deleteDisabled?: boolean;
+  /** Refiner step: start refiner from this transcript row. */
+  showRefine?: boolean;
+  onRefineTranscript?: (relativePath: string) => void;
+  refineDisabled?: boolean;
 }) {
   const url = jobProjectFileContentUrl(jobId, f.relativePath);
   const nameTitle =
@@ -219,6 +239,36 @@ export function FileRow({
               {t('editFile')}
             </button>
           )}
+          {showRefine && onRefineTranscript && (
+            <button
+              type="button"
+              className="pf-refine"
+              disabled={refineDisabled}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onRefineTranscript(f.relativePath);
+              }}
+            >
+              {t('refineRowTranscript')}
+            </button>
+          )}
+          {onDeleteFile && (
+            <button
+              type="button"
+              className="pf-file-del"
+              disabled={deleteDisabled}
+              title={t('chunkDeleteMergedFileTitle')}
+              aria-label={t('chunkDeleteMergedFileAria').replace('{name}', f.name)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDeleteFile(f);
+              }}
+            >
+              ×
+            </button>
+          )}
         </div>
         <span className="pf-file-meta">{fileMeta(f, t)}</span>
       </div>
@@ -237,14 +287,25 @@ function Section({
   items,
   t,
   onEditText,
+  refineTargetRelativePath,
+  refineShowOnEachEligibleRow,
+  onRefineTranscript,
+  refinerActionBusy,
 }: {
   title: string;
   jobId: string;
   items: JobProjectFile[];
   t: (key: string) => string;
   onEditText?: (f: JobProjectFile) => void;
+  /** When refineShowOnEachEligibleRow is false: only this row gets Refine. */
+  refineTargetRelativePath?: string | null;
+  /** Refiner step: show Refine on every eligible transcript .md (not only the primary stem row). */
+  refineShowOnEachEligibleRow?: boolean;
+  onRefineTranscript?: (relativePath: string) => void;
+  refinerActionBusy?: boolean;
 }) {
   if (!items.length) return null;
+  const refineBusy = !!refinerActionBusy;
   return (
     <section className="pf-section">
       <h4 className="pf-section__title">{title}</h4>
@@ -256,6 +317,15 @@ function Section({
             f={f}
             t={t}
             onEditText={onEditText}
+            showRefine={
+              !!onRefineTranscript &&
+              (refineShowOnEachEligibleRow
+                ? isRefinerSourceTranscriptRow(f)
+                : !!refineTargetRelativePath &&
+                  f.relativePath === refineTargetRelativePath)
+            }
+            onRefineTranscript={onRefineTranscript}
+            refineDisabled={refineBusy}
           />
         ))}
       </ul>
@@ -272,6 +342,12 @@ interface ProjectFilesViewProps {
   onFilesMutated?: () => void;
   /** Hide chunks + chunk JSON (shown in Chunk controls Stats). */
   hideChunkSections?: boolean;
+  /** When refineShowOnEachEligibleRow is false: only this transcript row shows Refine. */
+  refineTargetRelativePath?: string | null;
+  /** Refiner step: show Refine on every eligible .md transcript row (default false). */
+  refineShowOnEachEligibleRow?: boolean;
+  onRefineTranscript?: (relativePath: string) => void;
+  refinerActionBusy?: boolean;
 }
 
 /** Renders structured file lists (no fetch). */
@@ -282,6 +358,10 @@ export function ProjectFilesView({
   t,
   onFilesMutated,
   hideChunkSections = false,
+  refineTargetRelativePath,
+  refineShowOnEachEligibleRow = false,
+  onRefineTranscript,
+  refinerActionBusy,
 }: ProjectFilesViewProps) {
   const [editTarget, setEditTarget] = useState<{
     relativePath: string;
@@ -302,6 +382,10 @@ export function ProjectFilesView({
           items={data.transcripts}
           t={t}
           onEditText={openEditor}
+          refineTargetRelativePath={refineTargetRelativePath}
+          refineShowOnEachEligibleRow={refineShowOnEachEligibleRow}
+          onRefineTranscript={onRefineTranscript}
+          refinerActionBusy={refinerActionBusy}
         />
         <Section
           title={t('sectionSplitTranscripts')}
@@ -714,6 +798,39 @@ const styles = `
     color: var(--color-heading);
   }
   .pf-edit:hover { background: var(--color-surface-hover); }
+  .pf-refine {
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 0.15rem 0.45rem;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 40%, transparent);
+    border-radius: 4px;
+    background: var(--color-primary);
+    color: #fff;
+    cursor: pointer;
+  }
+  .pf-refine:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+  }
+  .pf-refine:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .pf-file-del {
+    flex-shrink: 0;
+    width: 1.65rem;
+    height: 1.65rem;
+    padding: 0;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 4px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+  }
+  .pf-file-del:hover:not(:disabled) { background: var(--color-surface-hover); }
+  .pf-file-del:disabled { opacity: 0.45; cursor: not-allowed; }
   .pf-modal-overlay {
     position: fixed;
     inset: 0;

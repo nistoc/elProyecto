@@ -14,5 +14,6 @@ public interface IOpenAIRefineClient
         string systemPrompt,
         string userPromptTemplate,
         string? baseUrlOverride = null,
+        string? debugLogArtifactRoot = null,
         CancellationToken cancellationToken = default);
 }

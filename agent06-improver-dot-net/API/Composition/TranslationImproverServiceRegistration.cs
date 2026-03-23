@@ -13,8 +13,11 @@ public static class TranslationImproverServiceRegistration
 {
     public static IServiceCollection AddTranslationImproverServices(this IServiceCollection services)
     {
-        services.AddSingleton<IRefineJobStore, InMemoryRefineJobStore>();
-        services.AddSingleton<IRefineJobCancellation, InMemoryRefineJobCancellation>();
+        services.AddSingleton<InMemoryRefineJobStore>();
+        services.AddSingleton<IRefineJobStore>(sp => sp.GetRequiredService<InMemoryRefineJobStore>());
+        services.AddSingleton<InMemoryRefineJobCancellation>();
+        services.AddSingleton<IRefineJobCancellation>(sp => sp.GetRequiredService<InMemoryRefineJobCancellation>());
+        services.AddSingleton<IRefineJobPause>(sp => sp.GetRequiredService<InMemoryRefineJobCancellation>());
         services.AddSingleton<IOpenAIRefineClient, OpenAIRefineClient>();
         services.AddSingleton<IPromptLoader, FilePromptLoader>();
 

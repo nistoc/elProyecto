@@ -11,6 +11,9 @@ interface ResultSectionProps {
   t: (key: string) => string;
   /** Refiner tab uses the same metadata, quick links, and transcript list as Result. */
   variant?: ResultSectionVariant;
+  /** Refiner: start refiner for the transcript row the user clicked. */
+  onRefineFromTranscript?: (relativePath: string) => void;
+  refinerActionBusy?: boolean;
 }
 
 function findByName(files: { name: string; relativePath: string }[], name: string) {
@@ -68,6 +71,8 @@ export function ResultSection({
   job,
   t,
   variant = 'result',
+  onRefineFromTranscript,
+  refinerActionBusy,
 }: ResultSectionProps) {
   const copyFilename = () => {
     if (job?.originalFilename) {
@@ -121,11 +126,21 @@ export function ResultSection({
     return buildKeyLinks(projectFiles.transcripts, t);
   }, [projectFiles, t]);
 
+  const refinerStep = variant === 'refiner';
+  const refineHandlerAvailable =
+    refinerStep && typeof onRefineFromTranscript === 'function';
+
   const displayJobDir =
     job?.jobDirectoryPath?.trim() || jobDirFromFilesApi || null;
 
   return (
-    <div className="result-section">
+    <div
+      className={
+        variant === 'refiner'
+          ? 'result-section result-section--refiner'
+          : 'result-section'
+      }
+    >
       <h3 className="result-section__title">
         {variant === 'refiner' ? t('refiner') : t('result')}
       </h3>
@@ -189,6 +204,12 @@ export function ResultSection({
           mode="transcripts"
           t={t}
           onFilesMutated={reloadProjectFiles}
+          refineTargetRelativePath={null}
+          refineShowOnEachEligibleRow={refineHandlerAvailable}
+          onRefineTranscript={
+            refineHandlerAvailable ? onRefineFromTranscript : undefined
+          }
+          refinerActionBusy={refineHandlerAvailable ? refinerActionBusy : undefined}
         />
       )}
 
@@ -212,7 +233,7 @@ export function ResultSection({
         </div>
       )}
       <style>{`
-        .result-section { padding: 1rem; color: var(--color-text); }
+        .result-section { color: var(--color-text); }
         .result-section__title { margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--color-text); }
         .result-section__meta { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 1rem; font-size: 0.875rem; }
         .result-section__meta dt { color: var(--color-text-secondary); }
@@ -226,6 +247,14 @@ export function ResultSection({
         .result-section__links-list a { color: var(--color-link); }
         .result-section__hint { margin: 0.5rem 0; font-size: 0.875rem; color: var(--color-text-secondary); }
         .result-section__hint--err { color: var(--color-error-muted); }
+        .result-section--refiner .pf-list {
+          max-height: 20vh;
+          overflow: auto;
+          padding: 0.5rem 0.6rem;
+          border: 1px solid var(--color-border-strong);
+          border-radius: 6px;
+          background: var(--color-surface);
+        }
       `}</style>
     </div>
   );

@@ -32,6 +32,7 @@ public static class ChunkArtifactGrouping
         var set = new SortedSet<int>();
         foreach (var f in files.Chunks) AddIndexFromFile(f, set);
         foreach (var f in files.ChunkJson) AddIndexFromFile(f, set);
+        foreach (var f in files.ChunkMd) AddIndexFromFile(f, set);
         foreach (var f in files.Intermediate) AddIndexFromFile(f, set);
         foreach (var f in files.SplitChunks)
         {
@@ -57,6 +58,13 @@ public static class ChunkArtifactGrouping
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var list = new List<ArtifactFileEntry>();
         foreach (var f in files.ChunkJson)
+        {
+            if (!FileBelongsToChunkIndex(f, index, totalChunksForBelongs)) continue;
+            var key = f.RelativePath ?? f.Name;
+            if (seen.Add(key)) list.Add(f);
+        }
+
+        foreach (var f in files.ChunkMd)
         {
             if (!FileBelongsToChunkIndex(f, index, totalChunksForBelongs)) continue;
             var key = f.RelativePath ?? f.Name;

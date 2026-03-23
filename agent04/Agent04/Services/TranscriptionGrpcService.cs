@@ -404,6 +404,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             || request.Action == ChunkCommandAction.RebuildCombined
             || request.Action == ChunkCommandAction.DeleteSubChunk
             || request.Action == ChunkCommandAction.RebuildSplitMerged
+            || request.Action == ChunkCommandAction.WriteChunkMd
             || request.Action == ChunkCommandAction.Cancel;
         var job = _store.Get(request.JobId);
         if (job == null && allowCompleted && !string.IsNullOrWhiteSpace(request.JobDirectoryRelative))
@@ -489,6 +490,11 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                     throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
                 RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "rebuild_split_merged");
                 return await ExecuteRebuildSplitMergedAsync(request, context.CancellationToken).ConfigureAwait(false);
+            case ChunkCommandAction.WriteChunkMd:
+                if (request.ChunkIndex < 0)
+                    throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
+                RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "write_chunk_md");
+                return await ExecuteWriteChunkMarkdownAsync(request, context.CancellationToken).ConfigureAwait(false);
             default:
                 return new ChunkCommandResponse { Ok = false, Message = "unknown_action" };
         }
@@ -673,6 +679,54 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         return new ChunkCommandResponse { Ok = true, Message = "rebuild_combined_started" };
     }
 
+    private async Task<ChunkCommandResponse> ExecuteWriteChunkMarkdownAsync(ChunkCommandRequest request, CancellationToken ct)
+    {
+        string artifactRoot;
+        try
+        {
+            artifactRoot = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
+        }
+        catch (RpcException ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = ex.Status.Detail };
+        }
+
+        var configRel = (_configuration["Agent04:ConfigPath"] ?? "config/default.json").Trim()
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var configPathFull = ResolveConfigFullPath(_workspaceRoot.RootPath, configRel);
+        if (string.IsNullOrEmpty(configPathFull))
+            return new ChunkCommandResponse { Ok = false, Message = "transcription config file not found" };
+
+        TranscriptionConfig config;
+        try
+        {
+            config = await TranscriptionConfig.FromFileAsync(configPathFull, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = "config load failed: " + ex.Message };
+        }
+
+        var jobId = request.JobId;
+        var chunkIndex = request.ChunkIndex;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _pipeline
+                    .EnsurePerChunkMarkdownFromJsonAsync(config, artifactRoot, chunkIndex, CancellationToken.None)
+                    .ConfigureAwait(false);
+                _logger.LogInformation("write_chunk_md ok: job {JobId} chunk {Chunk}", jobId, chunkIndex);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "write_chunk_md failed for job {JobId} chunk {Chunk}", jobId, chunkIndex);
+            }
+        }, CancellationToken.None);
+
+        return new ChunkCommandResponse { Ok = true, Message = "write_chunk_md_started" };
+    }
+
     private async Task<ChunkCommandResponse> ExecuteRebuildSplitMergedAsync(ChunkCommandRequest request, CancellationToken ct)
     {
         string artifactRoot;
@@ -709,7 +763,9 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 request.ChunkIndex,
                 _merger,
                 _logger,
-                ct)
+                ct,
+                _pipeline,
+                _projectArtifactService)
             .ConfigureAwait(false);
 
         if (ok)

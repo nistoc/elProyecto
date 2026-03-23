@@ -10,7 +10,6 @@ public interface ITranscriptionOutputWriter
     void InitializeMarkdown(string mdPath);
     void AppendSegmentsToMarkdown(string mdPath, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard);
     void FinalizeMarkdown(string mdPath);
-    void SaveCombinedJson(string jsonPath, IReadOnlyList<TranscriptionResult> results);
     void SavePerChunkJson(string chunkBasename, IReadOnlyDictionary<string, object?> response, string outputDir);
     void ResetSpeakerMap();
 }

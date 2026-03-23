@@ -131,6 +131,7 @@ public class ChunkActionsControllerTests
             store,
             new StubJobWorkspace(),
             MockPipeline.Instance,
+            new NoOpRefinerOrchestration(),
             MockBroadcaster.Instance,
             grpc,
             NullLogger<JobsController>.Instance);
@@ -161,6 +162,7 @@ public class ChunkActionsControllerTests
             store,
             new StubJobWorkspace(),
             MockPipeline.Instance,
+            new NoOpRefinerOrchestration(),
             MockBroadcaster.Instance,
             grpc,
             NullLogger<JobsController>.Instance);
@@ -193,6 +195,7 @@ public class ChunkActionsControllerTests
             store,
             new StubJobWorkspace(),
             MockPipeline.Instance,
+            new NoOpRefinerOrchestration(),
             MockBroadcaster.Instance,
             grpc,
             NullLogger<JobsController>.Instance);
@@ -224,6 +227,7 @@ public class ChunkActionsControllerTests
             store,
             new StubJobWorkspace(),
             MockPipeline.Instance,
+            new NoOpRefinerOrchestration(),
             MockBroadcaster.Instance,
             grpc,
             NullLogger<JobsController>.Instance);
@@ -253,6 +257,7 @@ public class ChunkActionsControllerTests
             store,
             new StubJobWorkspace(),
             MockPipeline.Instance,
+            new NoOpRefinerOrchestration(),
             MockBroadcaster.Instance,
             grpc,
             NullLogger<JobsController>.Instance);
@@ -279,6 +284,7 @@ public class ChunkActionsControllerTests
             store,
             new StubJobWorkspace(),
             MockPipeline.Instance,
+            new NoOpRefinerOrchestration(),
             MockBroadcaster.Instance,
             grpc,
             NullLogger<JobsController>.Instance);
@@ -306,6 +312,7 @@ public class ChunkActionsControllerTests
             store,
             new StubJobWorkspace(),
             MockPipeline.Instance,
+            new NoOpRefinerOrchestration(),
             MockBroadcaster.Instance,
             grpc,
             NullLogger<JobsController>.Instance);
@@ -329,6 +336,7 @@ public class ChunkActionsControllerTests
             store,
             new StubJobWorkspace(),
             MockPipeline.Instance,
+            new NoOpRefinerOrchestration(),
             MockBroadcaster.Instance,
             grpc,
             NullLogger<JobsController>.Instance);
@@ -352,6 +360,7 @@ public class ChunkActionsControllerTests
             store,
             new StubJobWorkspace(),
             MockPipeline.Instance,
+            new NoOpRefinerOrchestration(),
             MockBroadcaster.Instance,
             grpc,
             NullLogger<JobsController>.Instance);
@@ -383,6 +392,7 @@ public class ChunkActionsControllerTests
             store,
             new StubJobWorkspace(),
             MockPipeline.Instance,
+            new NoOpRefinerOrchestration(),
             MockBroadcaster.Instance,
             grpc,
             NullLogger<JobsController>.Instance);

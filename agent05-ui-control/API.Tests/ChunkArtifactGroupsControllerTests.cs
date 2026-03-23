@@ -64,6 +64,7 @@ public class ChunkArtifactGroupsControllerTests
             store,
             ws,
             MockPipeline.Instance,
+            new NoOpRefinerOrchestration(),
             MockBroadcaster.Instance,
             transcription,
             NullLogger<JobsController>.Instance);
@@ -104,6 +105,7 @@ public class ChunkArtifactGroupsControllerTests
             store,
             ws,
             MockPipeline.Instance,
+            new NoOpRefinerOrchestration(),
             MockBroadcaster.Instance,
             transcription,
             NullLogger<JobsController>.Instance);
@@ -154,6 +156,7 @@ public class ChunkArtifactGroupsControllerTests
             store,
             ws,
             MockPipeline.Instance,
+            new NoOpRefinerOrchestration(),
             MockBroadcaster.Instance,
             transcription,
             NullLogger<JobsController>.Instance);

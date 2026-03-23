@@ -23,7 +23,7 @@
 | Категория сканера | Agent04 | Комментарий |
 |-------------------|---------|-------------|
 | `original` | Да | Загруженное аудио в папке задания (agent05 кладёт файл; относительный путь в gRPC). |
-| `transcripts` | Да | `transcript.md`, `openai_response.json` (или пути из `md_output_path` / `raw_json_output_path`; при `{jobId}` в шаблоне — файлы в подкаталоге/имени задания). |
+| `transcripts` | Да | `transcript.md` (или путь из `md_output_path`; при `{jobId}` в шаблоне — файл в подкаталоге/имени задания). |
 | `chunks` | Да (если `pre_split: true`) | `split_workdir` → по умолчанию **`chunks/`**; шаблон имён `chunk_naming`, напр. `{base}_part_%03d.m4a`. |
 | `chunkJson` | Да (если `save_per_chunk_json: true`) | **`chunks_json/`** (`per_chunk_json_dir`). |
 | `intermediate` | Да (если `save_intermediate_results: true`) | **`intermediate_results/`**. |

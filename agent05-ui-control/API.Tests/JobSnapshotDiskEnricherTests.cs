@@ -63,6 +63,28 @@ public class JobSnapshotDiskEnricherTests
     }
 
     [Fact]
+    public void TryEnrichFromDisk_applies_agent06_refine_job_id_from_xtract_ui_state()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "xtract-ui-agent06-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(dir, JobSnapshotDiskEnricher.XtractUiStateFileName),
+                """{"phase":"refiner_paused","status":"running","agent06RefineJobId":"deadbeef"}""");
+            var snap = new JobSnapshot { Id = "abc", Status = "completed", Phase = "idle" };
+            JobSnapshotDiskEnricher.TryEnrichFromDisk(snap, dir, NullLogger.Instance);
+            Assert.Equal("refiner_paused", snap.Phase);
+            Assert.Equal("running", snap.Status);
+            Assert.Equal("deadbeef", snap.Agent06RefineJobId);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
     public void TryEnrichFromDisk_loads_sub_chunk_rows_from_work_state_json()
     {
         var dir = Path.Combine(Path.GetTempPath(), "xtract-disk-subvm-" + Guid.NewGuid().ToString("N"));
@@ -89,6 +111,61 @@ public class JobSnapshotDiskEnricherTests
             Assert.Equal(0, sub.ParentChunkIndex);
             Assert.Equal(1, sub.SubChunkIndex);
             Assert.Equal("Running", sub.State);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public void TryEnrichFromDisk_skips_refiner_threads_hydrate_when_phase_refiner_and_batches_empty()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "xtract-refiner-live-" + Guid.NewGuid().ToString("N"));
+        var threads = Path.Combine(dir, "refiner_threads");
+        Directory.CreateDirectory(threads);
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(threads, "batch_0001_of_0003.json"),
+                """{"batchIndex":0,"totalBatches":3,"beforeText":"a","afterText":null}""");
+            var snap = new JobSnapshot
+            {
+                Id = "job1",
+                Status = "running",
+                Phase = "refiner",
+                RefinerThreadBatches = Array.Empty<RefinerThreadBatchEntry>(),
+            };
+            JobSnapshotDiskEnricher.TryEnrichFromDisk(snap, dir, NullLogger.Instance);
+            Assert.Empty(snap.RefinerThreadBatches!);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public void TryEnrichFromDisk_hydrates_refiner_threads_when_phase_refiner_paused_and_batches_empty()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "xtract-refiner-pause-" + Guid.NewGuid().ToString("N"));
+        var threads = Path.Combine(dir, "refiner_threads");
+        Directory.CreateDirectory(threads);
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(threads, "batch_0001_of_0003.json"),
+                """{"batchIndex":0,"totalBatches":3,"beforeText":"a","afterText":"done"}""");
+            var snap = new JobSnapshot
+            {
+                Id = "job1",
+                Status = "running",
+                Phase = "refiner_paused",
+                RefinerThreadBatches = Array.Empty<RefinerThreadBatchEntry>(),
+            };
+            JobSnapshotDiskEnricher.TryEnrichFromDisk(snap, dir, NullLogger.Instance);
+            Assert.Single(snap.RefinerThreadBatches!);
+            Assert.Equal("done", snap.RefinerThreadBatches![0].AfterText);
         }
         finally
         {

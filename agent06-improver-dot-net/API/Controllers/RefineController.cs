@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using TranslationImprover.Application;
 using TranslationImprover.Features.Refine.Application;
 using TranslationImprover.Features.Refine.Domain;
@@ -18,6 +19,8 @@ public class RefineController : ControllerBase
     private readonly IRefineJobQueryService _queryService;
     private readonly INodeQuery? _nodeQuery;
     private readonly WorkspaceRoot _workspaceRoot;
+    private readonly IConfiguration _configuration;
+    private readonly ILogger<RefineController> _logger;
 
     public RefineController(
         IRefineJobStore store,
@@ -25,6 +28,8 @@ public class RefineController : ControllerBase
         IRefineJobCancellation cancellation,
         IRefineJobQueryService queryService,
         WorkspaceRoot workspaceRoot,
+        IConfiguration configuration,
+        ILogger<RefineController> logger,
         INodeQuery? nodeQuery = null)
     {
         _store = store;
@@ -32,6 +37,8 @@ public class RefineController : ControllerBase
         _cancellation = cancellation;
         _queryService = queryService;
         _workspaceRoot = workspaceRoot;
+        _configuration = configuration;
+        _logger = logger;
         _nodeQuery = nodeQuery;
     }
 
@@ -44,11 +51,32 @@ public class RefineController : ControllerBase
         [FromHeader(Name = "X-Caller-Id")] string? xCallerId,
         CancellationToken cancellationToken)
     {
-        var root = _workspaceRoot.RootPath;
+        _logger.LogInformation(
+            "HTTP POST /api/refine/jobs: JobDirectoryRelative={JobDir}, InputFilePath={InputFile}, InputContentChars={Len}, OutputFilePath={Output}, Caller={Caller}",
+            request?.JobDirectoryRelative ?? "(null)",
+            string.IsNullOrEmpty(request?.InputFilePath) ? "(content-only)" : request!.InputFilePath!.Trim(),
+            request?.InputContent?.Length ?? 0,
+            request?.OutputFilePath ?? "(null)",
+            xCallerId ?? "(none)");
+
+        string artifactBase;
+        string? workspaceRootOverrideStored;
+        try
+        {
+            (artifactBase, workspaceRootOverrideStored) = RefineArtifactBaseResolver.Resolve(
+                _workspaceRoot.RootPath,
+                request?.WorkspaceRootOverride,
+                request?.JobDirectoryRelative);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ProblemDetailsFor(400, "Bad Request", ex.Message));
+        }
+
         string artifactRoot;
         try
         {
-            artifactRoot = RefineWorkspacePaths.ResolveEffectiveArtifactRoot(root, request?.JobDirectoryRelative);
+            artifactRoot = RefineWorkspacePaths.ResolveEffectiveArtifactRoot(artifactBase, request?.JobDirectoryRelative);
         }
         catch (ArgumentException ex)
         {
@@ -78,7 +106,7 @@ public class RefineController : ControllerBase
 
         var tags = request.Tags?.Count > 0 ? request.Tags.ToList() : null;
         var callbackUrl = !string.IsNullOrWhiteSpace(request.CallbackUrl) ? request.CallbackUrl.Trim() : null;
-        var jobId = _store.Create(tags, callbackUrl);
+        var jobDirRel = string.IsNullOrWhiteSpace(request.JobDirectoryRelative) ? null : request.JobDirectoryRelative.Trim();
 
         var req = new RefineJobRequest
         {
@@ -87,7 +115,7 @@ public class RefineController : ControllerBase
             OutputFilePath = string.IsNullOrEmpty(request.OutputFilePath) ? null : request.OutputFilePath.Trim(),
             BatchSize = request.BatchSize > 0 ? request.BatchSize : 10,
             ContextLines = request.ContextLines >= 0 ? request.ContextLines : 3,
-            Model = request.Model ?? "gpt-4o-mini",
+            Model = string.IsNullOrWhiteSpace(request.Model) ? "gpt-4o-mini" : request.Model.Trim(),
             Temperature = request.Temperature,
             PromptFile = string.IsNullOrEmpty(request.PromptFile) ? null : request.PromptFile.Trim(),
             OpenAIBaseUrl = string.IsNullOrEmpty(request.OpenAIBaseUrl) ? null : request.OpenAIBaseUrl.Trim(),
@@ -96,12 +124,16 @@ public class RefineController : ControllerBase
             IntermediateDir = string.IsNullOrEmpty(request.IntermediateDir) ? null : request.IntermediateDir.Trim(),
             CallbackUrl = callbackUrl,
             Tags = request.Tags,
-            JobDirectoryRelative = string.IsNullOrWhiteSpace(request.JobDirectoryRelative) ? null : request.JobDirectoryRelative.Trim()
+            JobDirectoryRelative = string.IsNullOrWhiteSpace(request.JobDirectoryRelative) ? null : request.JobDirectoryRelative.Trim(),
+            WorkspaceRootOverride = workspaceRootOverrideStored
         };
 
+        var jobId = _store.Create(tags, callbackUrl, jobDirRel, workspaceRootOverrideStored);
+
+        RefineFreshRunArtifactCleaner.ClearForNewSubmit(artifactRoot, _logger);
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _cancellation.Register(jobId, cts);
-        _ = _pipeline.RunAsync(jobId, req, root, artifactRoot, cts.Token);
+        _ = _pipeline.RunAsync(jobId, req, artifactRoot, cts.Token);
 
         return AcceptedAtAction(nameof(Get), new { id = jobId }, new { jobId });
     }
@@ -116,42 +148,6 @@ public class RefineController : ControllerBase
         if (job == null)
             return NotFound(ProblemDetailsFor(404, "Not Found", "Job not found", new Dictionary<string, object?> { ["jobId"] = id }));
         return Ok(job);
-    }
-
-    /// <summary>SSE stream of job progress until completed, failed, or cancelled.</summary>
-    [HttpGet("{id}/stream")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task Stream(string id, CancellationToken cancellationToken)
-    {
-        var job = _store.Get(id);
-        if (job == null)
-        {
-            Response.StatusCode = 404;
-            await Response.WriteAsync("Job not found", cancellationToken);
-            return;
-        }
-        Response.ContentType = "text/event-stream";
-        Response.Headers.CacheControl = "no-cache";
-        await Response.StartAsync(cancellationToken);
-        var delay = TimeSpan.FromMilliseconds(500);
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            job = _store.Get(id);
-            if (job == null) break;
-            var state = job.State.ToString().ToLowerInvariant();
-            await Response.WriteAsync($"event: progress\n", cancellationToken);
-            await Response.WriteAsync($"data: {{\"state\":\"{state}\",\"progress_percent\":{job.ProgressPercent},\"current_batch\":{job.CurrentBatch},\"total_batches\":{job.TotalBatches},\"current_phase\":\"{EscapeJson(job.CurrentPhase)}\",\"error_message\":\"{EscapeJson(job.ErrorMessage)}\"}}\n\n", cancellationToken);
-            await Response.Body.FlushAsync(cancellationToken);
-            if (job.State is RefineJobState.Completed or RefineJobState.Failed or RefineJobState.Cancelled)
-            {
-                await Response.WriteAsync($"event: {(job.State == RefineJobState.Completed ? "completed" : job.State == RefineJobState.Failed ? "failed" : "cancelled")}\n", cancellationToken);
-                await Response.WriteAsync($"data: {{\"state\":\"{state}\"}}\n\n", cancellationToken);
-                await Response.Body.FlushAsync(cancellationToken);
-                break;
-            }
-            await Task.Delay(delay, cancellationToken);
-        }
     }
 
     /// <summary>Get result content when job is Completed. Returns file content when output_file_path was set.</summary>
@@ -235,8 +231,6 @@ public class RefineController : ControllerBase
         var nodes = tree ? _nodeQuery.GetTreeByScope(id) : _nodeQuery.GetByScope(id);
         return Ok(nodes);
     }
-
-    private static string EscapeJson(string? s) => s == null ? "" : s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
 
     private static ProblemDetails ProblemDetailsFor(int status, string title, string detail, Dictionary<string, object?>? extensions = null)
     {

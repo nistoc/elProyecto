@@ -15,10 +15,24 @@ public sealed class StubRefinePipeline : IRefinePipeline
         _store = store;
     }
 
-    public async Task RunAsync(string jobId, RefineJobRequest request, string workspaceRoot, string artifactRoot, CancellationToken cancellationToken = default)
+    public async Task RunAsync(string jobId, RefineJobRequest request, string artifactRoot, CancellationToken cancellationToken = default)
     {
         _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Running, CurrentPhase = "Starting" });
         await Task.Yield();
         _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Failed, ErrorMessage = "Refine pipeline not implemented yet." });
+    }
+
+    public Task ResumeAsync(string jobId, CancellationToken cancellationToken = default)
+    {
+        _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Failed, ErrorMessage = "Refine pipeline not implemented yet." });
+        return Task.CompletedTask;
+    }
+
+    public Task ResumeFromCheckpointAsync(string jobId, string artifactRoot, RefineCheckpoint checkpoint, CancellationToken cancellationToken = default)
+    {
+        _ = artifactRoot;
+        _ = checkpoint;
+        _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Failed, ErrorMessage = "Refine pipeline not implemented yet." });
+        return Task.CompletedTask;
     }
 }

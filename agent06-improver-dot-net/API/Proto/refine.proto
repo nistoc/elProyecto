@@ -8,8 +8,15 @@ package translation_improver.refine;
 service RefinerService {
   rpc SubmitRefineJob(SubmitRefineJobRequest) returns (SubmitRefineJobResponse);
   rpc GetRefineStatus(GetRefineStatusRequest) returns (RefineStatusResponse);
-  rpc StreamRefineStatus(StreamRefineStatusRequest) returns (stream RefineStatusUpdate);
+  /// Server streaming: same payload as GetRefineStatus when StreamSequence changes; closes on Paused/Completed/Failed/Cancelled.
+  rpc StreamRefineStatus(StreamRefineStatusRequest) returns (stream RefineStatusResponse);
   rpc CancelRefineJob(CancelRefineJobRequest) returns (CancelRefineJobResponse);
+  /// Cooperative: pipeline pauses after the current batch completes (checkpoint under refiner_threads/).
+  rpc PauseRefineJob(PauseRefineJobRequest) returns (PauseRefineJobResponse);
+  /// Continue a Paused job using refiner_threads/checkpoint.json.
+  rpc ResumeRefineJob(ResumeRefineJobRequest) returns (ResumeRefineJobResponse);
+  /// When the in-memory job is gone (e.g. Agent06 restarted), resume by loading checkpoint.json only — creates a new job id.
+  rpc ResumeRefineFromCheckpoint(ResumeRefineFromCheckpointRequest) returns (ResumeRefineFromCheckpointResponse);
   rpc QueryRefineJobs(QueryRefineJobsRequest) returns (QueryRefineJobsResponse);
 }
 
@@ -30,6 +37,8 @@ message SubmitRefineJobRequest {
   repeated string tags = 14;   // For semantic key query (one of these = semanticKey filter)
   /// Optional. Single segment under workspace_root (Xtract job folder). When set, input/output/intermediate paths resolve under workspace_root/job_directory_relative.
   string job_directory_relative = 15;
+  /// Optional. When set, used instead of the server's configured WorkspaceRoot so files land in the caller's job folder (e.g. Agent05 Jobs:WorkspacePath).
+  string workspace_root_override = 16;
 }
 
 message SubmitRefineJobResponse {
@@ -40,9 +49,13 @@ message GetRefineStatusRequest {
   string job_id = 1;
 }
 
+message StreamRefineStatusRequest {
+  string job_id = 1;
+}
+
 message RefineStatusResponse {
   string job_id = 1;
-  string state = 2;             // Pending, Running, Completed, Failed, Cancelled
+  string state = 2;             // Pending, Running, Paused, Completed, Failed, Cancelled
   int32 progress_percent = 3;
   string current_phase = 4;
   int32 current_batch = 5;
@@ -54,22 +67,18 @@ message RefineStatusResponse {
   string completed_at = 11;
   string updated_at = 12;
   repeated string tags = 13;
-}
-
-message StreamRefineStatusRequest {
-  string job_id = 1;
-}
-
-message RefineStatusUpdate {
-  string job_id = 1;
-  string state = 2;
-  int32 progress_percent = 3;
-  string current_phase = 4;
-  int32 current_batch = 5;
-  int32 total_batches = 6;
-  string output_file_path = 7;
-  string error_message = 8;
-  string updated_at = 9;
+  int64 stream_sequence = 14;
+  string batch_event_kind = 15;
+  int32 batch_event_index_0 = 16;
+  string batch_threads_relative_path = 17;
+  /// Full text sent to OpenAI for the current batch (system + user messages), for UI debugging.
+  string openai_request_preview = 18;
+  /// Input batch text (refiner_threads before column).
+  string batch_before_text = 19;
+  /// Output batch text after model; empty while batch in flight if using batch_event_kind.
+  string batch_after_text = 20;
+  /// One line for Xtract job log (preferred over BFF default formatting).
+  string refiner_log_line = 21;
 }
 
 message CancelRefineJobRequest {
@@ -80,9 +89,34 @@ message CancelRefineJobResponse {
   bool cancelled = 1;           // True if job was running and is now Cancelled
 }
 
+message PauseRefineJobRequest {
+  string job_id = 1;
+}
+
+message PauseRefineJobResponse {
+  bool pause_requested = 1;
+}
+
+message ResumeRefineJobRequest {
+  string job_id = 1;
+}
+
+message ResumeRefineJobResponse {
+  bool started = 1;
+}
+
+message ResumeRefineFromCheckpointRequest {
+  string job_directory_relative = 1;
+  string workspace_root_override = 2;
+}
+
+message ResumeRefineFromCheckpointResponse {
+  string job_id = 1;
+}
+
 message QueryRefineJobsRequest {
   string semantic_key = 1;      // Filter jobs by this semantic key (one of the job's tags)
-  string status = 2;           // Pending, Running, Completed, Failed, Cancelled
+  string status = 2;           // Pending, Running, Paused, Completed, Failed, Cancelled
   string from = 3;              // ISO8601
   string to = 4;                // ISO8601
   int32 limit = 5;

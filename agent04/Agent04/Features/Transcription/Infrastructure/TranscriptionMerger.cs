@@ -3,11 +3,14 @@ using Agent04.Features.Transcription.Domain;
 
 namespace Agent04.Features.Transcription.Infrastructure;
 
+/// <summary>
+/// Concatenates sub-chunk <see cref="TranscriptionResult"/> in ascending <see cref="SubIndex"/> order.
+/// Within each sub-chunk, segment order matches the source. Timestamps are shifted by
+/// <paramref name="parentChunkOffset"/> and each sub&apos;s <see cref="TranscriptionResult.Offset"/>.
+/// No global sort by time and no cross-segment deduplication — preserves replica order for merged output.
+/// </summary>
 public sealed class TranscriptionMerger : ITranscriptionMerger
 {
-    private const double TimeThreshold = 0.5;
-    private const double TextSimilarityThreshold = 0.8;
-
     public TranscriptionResult MergeTranscriptions(
         IReadOnlyList<(int SubIndex, TranscriptionResult Result)> subResults,
         double parentChunkOffset = 0.0)
@@ -28,51 +31,14 @@ public sealed class TranscriptionMerger : ITranscriptionMerger
                     if (seg.End <= result.EmitGuard)
                         continue;
                 }
+
                 var adjStart = seg.Start + result.Offset + parentChunkOffset;
                 var adjEnd = seg.End + result.Offset + parentChunkOffset;
                 merged.Add(new ASRSegment(adjStart, adjEnd, seg.Text, seg.Speaker));
             }
         }
 
-        merged = merged.OrderBy(s => s.Start).ToList();
-        merged = DeduplicateSegments(merged);
         var firstBasename = sorted[0].Result.ChunkBasename;
         return new TranscriptionResult("merged_" + firstBasename, parentChunkOffset, 0.0, merged, new Dictionary<string, object?>());
-    }
-
-    private static List<ASRSegment> DeduplicateSegments(List<ASRSegment> segments)
-    {
-        if (segments.Count <= 1) return segments;
-        var result = new List<ASRSegment> { segments[0] };
-        for (var i = 1; i < segments.Count; i++)
-        {
-            var seg = segments[i];
-            var prev = result[result.Count - 1];
-            var timeDiff = Math.Abs(seg.Start - prev.Start);
-            if (timeDiff < TimeThreshold)
-            {
-                var sim = TextSimilarity(seg.Text.Trim().ToLowerInvariant(), prev.Text.Trim().ToLowerInvariant());
-                if (sim >= TextSimilarityThreshold)
-                {
-                    if (seg.Text.Length > prev.Text.Length)
-                        result[result.Count - 1] = seg;
-                    continue;
-                }
-            }
-            result.Add(seg);
-        }
-        return result;
-    }
-
-    private static double TextSimilarity(string a, string b)
-    {
-        if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return 0;
-        if (a == b) return 1.0;
-        var w1 = new HashSet<string>(a.Split(' ', StringSplitOptions.RemoveEmptyEntries));
-        var w2 = new HashSet<string>(b.Split(' ', StringSplitOptions.RemoveEmptyEntries));
-        if (w1.Count == 0 || w2.Count == 0) return 0;
-        var inter = w1.Intersect(w2).Count();
-        var union = w1.Union(w2).Count();
-        return union > 0 ? (double)inter / union : 0;
     }
 }

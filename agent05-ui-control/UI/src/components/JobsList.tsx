@@ -49,43 +49,62 @@ export function JobsList({
       <ul className="jobs-list__ul">
         {jobs.map((j) => (
           <li key={j.id} className="jobs-list__li">
-            <button
-              type="button"
-              onClick={() => onSelectJob(j.id)}
-              className={`jobs-list__item ${currentJobId === j.id ? 'active' : ''}`}
-              title={j.id}
-            >
-              <span className="jobs-list__name">
-                {j.originalFilename || j.id}
-              </span>
-              <span className="jobs-list__meta">
-                <span className="jobs-list__status">{j.status}</span>
-                {j.completedAt ? (
-                  <span className="jobs-list__date">{formatDate(j.completedAt)}</span>
-                ) : j.createdAt ? (
-                  <span className="jobs-list__date">{formatDate(j.createdAt)}</span>
-                ) : null}
-              </span>
-            </button>
-            {confirmId === j.id ? (
-              <span className="jobs-list__confirm">
-                {t('confirmDelete')}{' '}
-                <button type="button" onClick={() => onDelete(j.id)}>
-                  {t('delete')}
-                </button>
-                <button type="button" onClick={() => setConfirmId(null)}>
-                  {t('cancel')}
-                </button>
-              </span>
-            ) : (
+            <div className="jobs-list__row">
               <button
                 type="button"
-                onClick={() => setConfirmId(j.id)}
+                onClick={() => onSelectJob(j.id)}
+                className={`jobs-list__item ${currentJobId === j.id ? 'active' : ''}`}
+                title={j.id}
+              >
+                <span className="jobs-list__name">
+                  {j.originalFilename || j.id}
+                </span>
+                <span className="jobs-list__meta">
+                  <span className="jobs-list__status">{j.status}</span>
+                  {j.completedAt ? (
+                    <span className="jobs-list__date">{formatDate(j.completedAt)}</span>
+                  ) : j.createdAt ? (
+                    <span className="jobs-list__date">{formatDate(j.createdAt)}</span>
+                  ) : null}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setConfirmId((prev) => (prev === j.id ? null : j.id))
+                }
                 className="jobs-list__del"
-                title={t('deleteJob')}
+                title={
+                  confirmId === j.id ? t('cancel') : t('deleteJob')
+                }
+                aria-expanded={confirmId === j.id}
               >
                 ×
               </button>
+            </div>
+            {confirmId === j.id && (
+              <div className="jobs-list__confirm">
+                <span className="jobs-list__confirm-text">{t('confirmDelete')}</span>
+                <div className="jobs-list__confirm-actions">
+                  <button
+                    type="button"
+                    className="jobs-list__confirm-btn jobs-list__confirm-btn--danger"
+                    onClick={() => {
+                      onDelete(j.id);
+                      setConfirmId(null);
+                    }}
+                  >
+                    {t('delete')}
+                  </button>
+                  <button
+                    type="button"
+                    className="jobs-list__confirm-btn"
+                    onClick={() => setConfirmId(null)}
+                  >
+                    {t('cancel')}
+                  </button>
+                </div>
+              </div>
             )}
           </li>
         ))}
@@ -99,7 +118,19 @@ export function JobsList({
         .jobs-list__title { font-size: 1rem; margin: 0; color: var(--color-text); }
         .jobs-list__refresh { padding: 0.25rem 0.5rem; font-size: 0.875rem; border-radius: 4px; border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
         .jobs-list__ul { list-style: none; margin: 0; padding: 0; }
-        .jobs-list__li { display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.25rem; }
+        .jobs-list__li {
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0.35rem;
+          margin-bottom: 0.35rem;
+        }
+        .jobs-list__row {
+          display: flex;
+          align-items: stretch;
+          gap: 0.25rem;
+          min-width: 0;
+        }
         .jobs-list__item {
           flex: 1;
           text-align: left;
@@ -116,9 +147,52 @@ export function JobsList({
         .jobs-list__meta { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: var(--color-text-secondary); margin-top: 0.125rem; }
         .jobs-list__status { }
         .jobs-list__date { }
-        .jobs-list__del { width: 28px; height: 28px; padding: 0; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-surface); color: var(--color-text); cursor: pointer; }
-        .jobs-list__confirm { font-size: 0.75rem; display: flex; gap: 0.25rem; align-items: center; }
-        .jobs-list__confirm button { padding: 0.125rem 0.25rem; }
+        .jobs-list__del {
+          flex-shrink: 0;
+          width: 28px;
+          min-height: 28px;
+          padding: 0;
+          align-self: stretch;
+          border: 1px solid var(--color-border);
+          border-radius: 4px;
+          background: var(--color-surface);
+          color: var(--color-text);
+          cursor: pointer;
+          font-size: 1.1rem;
+          line-height: 1;
+        }
+        .jobs-list__confirm {
+          display: flex;
+          flex-direction: column;
+          gap: 0.4rem;
+          padding: 0.4rem 0.35rem 0.5rem;
+          border: 1px solid var(--color-border);
+          border-radius: 4px;
+          background: var(--color-surface-sunken);
+          font-size: 0.75rem;
+          color: var(--color-text);
+        }
+        .jobs-list__confirm-text { line-height: 1.35; }
+        .jobs-list__confirm-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.35rem;
+          align-items: center;
+        }
+        .jobs-list__confirm-btn {
+          padding: 0.3rem 0.55rem;
+          border-radius: 4px;
+          border: 1px solid var(--color-border-strong);
+          background: var(--color-surface);
+          color: var(--color-text);
+          cursor: pointer;
+          font-size: 0.75rem;
+        }
+        .jobs-list__confirm-btn:hover { background: var(--color-surface-hover); }
+        .jobs-list__confirm-btn--danger {
+          border-color: color-mix(in srgb, var(--color-danger, #c62828) 45%, var(--color-border-strong));
+          color: var(--color-danger, #b71c1c);
+        }
         .jobs-list__loading, .jobs-list__empty { color: var(--color-text-muted); font-size: 0.875rem; margin: 0.5rem 0; }
       `}</style>
     </div>

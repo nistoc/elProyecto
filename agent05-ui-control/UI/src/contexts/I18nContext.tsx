@@ -71,9 +71,37 @@ const messages: Record<Locale, Record<string, string>> = {
     inWorkspace: 'available in workspace',
     loading: 'Loading…',
     selectJobOrCreate: 'Select a job or create one in Upload.',
-    refinerAwaitingHint: 'Transcription done. Refiner can be started from the pipeline (auto in this app).',
+    refinerAwaitingHint:
+      'Transcription is ready. Start the refiner when you want to improve the transcript.',
     refinerRunning: 'Refiner is running…',
+    refinerPaused: 'Refiner paused after a batch. Resume to continue, or skip to finish without refining.',
+    refinerCheckpointProgress:
+      '{n} batch(es) left to refine (checkpoint on disk). You can resume even after restarting Agent06.',
     refinerCompleted: 'Refiner completed.',
+    refinerStartRefiner: 'Start refiner',
+    refineRowTranscript: 'Refine',
+    refinerPauseRefiner: 'Pause after current batch',
+    refinerResumeRefiner: 'Resume refiner',
+    refinerSkipRefiner: 'Skip refiner',
+    refinerThreadsTitle: 'Refiner Threads',
+    refinerThreadsBefore: 'Before',
+    refinerThreadsAfter: 'After',
+    refinerThreadsAfterPending: 'Waiting for OpenAI response…',
+    refinerThreadsEmpty:
+      'No batch rows yet. They fill from the live refiner stream as each batch advances.',
+    refinerStreamThreadsHint:
+      'Before/after text comes from the API job snapshot (Agent06 gRPC mirrored by the server; updates with each SSE push).',
+    refinerThreadsBatch: 'Batch',
+    refinerThreadsPrev: 'Previous batch',
+    refinerThreadsNext: 'Next batch',
+    refinerOpenAiPreviewTitle: 'OpenAI request (current batch)',
+    refinerOpenAiPreviewHint:
+      'Text sent to the model for this batch (system + user). Updates before each API call.',
+    refinerStreamLogTitle: 'Refiner events (live)',
+    refinerStreamLogHint:
+      'Lines appended to the job log from the refiner stream (Agent06 → API → SSE). No disk polling.',
+    refinerStreamLogEmpty:
+      'No refiner events in the job log yet. They appear when the refiner reports batch progress.',
     selectJob: 'Select a job.',
     selectJobForResult: 'Select a job to see result.',
     failedToLoadFiles: 'Failed to load files',
@@ -107,13 +135,21 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsTranscriptionActive: 'Transcription in progress — you can cancel this chunk',
     chunkStatsTranscriptionActiveNoCancel: 'Transcription in progress',
     chunkRebuildCombined: 'Rebuild combined MD + JSON',
+    chunkRebuildCombinedNeedsAgent04:
+      'Agent04 job id is missing — cannot call rebuild. Re-open a job that still has it, or restore from snapshot.',
+    chunkRebuildCombinedBadStatus:
+      'Job status must be running, done, or completed to rebuild (API requirement).',
     chunkRebuildCombinedHint:
       'Rebuild transcript.md and openai_response.json from per-chunk JSON (no new API calls).',
     chunkRebuildSplitMerged: 'Rebuild merged split JSON + MD',
     chunkRebuildSplitMergedHint:
-      'Rewrite chunk_N_merged.json and .md from all sub-chunk results; updates job-level combined outputs if present.',
+      'Rewrite chunk_N_merged.json and .md from sub-chunk result JSONs that exist (partial merge if some subs were removed). Updates job-level combined outputs if present.',
     chunkRebuildSplitMergedDisabled:
       'Wait until every sub-chunk has results/sub_chunk_XX_result.json on disk.',
+    chunkWriteChunkMd: 'Write chunk MD',
+    chunkWriteChunkMdTitle:
+      'Create chunks_md/<chunk>.md from chunks_json if missing (no API calls)',
+    chunkWriteChunkMdDisabled: 'No chunks_json transcript for this chunk yet.',
     chunkStatsCancelChunk: 'Cancel chunk',
     chunkStatsEmpty: 'No chunk rows yet (upload audio and run transcription, or open a job with chunk artifacts).',
     chunkStatsLoadingFiles: 'Loading project files…',
@@ -127,6 +163,9 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkRetranscribe: 'Retranscribe',
     chunkRetranscribeBlockedSplit:
       'Retranscribe is disabled while operator split artifacts exist for this chunk. Remove sub-chunks first.',
+    chunkDeleteMergedFileTitle: 'Delete this file from the job folder',
+    chunkDeleteMergedFileAria: 'Delete file {name}',
+    chunkDeleteMergedFileConfirm: 'Delete file “{name}” from the project?',
     chunkDeleteSubChunk: 'Delete sub-chunk',
     chunkDeleteSubChunkTitle:
       'Remove this sub-chunk’s audio, transcript JSON, work-state row, and cancel flag',
@@ -220,9 +259,38 @@ const messages: Record<Locale, Record<string, string>> = {
     inWorkspace: 'в рабочей папке',
     loading: 'Загрузка…',
     selectJobOrCreate: 'Выберите задание или создайте в разделе «Загрузка».',
-    refinerAwaitingHint: 'Транскрипция готова. Рефайнер запускается из пайплайна (в этом приложении — автоматически).',
+    refinerAwaitingHint:
+      'Транскрипция готова. Запустите рефайнер, когда нужно улучшить текст.',
     refinerRunning: 'Рефайнер выполняется…',
+    refinerPaused:
+      'Рефайнер на паузе после батча. Продолжите или пропустите, чтобы завершить без доработки.',
+    refinerCheckpointProgress:
+      'Осталось батчей: {n} (checkpoint на диске). Можно продолжить даже после перезапуска Agent06.',
     refinerCompleted: 'Рефайнер завершён.',
+    refinerStartRefiner: 'Запустить рефайнер',
+    refineRowTranscript: 'Рефайн',
+    refinerPauseRefiner: 'Пауза после текущего батча',
+    refinerResumeRefiner: 'Продолжить рефайнер',
+    refinerSkipRefiner: 'Пропустить рефайнер',
+    refinerThreadsTitle: 'Refiner Threads',
+    refinerThreadsBefore: 'До',
+    refinerThreadsAfter: 'После',
+    refinerThreadsAfterPending: 'Ожидание ответа OpenAI…',
+    refinerThreadsEmpty:
+      'Строк батчей пока нет — они заполняются из потока рефайнера по мере прохождения батчей.',
+    refinerStreamThreadsHint:
+      'Тексты «до/после» приходят в снапшоте задания с API (gRPC Agent06 на стороне сервера; обновляется с каждым SSE).',
+    refinerThreadsBatch: 'Батч',
+    refinerThreadsPrev: 'Предыдущий батч',
+    refinerThreadsNext: 'Следующий батч',
+    refinerOpenAiPreviewTitle: 'Запрос к OpenAI (текущий батч)',
+    refinerOpenAiPreviewHint:
+      'Текст, отправляемый в модель (system + user). Обновляется перед каждым вызовом API.',
+    refinerStreamLogTitle: 'События рефайнера (live)',
+    refinerStreamLogHint:
+      'Строки в логе задания из потока рефайнера (Agent06 → API → SSE). Без опроса файлов на диске.',
+    refinerStreamLogEmpty:
+      'В логе задания пока нет событий рефайнера — они появятся при прогрессе по батчам.',
     selectJob: 'Выберите задание.',
     selectJobForResult: 'Выберите задание, чтобы увидеть результат.',
     failedToLoadFiles: 'Не удалось загрузить файлы',
@@ -258,13 +326,21 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsTranscriptionActive: 'Идёт транскрипция — можно отменить этот чанк',
     chunkStatsTranscriptionActiveNoCancel: 'Идёт транскрипция',
     chunkRebuildCombined: 'Собрать общий MD + JSON',
+    chunkRebuildCombinedNeedsAgent04:
+      'Нет Agent04 job id — нельзя вызвать пересборку. Откройте задание, где он ещё есть.',
+    chunkRebuildCombinedBadStatus:
+      'Статус задания должен быть running, done или completed (требование API).',
     chunkRebuildCombinedHint:
       'Пересобрать transcript.md и openai_response.json из chunks_json (без новых запросов к API).',
     chunkRebuildSplitMerged: 'Пересобрать merged JSON + MD сплита',
     chunkRebuildSplitMergedHint:
-      'Перезаписать chunk_N_merged.json и .md из результатов всех субчанков; при наличии — обновить общие transcript.md / combined JSON.',
+      'Перезаписать chunk_N_merged.json и .md из тех sub_chunk_XX_result.json, что есть на диске (частичная сборка, если часть субчанков удалена). При наличии — обновить общие transcript.md / combined JSON.',
     chunkRebuildSplitMergedDisabled:
       'Дождитесь, пока у каждого субчанка появится results/sub_chunk_XX_result.json на диске.',
+    chunkWriteChunkMd: 'Записать MD чанка',
+    chunkWriteChunkMdTitle:
+      'Создать chunks_md/<чанк>.md из chunks_json, если файла ещё нет (без вызовов API)',
+    chunkWriteChunkMdDisabled: 'Для этого чанка ещё нет JSON в chunks_json.',
     chunkStatsCancelChunk: 'Отменить чанк',
     chunkStatsEmpty: 'Пока нет строк по чанкам (загрузите аудио и запустите транскрипцию или откройте job с артефактами).',
     chunkStatsLoadingFiles: 'Загрузка файлов проекта…',
@@ -278,6 +354,9 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkRetranscribe: 'Перетранскрибировать',
     chunkRetranscribeBlockedSplit:
       'Перетранскрибирование недоступно, пока для этого чанка есть артефакты операторского сплита. Сначала удалите субчанки.',
+    chunkDeleteMergedFileTitle: 'Удалить файл из папки задания',
+    chunkDeleteMergedFileAria: 'Удалить файл {name}',
+    chunkDeleteMergedFileConfirm: 'Удалить файл «{name}» из проекта?',
     chunkDeleteSubChunk: 'Удалить субчанк',
     chunkDeleteSubChunkTitle:
       'Удалить аудио, JSON транскрипта, строку в work-state и флаг отмены для этого субчанка',
@@ -371,9 +450,38 @@ const messages: Record<Locale, Record<string, string>> = {
     inWorkspace: 'disponible en la carpeta de trabajo',
     loading: 'Cargando…',
     selectJobOrCreate: 'Seleccione un trabajo o cree uno en Subir.',
-    refinerAwaitingHint: 'Transcripción lista. El refinador se inicia desde el pipeline (automático en esta app).',
+    refinerAwaitingHint:
+      'Transcripción lista. Inicie el refinador cuando quiera mejorar el texto.',
     refinerRunning: 'Refinador en curso…',
+    refinerPaused:
+      'Refinador en pausa tras un lote. Reanude para continuar o omita para terminar sin refinar.',
+    refinerCheckpointProgress:
+      'Lotes pendientes: {n} (checkpoint en disco). Puede reanudar incluso tras reiniciar Agent06.',
     refinerCompleted: 'Refinador completado.',
+    refinerStartRefiner: 'Iniciar refinador',
+    refineRowTranscript: 'Refinar',
+    refinerPauseRefiner: 'Pausar tras el lote actual',
+    refinerResumeRefiner: 'Reanudar refinador',
+    refinerSkipRefiner: 'Omitir refinador',
+    refinerThreadsTitle: 'Refiner Threads',
+    refinerThreadsBefore: 'Antes',
+    refinerThreadsAfter: 'Después',
+    refinerThreadsAfterPending: 'Esperando respuesta de OpenAI…',
+    refinerThreadsEmpty:
+      'Aún no hay filas por lote; se rellenan desde el flujo en vivo del refinador al avanzar cada lote.',
+    refinerStreamThreadsHint:
+      'Los textos antes/después vienen del snapshot del trabajo en la API (gRPC de Agent06 en el servidor; se actualiza con cada SSE).',
+    refinerThreadsBatch: 'Lote',
+    refinerThreadsPrev: 'Lote anterior',
+    refinerThreadsNext: 'Lote siguiente',
+    refinerOpenAiPreviewTitle: 'Solicitud a OpenAI (lote actual)',
+    refinerOpenAiPreviewHint:
+      'Texto enviado al modelo para este lote (system + user). Se actualiza antes de cada llamada API.',
+    refinerStreamLogTitle: 'Eventos del refinador (en vivo)',
+    refinerStreamLogHint:
+      'Líneas añadidas al log del trabajo desde el flujo del refinador (Agent06 → API → SSE). Sin sondeo de archivos en disco.',
+    refinerStreamLogEmpty:
+      'Aún no hay eventos del refinador en el log; aparecerán cuando el refinador informe del progreso por lotes.',
     selectJob: 'Seleccione un trabajo.',
     selectJobForResult: 'Seleccione un trabajo para ver el resultado.',
     failedToLoadFiles: 'Error al cargar archivos',
@@ -409,13 +517,21 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsTranscriptionActive: 'Transcripción en curso — puede cancelar este fragmento',
     chunkStatsTranscriptionActiveNoCancel: 'Transcripción en curso',
     chunkRebuildCombined: 'Reconstruir MD + JSON combinados',
+    chunkRebuildCombinedNeedsAgent04:
+      'Falta el id de trabajo Agent04 — no se puede reconstruir. Abra un trabajo que aún lo conserve.',
+    chunkRebuildCombinedBadStatus:
+      'El estado del trabajo debe ser running, done o completed (requisito de la API).',
     chunkRebuildCombinedHint:
       'Reconstruir transcript.md y openai_response.json desde JSON por fragmento (sin nuevas llamadas a la API).',
     chunkRebuildSplitMerged: 'Reconstruir JSON + MD fusionados del split',
     chunkRebuildSplitMergedHint:
-      'Vuelve a escribir chunk_N_merged.json y .md a partir de todos los resultados de subfragmentos; actualiza salidas combinadas del trabajo si existen.',
+      'Vuelve a escribir chunk_N_merged.json y .md usando solo los sub_chunk_XX_result.json presentes (fusión parcial si faltan subs). Actualiza salidas combinadas si existen.',
     chunkRebuildSplitMergedDisabled:
       'Espere a que cada subfragmento tenga results/sub_chunk_XX_result.json en disco.',
+    chunkWriteChunkMd: 'Escribir MD del fragmento',
+    chunkWriteChunkMdTitle:
+      'Crear chunks_md/<fragmento>.md desde chunks_json si falta (sin llamadas a la API)',
+    chunkWriteChunkMdDisabled: 'Aún no hay JSON en chunks_json para este fragmento.',
     chunkStatsCancelChunk: 'Cancelar fragmento',
     chunkStatsEmpty: 'Aún no hay filas por fragmento (suba audio y ejecute la transcripción o abra un trabajo con artefactos).',
     chunkStatsLoadingFiles: 'Cargando archivos del proyecto…',
@@ -429,6 +545,9 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkRetranscribe: 'Retranscribir',
     chunkRetranscribeBlockedSplit:
       'Retranscribir está desactivado mientras existan artefactos de división del operador para este fragmento. Elimine primero los subfragmentos.',
+    chunkDeleteMergedFileTitle: 'Eliminar este archivo de la carpeta del trabajo',
+    chunkDeleteMergedFileAria: 'Eliminar archivo {name}',
+    chunkDeleteMergedFileConfirm: '¿Eliminar «{name}» del proyecto?',
     chunkDeleteSubChunk: 'Eliminar subfragmento',
     chunkDeleteSubChunkTitle:
       'Quita el audio, el JSON de transcripción, la fila en work-state y la bandera de cancelación de este subfragmento',

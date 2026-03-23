@@ -10,14 +10,15 @@
 ## Requirements
 
 - .NET 9.0
-- **WorkspaceRoot** — directory for input/output files (required in config or environment)
+- **WorkspaceRoot** — single root for prompts, job subfolders, and refiner artifacts; must exist at startup. Use the same path as Agent04 / Agent05 `Jobs:WorkspacePath` when integrating with Xtract.
 - **OpenAI API key** — set in config or environment (never in request body)
 
 ## Configuration
 
 | Key | Description |
 |-----|-------------|
-| `WorkspaceRoot` or `workspace_root` | Root directory for file paths (required). All request paths are relative to this. |
+| `WorkspaceRoot` or `workspace_root` | Single filesystem root (prompts, `job_directory_relative` subfolders, `refiner_threads`). Validated at startup; directory must exist. Match Agent05 `Jobs:WorkspacePath` when using the UI. |
+| `Agent06:ShutdownTimeoutSeconds` | Graceful shutdown timeout in seconds (default `5`). |
 | `OpenAI:ApiKey` or `OpenAiApiKey` | OpenAI API key. Can also use env `OPENAI_API_KEY` or `OpenAI__ApiKey`. |
 | `OpenAI:BaseUrl` | Optional. Default `https://api.openai.com/`. Use for compatible endpoints. |
 

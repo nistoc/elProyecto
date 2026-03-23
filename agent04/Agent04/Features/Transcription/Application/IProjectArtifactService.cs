@@ -78,9 +78,21 @@ public interface IProjectArtifactService
 
     void FinalizeJobMarkdownOutput(string mdPath);
 
-    void SaveJobCombinedTranscriptionJson(string jsonPath, IReadOnlyList<TranscriptionResult> results);
-
     void SaveJobPerChunkTranscriptionJson(string chunkBasename, IReadOnlyDictionary<string, object?> response, string outputDir);
+
+    /// <summary>
+    /// Writes one standalone markdown transcript for a main pipeline chunk (speaker map reset per file).
+    /// </summary>
+    void SaveJobPerChunkMarkdown(string outputDir, string chunkAudioBasename, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard);
+
+    /// <summary>
+    /// Overwrites <paramref name="finalMdPath"/> with stitched chunk markdown (merged split preferred per index).
+    /// </summary>
+    void StitchChunkMarkdownFiles(
+        TranscriptionConfig config,
+        string artifactRoot,
+        IReadOnlyList<ChunkInfo> chunkInfos,
+        string finalMdPath);
 
     void WriteSubChunkTranscriptionResult(string resultsDir, int subChunkIndex, TranscriptionResult result);
 

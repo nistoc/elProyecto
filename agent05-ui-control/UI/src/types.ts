@@ -36,7 +36,10 @@ export interface ChunkVirtualModelEntry {
   isSubChunk?: boolean | null;
   parentChunkIndex?: number | null;
   subChunkIndex?: number | null;
-  /** Multi-line diagnostics from Agent04 (retries, HTTP, completion); cleared on chunk restart. */
+  /**
+   * Multi-line diagnostics from Agent04 (retries, HTTP, completion); cleared on chunk restart.
+   * Each line: ISO8601 timestamp, optional `[warn] ` / `[err] ` (see Agent04 `TranscriptActivityLogFormatter`), then message.
+   */
   transcriptActivityLog?: string | null;
 }
 
@@ -58,6 +61,14 @@ export interface JobResult {
   rawJson?: string;
 }
 
+/** Refiner batch row from SSE snapshot (Agent06 stream via BFF). */
+export interface RefinerThreadBatchSnapshot {
+  batchIndex: number;
+  totalBatches: number;
+  beforeText: string;
+  afterText?: string | null;
+}
+
 export interface JobSnapshot {
   id: string;
   status: JobStatus;
@@ -75,6 +86,16 @@ export interface JobSnapshot {
   jobDirectoryPath?: string | null;
   /** Agent04 gRPC job id (set while transcribing). Optional in API JSON. */
   agent04JobId?: string | null;
+  /** Agent06 refine job id after refiner starts. */
+  agent06RefineJobId?: string | null;
+  /** System + user prompt Agent06 sends to OpenAI for the current batch (SSE). */
+  refinerOpenAiRequestPreview?: string | null;
+  /** From refiner_threads/checkpoint.json (remaining work; survives Agent06 restart). */
+  refinerCheckpointNextBatchIndex0?: number | null;
+  refinerCheckpointTotalBatches?: number | null;
+  refinerCheckpointRemainingBatches?: number | null;
+  /** Live refiner batch rows (SSE from BFF; Agent06 gRPC). UI uses this field only. */
+  refinerThreadBatches?: RefinerThreadBatchSnapshot[] | null;
   /** Last Agent04 / transcription failure message (from gRPC or submit). */
   transcriptionError?: string | null;
   /** Short line for status bar (e.g. automatic HTTP retry with chunk context). */

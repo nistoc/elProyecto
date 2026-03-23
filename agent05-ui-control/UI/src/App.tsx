@@ -8,10 +8,12 @@ import { UploadCard } from './components/UploadCard';
 import { JobsList } from './components/JobsList';
 import { LogsSection } from './components/LogsSection';
 import { ResultSection } from './components/ResultSection';
+import { RefinerStreamLogPanel } from './components/RefinerStreamLogPanel';
+import { RefinerOpenAiPreviewPanel } from './components/RefinerOpenAiPreviewPanel';
+import { RefinerStreamThreadsPanel } from './components/RefinerStreamThreadsPanel';
 import { ProjectFilesPanel } from './components/ProjectFilesPanel';
 import { ChunkControlsStats } from './components/ChunkControlsStats';
 import { playTranscriptionChunkDoneChime } from './utils/playTranscriptionChunkDoneChime';
-
 function AppContent() {
   const { t, locale, setLocale } = useI18n();
   const { theme, toggleTheme } = useTheme();
@@ -32,6 +34,10 @@ function AppContent() {
     handleStart,
     handleReset,
     handleDeleteJob,
+    handleStartRefiner,
+    handlePauseRefiner,
+    handleResumeRefiner,
+    refinerActionBusy,
     jobSnapshotRevision,
     refreshJobSnapshot,
     logsPaused,
@@ -42,6 +48,14 @@ function AppContent() {
 
   const jobFiles = useJobProjectFiles(jobId, jobSnapshotRevision);
   const jobChunkGroups = useJobChunkArtifactGroups(jobId, jobSnapshotRevision);
+
+  /** Keep refiner live panels mounted while refiner is active so SSE updates apply off the Refiner step. */
+  const refinerKeepAlive =
+    !!job &&
+    !!jobId &&
+    (job.phase === 'refiner' ||
+      job.phase === 'refiner_paused' ||
+      (job.phase === 'awaiting_refiner' && !!job.agent06RefineJobId?.trim()));
 
   const steps: { id: StepId; title: string }[] = [
     { id: 'transcriber', title: t('transcriber') },
@@ -187,33 +201,106 @@ function AppContent() {
               </div>
             )}
 
-            {activeStep === 'refiner' && (
-              <div className="step-panel">
+            {(activeStep === 'refiner' || refinerKeepAlive) && (
+              <div
+                className="step-panel step-panel--refiner-split"
+                hidden={activeStep !== 'refiner'}
+              >
                 {job && jobId ? (
                   <>
-                    {job.phase === 'awaiting_refiner' && (
-                      <p className="step-panel__hint">{t('refinerAwaitingHint')}</p>
-                    )}
-                    {job.phase === 'refiner' && (
-                      <p className="step-panel__hint">{t('refinerRunning')}</p>
-                    )}
-                    {job.phase === 'completed' && (
-                      <p className="step-panel__hint">{t('refinerCompleted')}</p>
-                    )}
-                    <LogsSection
-                      title={t('logs')}
-                      logs={job.logs ?? []}
-                      paused={logsPaused}
-                      bufferedCount={bufferedCount}
-                      onTogglePause={toggleLogsPause}
-                      onClearLogs={clearLogsForStep}
-                    />
-                    <ResultSection
-                      jobId={jobId}
-                      job={job}
-                      t={t}
-                      variant="refiner"
-                    />
+                    <div className="step-panel__refiner-left">
+                      {error && (
+                        <p className="step-panel__error" role="alert">
+                          {error}
+                        </p>
+                      )}
+                      {job.phase === 'awaiting_refiner' &&
+                        !job.agent06RefineJobId?.trim() && (
+                          <p className="step-panel__hint">
+                            {t('refinerAwaitingHint')}
+                          </p>
+                        )}
+                      {job.phase === 'awaiting_refiner' &&
+                        job.agent06RefineJobId?.trim() && (
+                          <p className="step-panel__hint">{t('refinerRunning')}</p>
+                        )}
+                      {job.phase === 'refiner' && (
+                        <p className="step-panel__hint">{t('refinerRunning')}</p>
+                      )}
+                      {job.phase === 'refiner_paused' && (
+                        <p className="step-panel__hint">{t('refinerPaused')}</p>
+                      )}
+                      {job.phase === 'refiner_paused' &&
+                        typeof job.refinerCheckpointRemainingBatches === 'number' &&
+                        job.refinerCheckpointRemainingBatches > 0 && (
+                          <p className="step-panel__hint">
+                            {t('refinerCheckpointProgress').replace(
+                              '{n}',
+                              String(job.refinerCheckpointRemainingBatches)
+                            )}
+                          </p>
+                        )}
+                      {job.phase === 'completed' && (
+                        <p className="step-panel__hint">
+                          {t('refinerCompleted')}
+                        </p>
+                      )}
+                      {(job.phase === 'refiner' ||
+                        job.phase === 'refiner_paused' ||
+                        (job.phase === 'awaiting_refiner' &&
+                          job.agent06RefineJobId?.trim())) && (
+                        <div className="step-panel__refiner-actions">
+                          {(job.phase === 'refiner' ||
+                            (job.phase === 'awaiting_refiner' &&
+                              job.agent06RefineJobId?.trim())) && (
+                            <button
+                              type="button"
+                              className="step-panel__refiner-btn"
+                              disabled={refinerActionBusy}
+                              onClick={() => void handlePauseRefiner()}
+                            >
+                              {t('refinerPauseRefiner')}
+                            </button>
+                          )}
+                          {job.phase === 'refiner_paused' && (
+                            <button
+                              type="button"
+                              className="step-panel__refiner-btn step-panel__refiner-btn--primary"
+                              disabled={refinerActionBusy}
+                              onClick={() => void handleResumeRefiner()}
+                            >
+                              {t('refinerResumeRefiner')}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      <RefinerStreamLogPanel
+                        logs={job.logs}
+                        snapshotRevision={jobSnapshotRevision}
+                        t={t}
+                      />
+                      <ResultSection
+                        jobId={jobId}
+                        job={job}
+                        t={t}
+                        variant="refiner"
+                        onRefineFromTranscript={(path) =>
+                          void handleStartRefiner(path)
+                        }
+                        refinerActionBusy={refinerActionBusy}
+                      />
+                      <RefinerOpenAiPreviewPanel
+                        openAiRequestPreview={job.refinerOpenAiRequestPreview}
+                        t={t}
+                      />
+                    </div>
+                    <div className="step-panel__refiner-right">
+                      <RefinerStreamThreadsPanel
+                        batches={job.refinerThreadBatches}
+                        snapshotRevision={jobSnapshotRevision}
+                        t={t}
+                      />
+                    </div>
                   </>
                 ) : (
                   <p className="step-panel__empty">{t('selectJob')}</p>
@@ -427,10 +514,67 @@ function AppContent() {
           overflow-y: auto;
         }
         .step-panel { padding: 1rem; }
+        .step-panel--refiner-split {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(14rem, 1fr);
+          gap: 1rem;
+          align-items: start;
+        }
+        .step-panel__refiner-left { min-width: 0; }
+        .step-panel__refiner-right {
+          position: sticky;
+          top: 0;
+          min-width: 0;
+        }
+        @media (max-width: 960px) {
+          .step-panel--refiner-split {
+            grid-template-columns: 1fr;
+          }
+          .step-panel__refiner-right { position: static; }
+        }
         .step-panel__meta { margin: 0 0 0.5rem 0; font-size: 0.875rem; color: var(--color-text-secondary); }
         .step-panel__files-heading { margin: 1rem 0 0.35rem 0; font-size: 0.9rem; color: var(--color-heading); }
         .step-panel__empty { color: var(--color-text-muted); margin: 0; }
         .step-panel__hint { margin: 0 0 0.75rem 0; font-size: 0.875rem; color: var(--color-label); }
+        .step-panel__error {
+          margin: 0 0 0.75rem 0;
+          padding: 0.5rem 0.65rem;
+          border-radius: 6px;
+          border: 1px solid var(--color-danger, #c62828);
+          background: color-mix(in srgb, var(--color-danger, #c62828) 10%, var(--color-surface));
+          color: var(--color-text);
+          font-size: 0.875rem;
+        }
+        .step-panel__refiner-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+          margin: 0 0 1rem 0;
+        }
+        .step-panel__refiner-btn {
+          padding: 0.4rem 0.85rem;
+          border-radius: 6px;
+          border: 1px solid var(--color-border-strong);
+          background: var(--color-surface);
+          color: var(--color-text);
+          font-size: 0.875rem;
+          cursor: pointer;
+        }
+        .step-panel__refiner-btn:hover:not(:disabled) {
+          background: var(--color-surface-hover);
+        }
+        .step-panel__refiner-btn:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+        .step-panel__refiner-btn--primary {
+          background: var(--color-primary);
+          color: var(--color-on-primary);
+          border-color: var(--color-primary);
+        }
+        .step-panel__refiner-btn--primary:hover:not(:disabled) {
+          background: var(--color-primary-hover);
+        }
         .step-panel__transcription-error {
           margin: 0 0 1rem 0;
           padding: 0.65rem 0.85rem;

@@ -15,6 +15,7 @@ public class JobsController : ControllerBase
     private readonly IJobStore _store;
     private readonly IJobWorkspace _workspace;
     private readonly IPipeline _pipeline;
+    private readonly IRefinerOrchestration _refinerOrchestration;
     private readonly IBroadcaster _broadcaster;
     private readonly ITranscriptionServiceClient _transcription;
     private readonly ILogger<JobsController> _logger;
@@ -23,6 +24,7 @@ public class JobsController : ControllerBase
         IJobStore store,
         IJobWorkspace workspace,
         IPipeline pipeline,
+        IRefinerOrchestration refinerOrchestration,
         IBroadcaster broadcaster,
         ITranscriptionServiceClient transcription,
         ILogger<JobsController> logger)
@@ -30,6 +32,7 @@ public class JobsController : ControllerBase
         _store = store;
         _workspace = workspace;
         _pipeline = pipeline;
+        _refinerOrchestration = refinerOrchestration;
         _broadcaster = broadcaster;
         _transcription = transcription;
         _logger = logger;
@@ -86,6 +89,104 @@ public class JobsController : ControllerBase
         {
             _logger.LogError(ex, "Pipeline failed for job {JobId}", jobId);
         }
+    }
+
+    public sealed record RefinerStartBody(string? TranscriptRelativePath);
+
+    [HttpPost("{id}/refiner/start")]
+    public async Task<ActionResult> StartRefiner(string id, [FromBody] RefinerStartBody? body = null, CancellationToken ct = default)
+    {
+        var rel = body?.TranscriptRelativePath?.Trim();
+        if (rel is { Length: > 0 })
+            _logger.LogInformation("Refiner start requested for job {JobId} with transcript path {Path}", id, rel);
+        try
+        {
+            await _refinerOrchestration.StartRefinerAsync(id, string.IsNullOrEmpty(rel) ? null : rel, ct);
+            return Accepted(new { ok = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Refiner start failed for job {JobId}", id);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("{id}/refiner/pause")]
+    public async Task<ActionResult> PauseRefiner(string id, CancellationToken ct = default)
+    {
+        try
+        {
+            await _refinerOrchestration.PauseRefinerAsync(id, ct);
+            return Ok(new { ok = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "PauseRefiner failed for {JobId}", id);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("{id}/refiner/resume")]
+    public ActionResult ResumeRefiner(string id)
+    {
+        RunResumeInBackground(id);
+        return Ok(new { ok = true });
+    }
+
+    private async void RunResumeInBackground(string jobId)
+    {
+        try
+        {
+            await _refinerOrchestration.ResumeRefinerAsync(jobId, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ResumeRefiner failed for job {JobId}", jobId);
+        }
+    }
+
+    [HttpPost("{id}/refiner/skip")]
+    public async Task<ActionResult> SkipRefiner(string id, CancellationToken ct = default)
+    {
+        try
+        {
+            await _refinerOrchestration.SkipRefinerAsync(id, ct);
+            return Ok(new { ok = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SkipRefiner failed for {JobId}", id);
+            return Conflict(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Load persisted Refiner Threads batch files from <c>refiner_threads/</c> under the job directory.</summary>
+    [HttpGet("{id}/refiner-threads")]
+    public async Task<ActionResult> GetRefinerThreads(string id, CancellationToken ct = default)
+    {
+        var job = await _store.GetAsync(id, ct);
+        var jobDir = _workspace.GetJobDirectoryPath(id);
+        if (job == null && !Directory.Exists(jobDir))
+            return NotFound();
+        var threadsDir = Path.Combine(jobDir, "refiner_threads");
+        if (!Directory.Exists(threadsDir))
+            return Ok(new { batches = Array.Empty<object>() });
+
+        var files = Directory.GetFiles(threadsDir, "batch_*.json").OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+        var batches = new List<object>();
+        foreach (var f in files)
+        {
+            try
+            {
+                var text = await System.IO.File.ReadAllTextAsync(f, ct);
+                batches.Add(JsonSerializer.Deserialize<JsonElement>(text));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Skip invalid refiner thread file {Path}", f);
+            }
+        }
+        return Ok(new { batches });
     }
 
     private async Task PublishEnrichedSnapshotAsync(string jobId, CancellationToken ct)
@@ -462,13 +563,14 @@ public class JobsController : ControllerBase
 
         var action = ParseChunkAction(body.Action.Trim());
         if (action == null)
-            return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "retranscribe", "split", "transcribe_sub", "rebuild_combined", "rebuild_split_merged" } });
+            return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "retranscribe", "split", "transcribe_sub", "rebuild_combined", "rebuild_split_merged", "write_chunk_md" } });
 
         var allowAfterDone = action == TranscriptionChunkAction.Split
             || action == TranscriptionChunkAction.TranscribeSub
             || action == TranscriptionChunkAction.Retranscribe
             || action == TranscriptionChunkAction.RebuildCombined
-            || action == TranscriptionChunkAction.RebuildSplitMerged;
+            || action == TranscriptionChunkAction.RebuildSplitMerged
+            || action == TranscriptionChunkAction.WriteChunkMd;
         if (action == TranscriptionChunkAction.Cancel)
         {
             var st = job.Status ?? "";
@@ -486,7 +588,7 @@ public class JobsController : ControllerBase
             && !string.Equals(job.Status, "running", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(job.Status, "done", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(job.Status, "completed", StringComparison.OrdinalIgnoreCase))
-            return Conflict(new { error = "split / transcribe_sub / retranscribe / rebuild_combined / rebuild_split_merged require status running, done, or completed" });
+            return Conflict(new { error = "split / transcribe_sub / retranscribe / rebuild_combined / rebuild_split_merged / write_chunk_md require status running, done, or completed" });
 
         if (action == TranscriptionChunkAction.Split && (body.SplitParts is null || body.SplitParts < 2))
             return BadRequest(new { error = "split requires splitParts >= 2" });
@@ -523,7 +625,8 @@ public class JobsController : ControllerBase
                 if (string.Equals(result.Message, "transcribe_sub_started", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(result.Message, "retranscribe_started", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(result.Message, "rebuild_combined_started", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(result.Message, "rebuild_split_merged_ok", StringComparison.OrdinalIgnoreCase))
+                    || string.Equals(result.Message, "rebuild_split_merged_ok", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(result.Message, "write_chunk_md_started", StringComparison.OrdinalIgnoreCase))
                     ScheduleTranscribeSubFollowUpSnapshots(id);
             }
             return Ok(new ChunkActionResponse(result.Ok, result.Message));
@@ -550,6 +653,7 @@ public class JobsController : ControllerBase
             "transcribe_sub" => TranscriptionChunkAction.TranscribeSub,
             "rebuild_combined" => TranscriptionChunkAction.RebuildCombined,
             "rebuild_split_merged" => TranscriptionChunkAction.RebuildSplitMerged,
+            "write_chunk_md" => TranscriptionChunkAction.WriteChunkMd,
             _ => null
         };
 

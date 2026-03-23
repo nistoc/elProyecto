@@ -11,7 +11,6 @@
   "timestamp_granularities": ["segment"],
   "openai_speaker_diarization": true,
   "md_output_path": "transcript.md",
-  "raw_json_output_path": "openai_response.json",
 
   "pre_split": true,
   "chunk_overlap_sec": 2.0,

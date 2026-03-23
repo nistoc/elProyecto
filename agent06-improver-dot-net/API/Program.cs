@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Logging.Console;
 using TranslationImprover.Application;
 using TranslationImprover.Composition;
@@ -27,8 +28,23 @@ builder.Logging.AddSimpleConsole(options =>
     options.UseUtcTimestamp = true;
 });
 
-// Graceful shutdown: при остановке (Ctrl+C) хост завершится за ShutdownTimeout и процесс освободит порт
-builder.Host.ConfigureHostOptions(o => o.ShutdownTimeout = TimeSpan.FromSeconds(5));
+// gRPC over http:// (h2c): same pattern as Agent04 — explicit HTTP/2 only on 5033.
+// Default Kestrel (Http1AndHttp2 from launchSettings) can break GrpcChannel + Http2UnencryptedSupport (HTTP_1_1_REQUIRED, RedirectHandler).
+// Port busy: stop the other listener (often a previous run). Windows: netstat -ano | findstr :5033  then  taskkill /PID <pid> /F
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.AllowAlternateSchemes = true;
+    serverOptions.ListenLocalhost(5033, listenOptions =>
+    {
+        listenOptions.Protocols = HttpProtocols.Http2;
+    });
+});
+
+// Graceful shutdown (same idea as Agent04 host tuning; optional Agent06:ShutdownTimeoutSeconds)
+var shutdownSec = builder.Configuration.GetValue("Agent06:ShutdownTimeoutSeconds", 5);
+if (shutdownSec < 1)
+    shutdownSec = 5;
+builder.Host.ConfigureHostOptions(o => o.ShutdownTimeout = TimeSpan.FromSeconds(shutdownSec));
 
 // Expose OpenAI API key from .env for config (same as agent04)
 var openaiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -53,7 +69,11 @@ builder.Services.AddSingleton(new WorkspaceRoot(workspaceRootFull));
 builder.Services.AddHttpClient();
 builder.Services.AddTranslationImproverServices();
 builder.Services.AddControllers();
-builder.Services.AddGrpc();
+builder.Services.AddGrpc(o =>
+{
+    o.MaxReceiveMessageSize = 32 * 1024 * 1024;
+    o.MaxSendMessageSize = 32 * 1024 * 1024;
+});
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -63,7 +83,8 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+// Do not call UseHttpsRedirection: Agent05 connects with GrpcChannel to http://localhost:5033 (h2c). A redirect to
+// HTTPS makes the client follow with RedirectHandler and breaks HTTP/2 (RpcException HTTP_1_1_REQUIRED).
 
 app.MapGet("/", () => Results.Ok(new { service = "TranslationImprover", status = "running" }));
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
