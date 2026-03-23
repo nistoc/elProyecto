@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
+using System.Text;
 using Agent04.Features.Transcription.Application;
 
 namespace Agent04.Features.Transcription.Infrastructure;
@@ -9,6 +11,9 @@ namespace Agent04.Features.Transcription.Infrastructure;
 /// </summary>
 public sealed class AudioUtils : IAudioUtils
 {
+    /// <summary>ffmpeg rejects very small <c>-t</c>; float gaps between silence markers can be ~1e-5 s.</summary>
+    private const double MinSpeechSegmentSec = 0.02;
+
     public string? WhichOr(string? pathKey, string defaultName)
     {
         var name = pathKey ?? defaultName;
@@ -180,5 +185,321 @@ public sealed class AudioUtils : IAudioUtils
         p.WaitForExit();
         if (p.ExitCode != 0)
             throw new InvalidOperationException($"ffmpeg exited with {p.ExitCode}: {p.StandardError.ReadToEnd()}");
+    }
+
+    public IReadOnlyList<SilenceInterval> DetectSilence(
+        string ffmpegPath,
+        string inputPath,
+        SilenceDetectOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(inputPath) || !File.Exists(inputPath))
+            throw new FileNotFoundException("Audio file not found for silence detect", inputPath);
+
+        var noise = options.NoiseDb.ToString(CultureInfo.InvariantCulture);
+        var d = options.MinDurationSec.ToString("G", CultureInfo.InvariantCulture);
+        var detection = options.UseRms ? "rms" : "peak";
+        var afLegacy = $"silencedetect=noise={noise}dB:d={d}";
+        var afWithDetection = $"{afLegacy}:detection={detection}";
+
+        var (exitCode, stderr) = RunSilenceDetect(ffmpegPath, inputPath, afWithDetection, cancellationToken);
+        if (exitCode != 0
+            && stderr.Contains("silencedetect", StringComparison.OrdinalIgnoreCase)
+            && stderr.Contains("Option not found", StringComparison.OrdinalIgnoreCase)
+            && stderr.Contains("detection", StringComparison.OrdinalIgnoreCase))
+        {
+            (exitCode, stderr) = RunSilenceDetect(ffmpegPath, inputPath, afLegacy, cancellationToken);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (exitCode != 0)
+            throw new InvalidOperationException($"ffmpeg silencedetect exited with {exitCode}: {stderr}");
+
+        return SilenceDetectStderrParser.Parse(stderr);
+    }
+
+    private static (int ExitCode, string Stderr) RunSilenceDetect(
+        string ffmpegPath,
+        string inputPath,
+        string audioFilter,
+        CancellationToken cancellationToken)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = ffmpegPath,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        psi.ArgumentList.Add("-hide_banner");
+        psi.ArgumentList.Add("-nostats");
+        psi.ArgumentList.Add("-loglevel");
+        psi.ArgumentList.Add("info");
+        psi.ArgumentList.Add("-i");
+        psi.ArgumentList.Add(inputPath);
+        psi.ArgumentList.Add("-af");
+        psi.ArgumentList.Add(audioFilter);
+        psi.ArgumentList.Add("-f");
+        psi.ArgumentList.Add("null");
+        psi.ArgumentList.Add("-");
+
+        using var p = Process.Start(psi);
+        if (p == null) throw new InvalidOperationException("Failed to start ffmpeg.");
+
+        using (cancellationToken.Register(() =>
+        {
+            try
+            {
+                if (!p.HasExited)
+                    p.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+                // ignore
+            }
+        }))
+        {
+            var stderr = p.StandardError.ReadToEnd();
+            p.WaitForExit();
+            return (p.ExitCode, stderr);
+        }
+    }
+
+    public SilenceCompressionReport WriteWavWithCompressedSilence(
+        string ffmpegPath,
+        string ffprobePath,
+        string inputPath,
+        string outputWavPath,
+        SilenceDetectOptions detectOptions,
+        double keepSilenceSec,
+        IReadOnlyList<SilenceInterval>? precomputedSilence = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(inputPath) || !File.Exists(inputPath))
+            throw new FileNotFoundException("Audio file not found for silence compression", inputPath);
+
+        var raw = precomputedSilence ?? DetectSilence(ffmpegPath, inputPath, detectOptions, cancellationToken);
+        var intervals = NormalizeSilenceIntervals(raw);
+        var (durationSeconds, _) = GetDurationAndSize(ffprobePath, inputPath);
+        if (durationSeconds <= 0)
+            throw new InvalidOperationException("ffprobe returned zero duration; cannot compress silence.");
+
+        var outFull = Path.GetFullPath(outputWavPath);
+        var inFull = Path.GetFullPath(inputPath);
+
+        if (intervals.Count == 0)
+            return FinishSilenceCompressionNoRegions(
+                inputPath, outputWavPath, inFull, outFull, durationSeconds, keepSilenceSec, ffprobePath);
+
+        var totalSilence = intervals.Sum(x => x.DurationSec);
+        var shortened = totalSilence - intervals.Count * Math.Max(0, keepSilenceSec);
+
+        var tempRoot = Path.Combine(Path.GetTempPath(), "agent04_silence_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var concatLines = CollectSpeechAndGapConcatLines(
+                ffmpegPath,
+                inputPath,
+                tempRoot,
+                intervals,
+                durationSeconds,
+                keepSilenceSec,
+                cancellationToken);
+            if (concatLines.Count == 0)
+                throw new InvalidOperationException("Silence compression produced no audio segments.");
+
+            var listPath = Path.Combine(tempRoot, "concat.txt");
+            File.WriteAllText(listPath, string.Join(Environment.NewLine, concatLines) + Environment.NewLine, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+            var workOut = string.Equals(inFull, outFull, StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(tempRoot, "output.wav")
+                : outFull;
+
+            var dirOut = Path.GetDirectoryName(workOut);
+            if (!string.IsNullOrEmpty(dirOut))
+                Directory.CreateDirectory(dirOut);
+
+            RunFfmpeg(ffmpegPath, new[]
+            {
+                "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "concat", "-safe", "0",
+                "-i", listPath,
+                "-c", "copy",
+                workOut
+            });
+
+            if (!string.Equals(workOut, outFull, StringComparison.OrdinalIgnoreCase))
+                File.Move(workOut, outFull, overwrite: true);
+
+            var (outputDuration, _) = GetDurationAndSize(ffprobePath, outFull);
+            return new SilenceCompressionReport
+            {
+                InputPath = inputPath,
+                OutputPath = outputWavPath,
+                InputDurationSec = durationSeconds,
+                OutputDurationSec = outputDuration,
+                KeepSilenceSec = keepSilenceSec,
+                SilenceRegions = intervals,
+                TotalSilenceDurationSec = totalSilence,
+                EstimatedShortenedSec = shortened,
+                AppliedCompression = true
+            };
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+    }
+
+    private SilenceCompressionReport FinishSilenceCompressionNoRegions(
+        string inputPath,
+        string outputWavPath,
+        string inFull,
+        string outFull,
+        double durationSeconds,
+        double keepSilenceSec,
+        string ffprobePath)
+    {
+        if (!string.Equals(inFull, outFull, StringComparison.OrdinalIgnoreCase))
+        {
+            var dir = Path.GetDirectoryName(outFull);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+            File.Copy(inputPath, outputWavPath, overwrite: true);
+        }
+
+        var (outDur, _) = string.Equals(inFull, outFull, StringComparison.OrdinalIgnoreCase)
+            ? (durationSeconds, 0L)
+            : GetDurationAndSize(ffprobePath, outFull);
+        return new SilenceCompressionReport
+        {
+            InputPath = inputPath,
+            OutputPath = string.Equals(inFull, outFull, StringComparison.OrdinalIgnoreCase) ? inputPath : outputWavPath,
+            InputDurationSec = durationSeconds,
+            OutputDurationSec = outDur,
+            KeepSilenceSec = keepSilenceSec,
+            SilenceRegions = Array.Empty<SilenceInterval>(),
+            TotalSilenceDurationSec = 0,
+            EstimatedShortenedSec = 0,
+            AppliedCompression = false
+        };
+    }
+
+    private static List<string> CollectSpeechAndGapConcatLines(
+        string ffmpegPath,
+        string inputPath,
+        string tempRoot,
+        List<SilenceInterval> intervals,
+        double durationSeconds,
+        double keepSilenceSec,
+        CancellationToken cancellationToken)
+    {
+        var concatLines = new List<string>();
+        var gapPath = Path.Combine(tempRoot, "gap.wav");
+        if (keepSilenceSec > 1e-6)
+            WriteGapSilenceWav(ffmpegPath, gapPath, keepSilenceSec);
+
+        var segIndex = 0;
+        var cursor = 0.0;
+        foreach (var iv in intervals)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (iv.StartSec > cursor + 1e-9)
+            {
+                var speechDur = iv.StartSec - cursor;
+                if (speechDur >= MinSpeechSegmentSec)
+                {
+                    var seg = Path.Combine(tempRoot, $"seg_{segIndex++:D5}.wav");
+                    ExtractPcm16kMonoWavSegment(ffmpegPath, inputPath, cursor, speechDur, seg);
+                    concatLines.Add(FormatConcatDemuxerLine(seg));
+                }
+            }
+
+            if (keepSilenceSec > 1e-6)
+                concatLines.Add(FormatConcatDemuxerLine(gapPath));
+
+            cursor = iv.EndSec;
+        }
+
+        var tailDur = durationSeconds - cursor;
+        if (tailDur >= MinSpeechSegmentSec)
+        {
+            var seg = Path.Combine(tempRoot, $"seg_{segIndex++:D5}.wav");
+            ExtractPcm16kMonoWavSegment(ffmpegPath, inputPath, cursor, tailDur, seg);
+            concatLines.Add(FormatConcatDemuxerLine(seg));
+        }
+
+        return concatLines;
+    }
+
+    private static List<SilenceInterval> NormalizeSilenceIntervals(IReadOnlyList<SilenceInterval> raw)
+    {
+        if (raw.Count == 0)
+            return new List<SilenceInterval>();
+
+        var sorted = raw.OrderBy(x => x.StartSec).ToList();
+        var merged = new List<SilenceInterval> { sorted[0] };
+        for (var i = 1; i < sorted.Count; i++)
+        {
+            var cur = sorted[i];
+            var last = merged[^1];
+            if (cur.StartSec <= last.EndSec + 1e-9)
+            {
+                var end = Math.Max(last.EndSec, cur.EndSec);
+                merged[^1] = new SilenceInterval(last.StartSec, end, end - last.StartSec);
+            }
+            else
+                merged.Add(cur);
+        }
+
+        return merged;
+    }
+
+    private static string FormatConcatDemuxerLine(string path)
+    {
+        var p = Path.GetFullPath(path).Replace('\\', '/');
+        p = p.Replace("'", "'\\''", StringComparison.Ordinal);
+        return $"file '{p}'";
+    }
+
+    private static void WriteGapSilenceWav(string ffmpegPath, string outputPath, double keepSec)
+    {
+        var t = keepSec.ToString("G", CultureInfo.InvariantCulture);
+        RunFfmpeg(ffmpegPath, new[]
+        {
+            "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono",
+            "-t", t,
+            "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+            outputPath
+        });
+    }
+
+    private static void ExtractPcm16kMonoWavSegment(string ffmpegPath, string inputPath, double startSeconds, double durationSeconds, string outputPath)
+    {
+        var dir = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+        var ss = startSeconds.ToString("G", CultureInfo.InvariantCulture);
+        var dur = durationSeconds.ToString("G", CultureInfo.InvariantCulture);
+        RunFfmpeg(ffmpegPath, new[]
+        {
+            "-y", "-hide_banner", "-loglevel", "error",
+            "-i", inputPath,
+            "-ss", ss,
+            "-t", dur,
+            "-acodec", "pcm_s16le",
+            "-ar", "16000",
+            "-ac", "1",
+            outputPath
+        });
     }
 }

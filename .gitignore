@@ -236,3 +236,4 @@ paket-files/
 temp/
 tools/
 publish/
+.cursor/

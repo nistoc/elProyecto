@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using Agent04.Features.Transcription.Application;
@@ -155,6 +156,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         try
         {
         var workingPath = await ConvertToWavIfNeededAsync(config, inputFilePath, artifactRoot, cancellationToken);
+        workingPath = await MaybeApplySilenceProcessingAsync(config, workingPath, artifactRoot, cancellationToken);
         var baseName = Path.GetFileNameWithoutExtension(Path.GetFileName(inputFilePath));
         var mdRel = ResolveOutputPattern(config.MdOutputPath, baseName, jobId);
         var jsonRel = ResolveOutputPattern(config.RawJsonOutputPath, baseName, jobId);
@@ -470,6 +472,65 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         var wavRel = config.Get<string>("wav_output_dir") ?? "converted_wav";
         var wavDir = Path.Combine(workspaceRoot, wavRel);
         return await Task.Run(() => _audioUtils.ConvertToWav(ffmpeg, filePath, wavDir), ct);
+    }
+
+    private async Task<string> MaybeApplySilenceProcessingAsync(
+        TranscriptionConfig config,
+        string workingPath,
+        string artifactRoot,
+        CancellationToken ct)
+    {
+        var silence = SilenceJobSettings.FromConfig(config);
+        if (!silence.ShouldRun)
+        {
+            SilenceProcessingSupport.LogSkipped(_logger);
+            return workingPath;
+        }
+
+        var ffmpeg = _audioUtils.WhichOr(config.FfmpegPath, "ffmpeg") ?? "ffmpeg";
+        var ffprobe = _audioUtils.WhichOr(config.FfprobePath, "ffprobe") ?? "ffprobe";
+
+        return await Task.Run(() =>
+        {
+            IReadOnlyList<SilenceInterval> intervals;
+            try
+            {
+                intervals = _audioUtils.DetectSilence(ffmpeg, workingPath, silence.DetectOptions, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Silence detection failed for {Path}; continuing with original audio.", workingPath);
+                return workingPath;
+            }
+
+            SilenceProcessingSupport.LogDetectSummary(_logger, workingPath, intervals, silence);
+            SilenceProcessingSupport.TryWriteDetectReportJson(_logger, workingPath, artifactRoot, intervals, silence);
+
+            if (!silence.CompressOn)
+                return workingPath;
+
+            var outPath = SilenceProcessingSupport.ResolveCompressedWavPath(workingPath, artifactRoot, silence);
+            try
+            {
+                var report = _audioUtils.WriteWavWithCompressedSilence(
+                    ffmpeg,
+                    ffprobe,
+                    workingPath,
+                    outPath,
+                    silence.DetectOptions,
+                    silence.KeepSilenceSec,
+                    intervals,
+                    ct);
+                SilenceProcessingSupport.LogCompressionResult(_logger, report, silence.KeepSilenceSec);
+                SilenceProcessingSupport.TryWriteCompressionReportJson(_logger, outPath, artifactRoot, report, silence);
+                return outPath;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Silence compression failed for {Path}; continuing with original audio.", workingPath);
+                return workingPath;
+            }
+        }, ct);
     }
 
     private async Task<IReadOnlyList<ChunkInfo>> PrepareChunksAsync(TranscriptionConfig config, string filePath, string splitWorkdirFull, CancellationToken ct)

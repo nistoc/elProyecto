@@ -36,5 +36,13 @@
   "max_duration_minutes": 0,
   "parallel_transcription_workers": 6,
   "progress_time_format": "HH:MM:SS.M",
-  "clean_before_run": true
+  "clean_before_run": true,
+  "silence_detect_enabled": true,
+  "silence_noise_db": -40,
+  "silence_min_duration_sec": 0.3,
+  "silence_detection": "rms",
+  "silence_compress_enabled": true,
+  "silence_keep_sec": 0.2,
+  "silence_output_suffix": "_silc",
+  "silence_write_report_json": true
 }

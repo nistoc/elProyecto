@@ -28,4 +28,22 @@ public interface IAudioUtils
 
     /// <summary>Like <see cref="ExtractAudioSegmentCopy"/>; on ffmpeg failure, re-encodes to PCM s16le 16 kHz (agent01 split fallback).</summary>
     void ExtractAudioSegmentCopyOrReencode(string ffmpegPath, string inputPath, double startSeconds, double durationSeconds, string outputPath);
+
+    /// <summary>Run ffmpeg <c>silencedetect</c> and return closed intervals <c>[start,end]</c>.</summary>
+    IReadOnlyList<SilenceInterval> DetectSilence(string ffmpegPath, string inputPath, SilenceDetectOptions options, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Replace each detected silence run with a short gap (<paramref name="keepSilenceSec"/>); non-silent audio is kept in order.
+    /// Requires PCM-friendly segments; re-encodes slices to 16 kHz mono WAV. Output is WAV (pcm_s16le).
+    /// If <paramref name="precomputedSilence"/> is set, skips an extra ffmpeg silencedetect pass.
+    /// </summary>
+    SilenceCompressionReport WriteWavWithCompressedSilence(
+        string ffmpegPath,
+        string ffprobePath,
+        string inputPath,
+        string outputWavPath,
+        SilenceDetectOptions detectOptions,
+        double keepSilenceSec,
+        IReadOnlyList<SilenceInterval>? precomputedSilence = null,
+        CancellationToken cancellationToken = default);
 }
