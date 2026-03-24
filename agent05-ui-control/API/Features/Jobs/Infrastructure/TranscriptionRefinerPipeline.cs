@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Text.Json;
@@ -177,6 +178,7 @@ public sealed class TranscriptionRefinerPipeline : IPipeline, IRefinerOrchestrat
                     s.TranscriptionError = null;
                     s.TranscriptionProgressPercent = 100;
                     s.TranscriptionPhaseDetail = null;
+                    s.TranscriptionSilenceTimeline = null;
                 }
                 else if (update.State == "Failed" || update.State == "Cancelled")
                 {
@@ -186,6 +188,7 @@ public sealed class TranscriptionRefinerPipeline : IPipeline, IRefinerOrchestrat
                         : update.ErrorMessage;
                     s.TranscriptionProgressPercent = null;
                     s.TranscriptionPhaseDetail = null;
+                    s.TranscriptionSilenceTimeline = null;
                 }
                 else
                 {
@@ -193,6 +196,19 @@ public sealed class TranscriptionRefinerPipeline : IPipeline, IRefinerOrchestrat
                     s.TranscriptionPhaseDetail = string.IsNullOrWhiteSpace(update.CurrentPhase)
                         ? null
                         : update.CurrentPhase;
+                    s.TranscriptionSilenceTimeline = update.SilenceTimeline == null
+                        ? null
+                        : new TranscriptionSilenceTimelineSnapshotDto
+                        {
+                            SourceDurationSec = update.SilenceTimeline.SourceDurationSec,
+                            Regions = update.SilenceTimeline.Regions
+                                .Select(r => new TranscriptionSilenceRegionDto
+                                {
+                                    StartSec = r.StartSec,
+                                    EndSec = r.EndSec
+                                })
+                                .ToList()
+                        };
                 }
             }, ct);
             Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));

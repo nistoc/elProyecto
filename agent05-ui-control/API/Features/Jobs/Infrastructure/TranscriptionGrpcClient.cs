@@ -1,3 +1,4 @@
+using System.Linq;
 using Agent04.Proto;
 using Grpc.Core;
 using Grpc.Net.Client;
@@ -78,7 +79,8 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
                 update.JsonOutputPath,
                 update.ErrorMessage,
                 vm,
-                string.IsNullOrEmpty(update.TranscriptionFooterHint) ? null : update.TranscriptionFooterHint);
+                string.IsNullOrEmpty(update.TranscriptionFooterHint) ? null : update.TranscriptionFooterHint,
+                MapSilenceTimeline(update.SilenceSourceDurationSec, update.SilenceRegions));
         }
     }
 
@@ -110,13 +112,30 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
                 resp.JsonOutputPath,
                 resp.ErrorMessage,
                 vm,
-                string.IsNullOrEmpty(resp.TranscriptionFooterHint) ? null : resp.TranscriptionFooterHint);
+                string.IsNullOrEmpty(resp.TranscriptionFooterHint) ? null : resp.TranscriptionFooterHint,
+                MapSilenceTimeline(resp.SilenceSourceDurationSec, resp.SilenceRegions));
         }
         catch (RpcException ex)
         {
             _logger.LogDebug(ex, "Agent04 GetJobStatus failed for {JobId}", agent04JobId);
             return null;
         }
+    }
+
+    private static Application.TranscriptionSilenceTimelineSnapshot? MapSilenceTimeline(
+        double sourceDurationSec,
+        RepeatedField<SilenceTimelineRegion>? regions)
+    {
+        if (sourceDurationSec <= 0 && (regions == null || regions.Count == 0))
+            return null;
+        if (regions == null || regions.Count == 0)
+            return new Application.TranscriptionSilenceTimelineSnapshot(
+                sourceDurationSec,
+                Array.Empty<Application.TranscriptionSilenceRegion>());
+        var list = new List<Application.TranscriptionSilenceRegion>(regions.Count);
+        foreach (var r in regions)
+            list.Add(new Application.TranscriptionSilenceRegion(r.StartSec, r.EndSec));
+        return new Application.TranscriptionSilenceTimelineSnapshot(sourceDurationSec, list);
     }
 
     private static void AppendClientChunkVirtualModel(

@@ -184,6 +184,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         var lastUpdated = "";
         var lastChunkSig = "";
         var lastFooter = "";
+        var lastSilenceSig = "";
         IReadOnlyList<ChunkVirtualModelEntry>? mergedVm = request.ClientChunkVirtualModel.Count > 0
             ? request.ClientChunkVirtualModel.ToList()
             : null;
@@ -201,12 +202,15 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             mergedVm = ChunkVirtualModelMerge.Merge(mergedVm, liveVm);
             var chunkSig = ChunkVirtualModelSignature(mergedVm);
             var footer = _telemetryHub?.GetFooterHint(job.JobId) ?? "";
-            if (state != lastState || updated != lastUpdated || chunkSig != lastChunkSig || footer != lastFooter)
+            var silenceSig = BuildSilenceTimelineSignature(job);
+            if (state != lastState || updated != lastUpdated || chunkSig != lastChunkSig || footer != lastFooter
+                || silenceSig != lastSilenceSig)
             {
                 lastState = state;
                 lastUpdated = updated;
                 lastChunkSig = chunkSig;
                 lastFooter = footer;
+                lastSilenceSig = silenceSig;
                 var msg = new Agent04.Proto.JobStatusUpdate
                 {
                     JobId = job.JobId,
@@ -221,6 +225,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                     ErrorMessage = job.ErrorMessage ?? "",
                     TranscriptionFooterHint = footer
                 };
+                CopySilenceTimelineToUpdate(job, msg);
                 foreach (var e in mergedVm)
                     msg.ChunkVirtualModel.Add(e.Clone());
                 await responseStream.WriteAsync(msg);
@@ -980,9 +985,37 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             ErrorMessage = job.ErrorMessage ?? "",
             TranscriptionFooterHint = _telemetryHub?.GetFooterHint(job.JobId) ?? ""
         };
+        CopySilenceTimelineToResponse(job, r);
         foreach (var e in mergedVm)
             r.ChunkVirtualModel.Add(e.Clone());
         return r;
+    }
+
+    private static string BuildSilenceTimelineSignature(JobStatus job)
+    {
+        var regions = job.SilenceTimelineRegions;
+        var n = regions.Count;
+        if (n == 0)
+            return $"{job.SilenceSourceDurationSec:F4}:0";
+        var a = regions[0];
+        var b = regions[n - 1];
+        return $"{job.SilenceSourceDurationSec:F4}:{n}:{a.StartSec:F2}:{a.EndSec:F2}:{b.StartSec:F2}:{b.EndSec:F2}";
+    }
+
+    private static void CopySilenceTimelineToResponse(JobStatus job, JobStatusResponse target)
+    {
+        target.SilenceSourceDurationSec = job.SilenceSourceDurationSec;
+        target.SilenceRegions.Clear();
+        foreach (var x in job.SilenceTimelineRegions)
+            target.SilenceRegions.Add(new SilenceTimelineRegion { StartSec = x.StartSec, EndSec = x.EndSec });
+    }
+
+    private static void CopySilenceTimelineToUpdate(JobStatus job, Agent04.Proto.JobStatusUpdate target)
+    {
+        target.SilenceSourceDurationSec = job.SilenceSourceDurationSec;
+        target.SilenceRegions.Clear();
+        foreach (var x in job.SilenceTimelineRegions)
+            target.SilenceRegions.Add(new SilenceTimelineRegion { StartSec = x.StartSec, EndSec = x.EndSec });
     }
 
     private IReadOnlyList<ChunkVirtualModelEntry> BuildChunkVirtualModel(string agent04JobId, int totalChunks)

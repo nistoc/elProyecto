@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using Grpc.Core;
@@ -237,6 +238,20 @@ public class JobsController : ControllerBase
             {
                 snap.TranscriptionProgressPercent = live.ProgressPercent;
                 snap.TranscriptionPhaseDetail = string.IsNullOrWhiteSpace(live.CurrentPhase) ? null : live.CurrentPhase;
+
+                snap.TranscriptionSilenceTimeline = live.SilenceTimeline == null
+                    ? null
+                    : new TranscriptionSilenceTimelineSnapshotDto
+                    {
+                        SourceDurationSec = live.SilenceTimeline.SourceDurationSec,
+                        Regions = live.SilenceTimeline.Regions
+                            .Select(r => new TranscriptionSilenceRegionDto
+                            {
+                                StartSec = r.StartSec,
+                                EndSec = r.EndSec
+                            })
+                            .ToList()
+                    };
             }
         }
         catch (Exception ex)

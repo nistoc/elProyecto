@@ -73,6 +73,15 @@ message JobStatusResponse {
   repeated ChunkVirtualModelEntry chunk_virtual_model = 14;
   /// Latest concise line for operator UI (e.g. automatic transcription HTTP retry).
   string transcription_footer_hint = 15;
+  /// Duration of source audio used for silence detection (seconds). 0 = not set.
+  double silence_source_duration_sec = 16;
+  /// Merged silence intervals (seconds on source timeline) for UI strip; may be capped server-side.
+  repeated SilenceTimelineRegion silence_regions = 17;
+}
+
+message SilenceTimelineRegion {
+  double start_sec = 1;
+  double end_sec = 2;
 }
 
 message QueryJobsRequest {
@@ -107,6 +116,8 @@ message JobStatusUpdate {
   string error_message = 8;
   repeated ChunkVirtualModelEntry chunk_virtual_model = 11;
   string transcription_footer_hint = 12;
+  double silence_source_duration_sec = 13;
+  repeated SilenceTimelineRegion silence_regions = 14;
 }
 
 enum ChunkCommandAction {

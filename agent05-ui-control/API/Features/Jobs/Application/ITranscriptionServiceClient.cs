@@ -87,6 +87,12 @@ public sealed class SubChunkArtifactGroupJson
 
 public record SubmitJobResult(string JobId);
 
+public sealed record TranscriptionSilenceRegion(double StartSec, double EndSec);
+
+public sealed record TranscriptionSilenceTimelineSnapshot(
+    double SourceDurationSec,
+    IReadOnlyList<TranscriptionSilenceRegion> Regions);
+
 public record JobStatusUpdate(
     string JobId,
     string State,
@@ -98,4 +104,5 @@ public record JobStatusUpdate(
     string? JsonOutputPath,
     string? ErrorMessage,
     IReadOnlyList<ChunkVirtualModelEntry>? ChunkVirtualModel = null,
-    string? TranscriptionFooterHint = null);
+    string? TranscriptionFooterHint = null,
+    TranscriptionSilenceTimelineSnapshot? SilenceTimeline = null);

@@ -131,6 +131,9 @@ const messages: Record<Locale, Record<string, string>> = {
     silencePanelAriaLabel: 'Silence cleanup and audio preparation',
     silencePanelIndeterminate: 'In progress',
     silencePanelProgressAria: '{current} of {total} speech segments, progress bar {percent}%',
+    silencePanelTimelineCaption:
+      'Red segments: detected silence on the source file (approximate position of current work from the line below).',
+    silencePanelTimelineApproximate: 'Showing at most 500 intervals (sampled when there are many).',
     chunkStatsAudio: 'Chunk audio',
     chunkStatsJson: 'Chunk JSON',
     chunkStatsNoAudioInRow: 'No audio file in this row',
@@ -332,6 +335,9 @@ const messages: Record<Locale, Record<string, string>> = {
     silencePanelIndeterminate: 'Выполняется',
     silencePanelProgressAria:
       '{current} из {total} речевых сегментов, полоса прогресса {percent}%',
+    silencePanelTimelineCaption:
+      'Красные отрезки: найденная тишина на исходном файле (примерная позиция текущей работы — в строке ниже).',
+    silencePanelTimelineApproximate: 'Показано не более 500 интервалов (при большом числе — выборка).',
     chunkStatsAudio: 'Аудио чанка',
     chunkStatsJson: 'JSON чанка',
     chunkStatsNoAudioInRow: 'Нет аудио в этой строке',
@@ -535,6 +541,9 @@ const messages: Record<Locale, Record<string, string>> = {
     silencePanelIndeterminate: 'En curso',
     silencePanelProgressAria:
       '{current} de {total} segmentos de voz, barra al {percent}%',
+    silencePanelTimelineCaption:
+      'Segmentos rojos: silencio detectado en el archivo (la posición aproximada del trabajo actual está en la línea de abajo).',
+    silencePanelTimelineApproximate: 'Se muestran como máximo 500 intervalos (muestreados si hay muchos).',
     chunkStatsAudio: 'Audio del fragmento',
     chunkStatsJson: 'JSON del fragmento',
     chunkStatsNoAudioInRow: 'Sin audio en esta fila',

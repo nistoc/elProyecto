@@ -53,6 +53,9 @@ public class JobSnapshot
     /// <summary>Agent04 <c>progress_percent</c> during transcription; not persisted.</summary>
     public int? TranscriptionProgressPercent { get; set; }
 
+    /// <summary>Silence intervals on the source timeline (seconds) for UI; not persisted.</summary>
+    public TranscriptionSilenceTimelineSnapshotDto? TranscriptionSilenceTimeline { get; set; }
+
     /// <summary>
     /// One-line debug from last live VM merge (GET / merge Agent04). Not persisted; copy into bug reports.
     /// </summary>
@@ -81,6 +84,18 @@ public class JobSnapshot
 
     /// <summary>Live refiner batch rows (from Agent06 gRPC stream); 0-based batch index.</summary>
     public IReadOnlyList<RefinerThreadBatchEntry>? RefinerThreadBatches { get; set; }
+}
+
+public sealed class TranscriptionSilenceTimelineSnapshotDto
+{
+    public double SourceDurationSec { get; set; }
+    public List<TranscriptionSilenceRegionDto> Regions { get; set; } = new();
+}
+
+public sealed class TranscriptionSilenceRegionDto
+{
+    public double StartSec { get; set; }
+    public double EndSec { get; set; }
 }
 
 public sealed class RefinerThreadBatchEntry

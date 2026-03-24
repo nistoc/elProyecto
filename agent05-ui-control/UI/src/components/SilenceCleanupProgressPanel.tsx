@@ -73,6 +73,25 @@ function formatMmSs(totalSeconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+/** Parses `Silence: segment N/M (~ 5:30 timeline)` or `~ 01:05:30 timeline` from Agent04 footer. */
+function parseTimelinePositionSec(footer: string): number | null {
+  const m = footer.match(
+    /\(\s*~\s*(\d+):(\d+)(?::(\d+))?\s*timeline\s*\)/i
+  );
+  if (!m) return null;
+  if (m[3] !== undefined) {
+    const h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const s = parseInt(m[3], 10);
+    if (![h, min, s].every((x) => Number.isFinite(x))) return null;
+    return h * 3600 + min * 60 + s;
+  }
+  const min = parseInt(m[1], 10);
+  const s = parseInt(m[2], 10);
+  if (![min, s].every((x) => Number.isFinite(x))) return null;
+  return min * 60 + s;
+}
+
 export function SilenceCleanupProgressPanel({
   job,
   t,
@@ -121,6 +140,22 @@ export function SilenceCleanupProgressPanel({
   const titleKey = titleKeyForDetail(detail);
   const elapsedSec = Math.floor((Date.now() - stepStartedAt) / 1000);
 
+  const timeline = job.transcriptionSilenceTimeline;
+  const durationSec =
+    timeline != null && timeline.sourceDurationSec > 0
+      ? timeline.sourceDurationSec
+      : 0;
+  const regions = timeline?.regions ?? [];
+  const playheadSec = parseTimelinePositionSec(footer);
+  const playheadPct =
+    durationSec > 0 &&
+    playheadSec != null &&
+    Number.isFinite(playheadSec) &&
+    playheadSec >= 0
+      ? Math.min(100, Math.max(0, (playheadSec / durationSec) * 100))
+      : null;
+  const showTimelineStrip = durationSec > 0;
+
   if (!visible) return null;
 
   return (
@@ -142,6 +177,51 @@ export function SilenceCleanupProgressPanel({
         <p className="silence-panel__technical" title={detail}>
           {detail}
         </p>
+      ) : null}
+      {showTimelineStrip ? (
+        <>
+          <div
+            className="silence-panel__timeline"
+            role="img"
+            aria-label={t('silencePanelTimelineCaption')}
+          >
+            {regions.map((r, i) => {
+              const start = Math.max(0, r.startSec);
+              const end = Math.max(start, r.endSec);
+              const left = Math.min(100, Math.max(0, (start / durationSec) * 100));
+              const right = Math.min(
+                100,
+                Math.max(left, (end / durationSec) * 100)
+              );
+              const w = Math.max(0, right - left);
+              if (w <= 0) return null;
+              return (
+                <div
+                  key={`${i}-${start}-${end}`}
+                  className="silence-panel__timeline-region"
+                  style={{ left: `${left}%`, width: `${w}%` }}
+                />
+              );
+            })}
+            {playheadPct != null ? (
+              <div
+                className="silence-panel__timeline-head"
+                style={{ left: `${playheadPct}%` }}
+                title={
+                  playheadSec != null ? formatMmSs(playheadSec) : undefined
+                }
+              />
+            ) : null}
+          </div>
+          <p className="silence-panel__timeline-caption">
+            {t('silencePanelTimelineCaption')}
+          </p>
+          {regions.length >= 500 ? (
+            <p className="silence-panel__timeline-approx">
+              {t('silencePanelTimelineApproximate')}
+            </p>
+          ) : null}
+        </>
       ) : null}
       <div
         className="silence-panel__track"
@@ -215,6 +295,47 @@ export function SilenceCleanupProgressPanel({
           line-height: 1.35;
           color: var(--color-text-secondary);
           word-break: break-word;
+        }
+        .silence-panel__timeline {
+          position: relative;
+          height: 10px;
+          margin: 0 0 0.25rem 0;
+          border-radius: 4px;
+          background: var(--color-border);
+          overflow: hidden;
+        }
+        .silence-panel__timeline-region {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          background: rgba(183, 28, 28, 0.42);
+          border-radius: 1px;
+          box-sizing: border-box;
+          min-width: 1px;
+        }
+        .silence-panel__timeline-head {
+          position: absolute;
+          top: -1px;
+          bottom: -1px;
+          width: 2px;
+          margin-left: -1px;
+          background: var(--color-heading);
+          opacity: 0.9;
+          z-index: 2;
+          pointer-events: none;
+        }
+        .silence-panel__timeline-caption {
+          margin: 0 0 0.35rem 0;
+          font-size: 0.65rem;
+          line-height: 1.35;
+          color: var(--color-text-secondary);
+        }
+        .silence-panel__timeline-approx {
+          margin: 0 0 0.35rem 0;
+          font-size: 0.62rem;
+          line-height: 1.3;
+          color: var(--color-text-secondary);
+          font-style: italic;
         }
         .silence-panel__track {
           position: relative;

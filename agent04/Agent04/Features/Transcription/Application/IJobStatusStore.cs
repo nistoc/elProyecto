@@ -27,6 +27,12 @@ public sealed class JobStatusUpdate
     public string? MdOutputPath { get; set; }
     public string? JsonOutputPath { get; set; }
     public string? ErrorMessage { get; set; }
+    /// <summary>When true, clears <see cref="JobStatus.SilenceSourceDurationSec"/> and regions.</summary>
+    public bool? ClearSilenceTimeline { get; set; }
+    /// <summary>Source file duration (seconds) for normalizing silence regions on the UI timeline.</summary>
+    public double? SilenceSourceDurationSec { get; set; }
+    /// <summary>Merged silence intervals to remove (seconds on source). Null = leave unchanged.</summary>
+    public IReadOnlyList<SilenceTimelineRegionDto>? SilenceTimelineRegions { get; set; }
 }
 
 public enum JobState { Pending, Running, Completed, Failed, Cancelled }
@@ -48,6 +54,11 @@ public sealed class JobStatus
     public string? ErrorMessage { get; set; }
     public string? CallbackUrl { get; set; }
     public IReadOnlyList<string> Tags { get; set; } = Array.Empty<string>();
+    /// <summary>Duration of the WAV used for silence detect (seconds). 0 if unset.</summary>
+    public double SilenceSourceDurationSec { get; set; }
+    /// <summary>Silence runs to compress away; coordinates are seconds on <see cref="SilenceSourceDurationSec"/> timeline.</summary>
+    public IReadOnlyList<SilenceTimelineRegionDto> SilenceTimelineRegions { get; set; } =
+        Array.Empty<SilenceTimelineRegionDto>();
 }
 
 public sealed class JobListFilter

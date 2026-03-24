@@ -213,6 +213,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             workingPath,
             artifactRoot,
             cancellationToken,
+            jobId,
+            statusStore,
             onDetectingStart: () =>
             {
                 UpdateProgress(JobState.Running, 1, "Detecting silence", null, null, null, null, null);
@@ -251,6 +253,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         if (jobId != null)
             _telemetryHub?.ClearFooterHint(jobId);
+        if (jobId != null && statusStore != null)
+            statusStore.Update(jobId, new JobStatusUpdate { ClearSilenceTimeline = true });
 
         StepStart(jobId ?? "", "chunking", "phase");
         var splitWorkdirFull = Path.Combine(artifactRoot, config.SplitWorkdir);
@@ -569,6 +573,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         string workingPath,
         string artifactRoot,
         CancellationToken ct,
+        string? agentJobId,
+        IJobStatusStore? statusStore,
         Action? onDetectingStart,
         Action? onCompressStart,
         IProgress<SilenceCompressionProgress>? compressionProgress)
@@ -600,6 +606,22 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         SilenceProcessingSupport.LogDetectSummary(_logger, workingPath, intervals, silence);
         SilenceProcessingSupport.TryWriteDetectReportJson(_logger, workingPath, artifactRoot, intervals, silence);
+
+        if (agentJobId != null && statusStore != null)
+        {
+            var (durSec, _) = _audioUtils.GetDurationAndSize(ffprobe, workingPath);
+            if (durSec > 0)
+            {
+                var capped = SilenceTimelineUiCap.Cap(intervals);
+                statusStore.Update(
+                    agentJobId,
+                    new JobStatusUpdate
+                    {
+                        SilenceSourceDurationSec = durSec,
+                        SilenceTimelineRegions = capped
+                    });
+            }
+        }
 
         if (!silence.CompressOn)
             return workingPath;

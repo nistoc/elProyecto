@@ -69,6 +69,17 @@ export interface RefinerThreadBatchSnapshot {
   afterText?: string | null;
 }
 
+/** Silence runs (seconds on source file) for UI timeline; from Agent04 after detect. */
+export interface TranscriptionSilenceRegion {
+  startSec: number;
+  endSec: number;
+}
+
+export interface TranscriptionSilenceTimeline {
+  sourceDurationSec: number;
+  regions: TranscriptionSilenceRegion[];
+}
+
 export interface JobSnapshot {
   id: string;
   status: JobStatus;
@@ -104,6 +115,8 @@ export interface JobSnapshot {
   transcriptionPhaseDetail?: string | null;
   /** Agent04 overall percent during transcription (0–100). */
   transcriptionProgressPercent?: number | null;
+  /** Detected silence intervals on the source timeline (for progress UI). */
+  transcriptionSilenceTimeline?: TranscriptionSilenceTimeline | null;
   /** Last Agent04 VM merge stats (API only; copy for debugging sync issues). */
   transcriptionSyncDebug?: string | null;
   /** @deprecated Not populated by API. Use GET /api/jobs/:id/files (JobProjectFiles). */

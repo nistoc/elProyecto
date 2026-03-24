@@ -35,6 +35,16 @@ public sealed class InMemoryJobStatusStore : IJobStatusStore
         if (update.MdOutputPath != null) job.MdOutputPath = update.MdOutputPath;
         if (update.JsonOutputPath != null) job.JsonOutputPath = update.JsonOutputPath;
         if (update.ErrorMessage != null) job.ErrorMessage = update.ErrorMessage;
+        if (update.ClearSilenceTimeline == true)
+        {
+            job.SilenceSourceDurationSec = 0;
+            job.SilenceTimelineRegions = Array.Empty<SilenceTimelineRegionDto>();
+        }
+
+        if (update.SilenceSourceDurationSec.HasValue)
+            job.SilenceSourceDurationSec = update.SilenceSourceDurationSec.Value;
+        if (update.SilenceTimelineRegions != null)
+            job.SilenceTimelineRegions = update.SilenceTimelineRegions;
         if (update.State == JobState.Running && !job.StartedAt.HasValue) job.StartedAt = now;
         if (update.State is JobState.Completed or JobState.Failed or JobState.Cancelled) job.CompletedAt = now;
         job.UpdatedAt = now;
