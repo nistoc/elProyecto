@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { SilenceCleanupProgressPanel } from './SilenceCleanupProgressPanel';
 import {
   deleteJobProjectFile,
   deleteJobSubChunk,
@@ -341,6 +342,7 @@ export function ChunkControlsStats({
       {!filesLoading && !artifactGroupsLoading && !showList && (
         <p className="chunk-stats__status">{t('chunkStatsEmpty')}</p>
       )}
+      <SilenceCleanupProgressPanel job={job} locale={locale} t={t} />
       {showList && (
         <>
         <ul className="chunk-stats__list">
