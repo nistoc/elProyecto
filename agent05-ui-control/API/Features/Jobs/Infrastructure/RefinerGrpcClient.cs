@@ -3,21 +3,25 @@ using TranslationImprover.Proto;
 
 namespace XtractManager.Features.Jobs.Infrastructure;
 
-public sealed class RefinerGrpcClient : Application.IRefinerServiceClient
+public sealed class RefinerGrpcClient : Application.IRefinerServiceClient, IDisposable
 {
     private readonly string _address;
     private readonly ILogger<RefinerGrpcClient> _logger;
+    private readonly GrpcChannel _channel;
+    private readonly RefinerService.RefinerServiceClient _client;
 
     public RefinerGrpcClient(IConfiguration configuration, ILogger<RefinerGrpcClient> logger)
     {
         _address = configuration["Agent06:GrpcAddress"] ?? "http://localhost:5002";
         _logger = logger;
+        _channel = GrpcChannelFactory.CreateKeepAliveChannel(_address);
+        _client = new RefinerService.RefinerServiceClient(_channel);
     }
+
+    public void Dispose() => _channel.Dispose();
 
     public async Task<Application.SubmitRefineJobResult> SubmitRefineJobAsync(Application.RefineJobInput input, CancellationToken ct = default)
     {
-        using var channel = GrpcChannel.ForAddress(_address);
-        var client = new RefinerService.RefinerServiceClient(channel);
         var request = new SubmitRefineJobRequest
         {
             InputFilePath = input.InputFilePath ?? "",
@@ -30,7 +34,7 @@ public sealed class RefinerGrpcClient : Application.IRefinerServiceClient
         if (input.Tags != null)
             request.Tags.AddRange(input.Tags);
 
-        var response = await client.SubmitRefineJobAsync(request, cancellationToken: ct);
+        var response = await _client.SubmitRefineJobAsync(request, cancellationToken: ct);
         var jobId = response.JobId;
         _logger.LogInformation("Agent06 SubmitRefineJob returned job_id={JobId}", jobId);
         return new Application.SubmitRefineJobResult(jobId);
@@ -38,10 +42,8 @@ public sealed class RefinerGrpcClient : Application.IRefinerServiceClient
 
     public async IAsyncEnumerable<Application.RefineStatusUpdate> StreamRefineStatusAsync(string jobId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
-        using var channel = GrpcChannel.ForAddress(_address);
-        var client = new RefinerService.RefinerServiceClient(channel);
         var request = new StreamRefineStatusRequest { JobId = jobId };
-        var stream = client.StreamRefineStatus(request, cancellationToken: ct);
+        var stream = _client.StreamRefineStatus(request, cancellationToken: ct);
         while (await stream.ResponseStream.MoveNext(ct))
         {
             var update = stream.ResponseStream.Current;
@@ -61,10 +63,8 @@ public sealed class RefinerGrpcClient : Application.IRefinerServiceClient
 
     public async Task<bool> CancelRefineJobAsync(string jobId, CancellationToken ct = default)
     {
-        using var channel = GrpcChannel.ForAddress(_address);
-        var client = new RefinerService.RefinerServiceClient(channel);
         var request = new CancelRefineJobRequest { JobId = jobId };
-        var response = await client.CancelRefineJobAsync(request, cancellationToken: ct);
+        var response = await _client.CancelRefineJobAsync(request, cancellationToken: ct);
         return response.Cancelled;
     }
 }

@@ -7,23 +7,27 @@ using Google.Protobuf.Collections;
 
 namespace XtractManager.Features.Jobs.Infrastructure;
 
-public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceClient
+public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceClient, IDisposable
 {
     private readonly string _address;
     private readonly string _configPath;
     private readonly ILogger<TranscriptionGrpcClient> _logger;
+    private readonly GrpcChannel _channel;
+    private readonly TranscriptionService.TranscriptionServiceClient _client;
 
     public TranscriptionGrpcClient(IConfiguration configuration, ILogger<TranscriptionGrpcClient> logger)
     {
         _address = configuration["Agent04:GrpcAddress"] ?? "http://localhost:5001";
         _configPath = configuration["Agent04:ConfigPath"] ?? "config/default.json";
         _logger = logger;
+        _channel = GrpcChannelFactory.CreateKeepAliveChannel(_address);
+        _client = new TranscriptionService.TranscriptionServiceClient(_channel);
     }
+
+    public void Dispose() => _channel.Dispose();
 
     public async Task<Application.SubmitJobResult> SubmitJobAsync(string configPath, string inputFilePath, IReadOnlyList<string>? tags, CancellationToken ct = default)
     {
-        using var channel = GrpcChannel.ForAddress(_address);
-        var client = new TranscriptionService.TranscriptionServiceClient(channel);
         var request = new SubmitJobRequest
         {
             ConfigPath = configPath,
@@ -37,7 +41,7 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
             _address, configPath, inputFilePath, tags?.Count ?? 0);
         try
         {
-            var response = await client.SubmitJobAsync(request, cancellationToken: ct);
+            var response = await _client.SubmitJobAsync(request, cancellationToken: ct);
             _logger.LogInformation("Agent04 SubmitJob OK: agent04_job_id={JobId}", response.JobId);
             return new Application.SubmitJobResult(response.JobId);
         }
@@ -58,11 +62,9 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         IReadOnlyList<Application.ChunkVirtualModelEntry>? clientChunkVirtualModel,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
     {
-        using var channel = GrpcChannel.ForAddress(_address);
-        var client = new TranscriptionService.TranscriptionServiceClient(channel);
         var request = new StreamJobStatusRequest { JobId = jobId };
         AppendClientChunkVirtualModel(request.ClientChunkVirtualModel, clientChunkVirtualModel);
-        var stream = client.StreamJobStatus(request, cancellationToken: ct);
+        var stream = _client.StreamJobStatus(request, cancellationToken: ct);
         while (await stream.ResponseStream.MoveNext(ct))
         {
             var update = stream.ResponseStream.Current;
@@ -90,13 +92,11 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         IReadOnlyList<Application.ChunkVirtualModelEntry>? clientChunkVirtualModel,
         CancellationToken ct)
     {
-        using var channel = GrpcChannel.ForAddress(_address);
-        var client = new TranscriptionService.TranscriptionServiceClient(channel);
         try
         {
             var req = new GetJobStatusRequest { JobId = agent04JobId };
             AppendClientChunkVirtualModel(req.ClientChunkVirtualModel, clientChunkVirtualModel);
-            var resp = await client.GetJobStatusAsync(req, cancellationToken: ct)
+            var resp = await _client.GetJobStatusAsync(req, cancellationToken: ct)
                 .ConfigureAwait(false);
             var vm = MapChunkVirtualModel(resp.ChunkVirtualModel);
             return new Application.JobStatusUpdate(
@@ -171,10 +171,8 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         int subChunkIndex = 0,
         CancellationToken ct = default)
     {
-        using var channel = GrpcChannel.ForAddress(_address);
-        var client = new TranscriptionService.TranscriptionServiceClient(channel);
         var protoAction = (ChunkCommandAction)(int)action;
-        var response = await client.ChunkCommandAsync(
+        var response = await _client.ChunkCommandAsync(
             new ChunkCommandRequest
             {
                 JobId = agent04JobId,
@@ -195,8 +193,6 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         IReadOnlyList<Application.ChunkVirtualModelEntry>? clientChunkVirtualModel = null,
         CancellationToken ct = default)
     {
-        using var channel = GrpcChannel.ForAddress(_address);
-        var client = new TranscriptionService.TranscriptionServiceClient(channel);
         try
         {
             var req = new GetChunkArtifactGroupsRequest
@@ -206,7 +202,7 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
                 TotalChunks = totalChunks
             };
             AppendClientChunkVirtualModel(req.ClientChunkVirtualModel, clientChunkVirtualModel);
-            var response = await client.GetChunkArtifactGroupsAsync(req, cancellationToken: ct)
+            var response = await _client.GetChunkArtifactGroupsAsync(req, cancellationToken: ct)
                 .ResponseAsync.ConfigureAwait(false);
             var groups = response.Groups.Select(MapChunkGroup).ToList();
             return new Application.ChunkArtifactGroupsResult { Groups = groups };
@@ -227,11 +223,9 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
         string jobDirectoryRelative,
         CancellationToken ct = default)
     {
-        using var channel = GrpcChannel.ForAddress(_address);
-        var client = new TranscriptionService.TranscriptionServiceClient(channel);
         try
         {
-            var response = await client.GetProjectFilesAsync(
+            var response = await _client.GetProjectFilesAsync(
                     new GetProjectFilesRequest
                     {
                         JobId = agent04JobId,
