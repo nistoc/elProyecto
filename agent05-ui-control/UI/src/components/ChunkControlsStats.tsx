@@ -223,7 +223,6 @@ export interface ChunkControlsStatsProps {
 export function ChunkControlsStats({
   jobId,
   job,
-  files: _files,
   filesLoading,
   filesError,
   locale,

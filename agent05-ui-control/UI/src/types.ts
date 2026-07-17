@@ -142,11 +142,14 @@ export interface CreateJobResponse {
   jobId: string;
 }
 
-/** SSE stream event: snapshot | status | log | chunk | split | done */
+/** SSE stream event: snapshot | status | log | chunk | split | done; 'connection' is client-side (SSE health). */
 export interface StreamEvent {
-  type: 'snapshot' | 'status' | 'log' | 'chunk' | 'split' | 'done';
+  type: 'snapshot' | 'status' | 'log' | 'chunk' | 'split' | 'done' | 'connection';
   payload?: unknown;
 }
+
+/** Client-side SSE connection health, delivered as StreamEvent type 'connection'. */
+export type ConnectionState = 'connected' | 'reconnecting' | 'polling';
 
 /** Step status for StepCard */
 export type StepStatus = 'waiting' | 'running' | 'done' | 'failed';

@@ -4,7 +4,9 @@ import type {
   JobListItem,
   StreamEvent,
   StepStatus,
+  ConnectionState,
 } from '../types';
+import { isTerminalSnapshot } from '../utils/streamReconnect';
 import {
   fetchJob,
   fetchJobsList,
@@ -74,6 +76,8 @@ export function useJob(): {
   file: File | null;
   isSubmitting: boolean;
   error: string | null;
+  /** SSE health: 'connected' | 'reconnecting' | 'polling' (degraded fallback). */
+  connectionState: ConnectionState;
   getStepStatus: (step: StepId) => StepStatus;
   setJobId: (id: string | null) => void;
   setActiveStep: (step: StepId) => void;
@@ -103,6 +107,8 @@ export function useJob(): {
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connectionState, setConnectionState] =
+    useState<ConnectionState>('connected');
   /** Bumps on each SSE snapshot so project files + chunk-artifact-groups refetch (disk artifacts). */
   const [jobSnapshotRevision, setJobSnapshotRevision] = useState(0);
   const logBuffer = useLogBuffer();
@@ -186,7 +192,19 @@ export function useJob(): {
       return;
     }
     let cancelled = false;
+    let doneHandled = false;
     const ac = new AbortController();
+    setConnectionState('connected');
+    const handleDone = () => {
+      if (doneHandled) return;
+      doneHandled = true;
+      unsubscribeRef.current?.();
+      fetchJob(jobId).then((s) => {
+        if (cancelled || !s) return;
+        setJob(s);
+        if (s.status === 'done') setActiveStepState('result');
+      });
+    };
     (async () => {
       const snap = await fetchJob(jobId);
       if (!cancelled && snap) {
@@ -198,9 +216,22 @@ export function useJob(): {
       jobId,
       (ev: StreamEvent) => {
         if (cancelled) return;
+        if (ev.type === 'connection' && ev.payload && typeof ev.payload === 'object') {
+          const p = ev.payload as { state?: string };
+          if (
+            p.state === 'connected' ||
+            p.state === 'reconnecting' ||
+            p.state === 'polling'
+          )
+            setConnectionState(p.state);
+          return;
+        }
         if (ev.type === 'snapshot' && ev.payload) {
-          setJob(ev.payload as JobSnapshot);
+          const snap = ev.payload as JobSnapshot;
+          setJob(snap);
           setJobSnapshotRevision((r) => r + 1);
+          // Terminality is defined by the data, not only by the 'done' event (which can be missed).
+          if (isTerminalSnapshot(snap)) handleDone();
           return;
         }
         if (
@@ -221,12 +252,7 @@ export function useJob(): {
           return;
         }
         if (ev.type === 'done') {
-          unsubscribeRef.current?.();
-          fetchJob(jobId).then((s) => {
-            if (cancelled || !s) return;
-            setJob(s);
-            if (s.status !== 'failed') setActiveStepState('result');
-          });
+          handleDone();
         }
       },
       { signal: ac.signal }
@@ -332,6 +358,7 @@ export function useJob(): {
     file,
     isSubmitting,
     error,
+    connectionState,
     getStepStatus: getStepStatusFor,
     setJobId,
     setActiveStep,

@@ -4,9 +4,14 @@ import type {
   JobsListResponse,
   CreateJobResponse,
   StreamEvent,
+  ConnectionState,
   JobFilesApiResponse,
 } from './types';
 import type { ChunkArtifactGroup } from './utils/chunkArtifactGroups';
+import {
+  computeReconnectDelay,
+  isTerminalSnapshot,
+} from './utils/streamReconnect';
 
 const API_BASE = '';
 
@@ -260,7 +265,8 @@ export async function postJobChunkAction(
 }
 
 const MAX_RECONNECT_ATTEMPTS = 5;
-const RECONNECT_DELAY_MS = 2000;
+const POLL_INTERVAL_MS = 5000;
+const POLL_TICKS_PER_SSE_RETRY = 6;
 
 export function subscribeToJob(
   jobId: string,
@@ -270,14 +276,68 @@ export function subscribeToJob(
   let attempt = 0;
   let closed = false;
   let eventSource: EventSource | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let pollTicks = 0;
+
+  function stopPolling(): void {
+    if (pollTimer != null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
 
   function close(): void {
     closed = true;
+    if (reconnectTimer != null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    stopPolling();
     eventSource?.close();
     eventSource = null;
   }
 
   options?.signal?.addEventListener('abort', close);
+
+  function emitConnection(state: ConnectionState): void {
+    onEvent({ type: 'connection', payload: { state } });
+  }
+
+  /** Degraded mode after SSE gave up: poll the snapshot and periodically retry SSE. */
+  function startPolling(): void {
+    if (closed || pollTimer != null) return;
+    emitConnection('polling');
+    pollTicks = 0;
+    pollTimer = setInterval(() => {
+      if (closed) {
+        stopPolling();
+        return;
+      }
+      pollTicks += 1;
+      fetchJob(jobId)
+        .then((snap) => {
+          if (closed) return;
+          if (!snap) {
+            // 404 — the job is gone; nothing more will ever arrive.
+            onEvent({ type: 'done' });
+            close();
+            return;
+          }
+          onEvent({ type: 'snapshot', payload: snap });
+          if (isTerminalSnapshot(snap)) {
+            onEvent({ type: 'done' });
+            close();
+          }
+        })
+        .catch(() => {
+          /* keep polling */
+        });
+      if (pollTimer != null && pollTicks % POLL_TICKS_PER_SSE_RETRY === 0) {
+        connect();
+      }
+    }, POLL_INTERVAL_MS);
+  }
 
   function connect(): void {
     if (closed || options?.signal?.aborted) return;
@@ -285,7 +345,14 @@ export function subscribeToJob(
     const url = `${API_BASE}/api/jobs/${jobId}/stream`;
     eventSource = new EventSource(url);
 
+    eventSource.onopen = () => {
+      attempt = 0;
+      stopPolling();
+      emitConnection('connected');
+    };
+
     eventSource.onmessage = (e: MessageEvent) => {
+      attempt = 0;
       try {
         const data = JSON.parse(e.data) as StreamEvent;
         onEvent(data);
@@ -301,12 +368,14 @@ export function subscribeToJob(
       eventSource?.close();
       eventSource = null;
       if (closed || options?.signal?.aborted) return;
+      if (pollTimer != null) return; // polling mode owns the SSE retry cadence
       if (attempt >= MAX_RECONNECT_ATTEMPTS) {
-        onEvent({ type: 'done' });
+        startPolling();
         return;
       }
       attempt += 1;
-      setTimeout(connect, RECONNECT_DELAY_MS);
+      emitConnection('reconnecting');
+      reconnectTimer = setTimeout(connect, computeReconnectDelay(attempt));
     };
   }
 
