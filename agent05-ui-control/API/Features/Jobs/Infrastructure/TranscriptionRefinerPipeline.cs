@@ -41,6 +41,34 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
 
     public async Task RunAsync(string jobId, CancellationToken ct = default)
     {
+        try
+        {
+            await RunCoreAsync(jobId, ct);
+        }
+        catch (Exception ex)
+        {
+            // The pipeline must never die silently: finalize the job as failed and close the SSE stream.
+            _logger.LogError(ex, "Job {JobId}: pipeline crashed; finalizing as failed", jobId);
+            try
+            {
+                await UpdateAndBroadcastAsync(jobId, s =>
+                {
+                    s.Status = "failed";
+                    s.Phase = "idle";
+                    s.TranscriptionError = ex.Message;
+                }, CancellationToken.None);
+                Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
+                Broadcast(jobId, "done", null);
+            }
+            catch (Exception finalizeEx)
+            {
+                _logger.LogError(finalizeEx, "Job {JobId}: failed to finalize crashed pipeline", jobId);
+            }
+        }
+    }
+
+    private async Task RunCoreAsync(string jobId, CancellationToken ct)
+    {
         var snap = await _store.GetAsync(jobId, ct);
         if (snap == null) return;
 
@@ -123,64 +151,12 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         await UpdateAndBroadcastAsync(jobId, s => { s.Agent04JobId = transcriptionJobId; }, ct);
         Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
 
-        var streamSeedSnap = await _store.GetAsync(jobId, ct);
-        var streamSeedVm = streamSeedSnap?.Chunks?.ChunkVirtualModel;
-
-        await foreach (var update in _transcription.StreamJobStatusAsync(transcriptionJobId, streamSeedVm, ct))
+        var streamOk = await ConsumeAgent04StatusAsync(jobId, transcriptionJobId, ct);
+        if (!streamOk)
         {
-            if (update.State == "Failed")
-                _logger.LogWarning(
-                    "Job {JobId}: Agent04 job {Agent04JobId} reported Failed — ErrorMessage={Error}, Phase={Phase}, Progress={Pct}%, ProcessedChunks={Processed}, TotalChunks={Total}",
-                    jobId, transcriptionJobId, update.ErrorMessage ?? "(empty)", update.CurrentPhase ?? "", update.ProgressPercent,
-                    update.ProcessedChunks, update.TotalChunks);
-            _logger.LogDebug("Job {JobId}: Agent04 status update State={State}, MdOutputPath={Md}, TotalChunks={Total}, Processed={Processed}",
-                jobId, update.State, update.MdOutputPath ?? "null", update.TotalChunks, update.ProcessedChunks);
-            await UpdateAndBroadcastAsync(jobId, s =>
-            {
-                s.Agent04JobId = transcriptionJobId;
-                s.Status = MapState(update.State);
-                s.Chunks ??= new ChunkState();
-                if (update.TotalChunks > 0)
-                    s.Chunks.Total = update.TotalChunks;
-                var tc = update.TotalChunks;
-                var pc = update.ProcessedChunks;
-                if (tc > 0 && pc >= 0)
-                {
-                    var completed = new List<int>();
-                    var n = Math.Min(pc, tc);
-                    for (var i = 0; i < n; i++)
-                        completed.Add(i);
-                    s.Chunks.Completed = completed;
-                    s.Chunks.Active = update.State == "Running" && pc < tc
-                        ? new List<int> { pc }
-                        : new List<int>();
-                }
-
-                if (update.ChunkVirtualModel is { Count: > 0 })
-                    s.Chunks.ChunkVirtualModel = update.ChunkVirtualModel;
-                if (!string.IsNullOrWhiteSpace(update.TranscriptionFooterHint))
-                    s.TranscriptionFooterHint = update.TranscriptionFooterHint;
-                if (update.State == "Completed")
-                {
-                    s.Phase = "awaiting_refiner";
-                    s.MdOutputPath = update.MdOutputPath;
-                    s.TranscriptionError = null;
-                }
-                else if (update.State == "Failed" || update.State == "Cancelled")
-                {
-                    s.Phase = "idle";
-                    s.TranscriptionError = string.IsNullOrEmpty(update.ErrorMessage)
-                        ? (update.State == "Cancelled" ? "Transcription cancelled." : "Transcription failed.")
-                        : update.ErrorMessage;
-                }
-            }, ct);
             Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
-            var evtPhase = update.State == "Completed"
-                ? "awaiting_refiner"
-                : (update.State is "Failed" or "Cancelled" ? "idle" : "transcriber");
-            Broadcast(jobId, "status", JsonSerializer.Serialize(new { status = MapState(update.State), phase = evtPhase, progress_percent = update.ProgressPercent }, ApiJson.CamelCase));
-            if (update.State is "Completed" or "Failed" or "Cancelled")
-                break;
+            Broadcast(jobId, "done", null);
+            return;
         }
 
         snap = await _store.GetAsync(jobId, ct);
@@ -262,18 +238,13 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         }
 
         var refineJobId = refinerResult.JobId;
-        await foreach (var update in _refiner.StreamRefineStatusAsync(refineJobId, ct))
+        var refineOk = await ConsumeRefinerStatusAsync(jobId, refineJobId, ct);
+        if (!refineOk)
         {
-            await UpdateAndBroadcastAsync(jobId, s =>
-            {
-                if (update.State == "Completed")
-                { s.Phase = "completed"; s.Status = "done"; }
-                else if (update.State == "Failed" || update.State == "Cancelled")
-                { s.Phase = "awaiting_refiner"; s.Status = update.State == "Failed" ? "failed" : "done"; }
-            }, ct);
-            Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = update.State == "Completed" ? "completed" : snap?.Phase, status = update.State == "Completed" ? "done" : snap?.Status, progress_percent = update.ProgressPercent }, ApiJson.CamelCase));
-            if (update.State is "Completed" or "Failed" or "Cancelled")
-                break;
+            await UpdateAndBroadcastAsync(jobId, s => { s.Phase = "awaiting_refiner"; s.Status = "failed"; }, ct);
+            Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = "awaiting_refiner", status = "failed" }, ApiJson.CamelCase));
+            Broadcast(jobId, "done", null);
+            return;
         }
 
         var completedAt = DateTime.UtcNow.ToString("O");
@@ -329,12 +300,186 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         return Path.GetFullPath(Path.Combine(contentRoot, raw));
     }
 
+    /// <summary>
+    /// Consumes Agent04 status updates with reconnects: on stream failure — backoff, then one GetJobStatus
+    /// fallback (a terminal poll result is handled as the final update), otherwise the stream is re-opened
+    /// seeded with the stored ChunkVirtualModel. Returns false after 10 consecutive failed cycles (job marked failed).
+    /// </summary>
+    private async Task<bool> ConsumeAgent04StatusAsync(string jobId, string transcriptionJobId, CancellationToken ct)
+    {
+        var failures = 0;
+        while (true)
+        {
+            var seedSnap = await _store.GetAsync(jobId, ct);
+            var seedVm = seedSnap?.Chunks?.ChunkVirtualModel;
+            try
+            {
+                await foreach (var update in _transcription.StreamJobStatusAsync(transcriptionJobId, seedVm, ct))
+                {
+                    failures = 0;
+                    await ApplyTranscriptionUpdateAsync(jobId, transcriptionJobId, update, ct);
+                    if (IsTerminalTranscriptionState(update.State))
+                        return true;
+                }
+                throw new IOException("Agent04 status stream ended without a terminal state.");
+            }
+            catch (Exception ex) when (ex is RpcException or IOException or HttpRequestException)
+            {
+                failures++;
+                _logger.LogWarning(ex,
+                    "Job {JobId}: Agent04 status stream dropped (attempt {Attempt}/10); retrying",
+                    jobId, failures);
+                await Task.Delay(BackoffDelay(failures), ct);
+                var fallbackSnap = await _store.GetAsync(jobId, ct);
+                var polled = await _transcription.GetJobStatusAsync(
+                    transcriptionJobId, fallbackSnap?.Chunks?.ChunkVirtualModel, ct);
+                if (polled != null)
+                {
+                    failures = 0;
+                    await ApplyTranscriptionUpdateAsync(jobId, transcriptionJobId, polled, ct);
+                    if (IsTerminalTranscriptionState(polled.State))
+                        return true;
+                }
+                else if (failures >= 10)
+                {
+                    await UpdateAndBroadcastAsync(jobId, s =>
+                    {
+                        s.Status = "failed";
+                        s.Phase = "idle";
+                        s.TranscriptionError = $"Lost connection to Agent04 after {failures} attempts: {ex.Message}";
+                    }, ct);
+                    return false;
+                }
+            }
+        }
+    }
+
+    private async Task ApplyTranscriptionUpdateAsync(string jobId, string transcriptionJobId, JobStatusUpdate update, CancellationToken ct)
+    {
+        if (update.State == "Failed")
+            _logger.LogWarning(
+                "Job {JobId}: Agent04 job {Agent04JobId} reported Failed — ErrorMessage={Error}, Phase={Phase}, Progress={Pct}%, ProcessedChunks={Processed}, TotalChunks={Total}",
+                jobId, transcriptionJobId, update.ErrorMessage ?? "(empty)", update.CurrentPhase ?? "", update.ProgressPercent,
+                update.ProcessedChunks, update.TotalChunks);
+        _logger.LogDebug("Job {JobId}: Agent04 status update State={State}, MdOutputPath={Md}, TotalChunks={Total}, Processed={Processed}",
+            jobId, update.State, update.MdOutputPath ?? "null", update.TotalChunks, update.ProcessedChunks);
+        await UpdateAndBroadcastAsync(jobId, s =>
+        {
+            s.Agent04JobId = transcriptionJobId;
+            s.Status = MapState(update.State);
+            s.Chunks ??= new ChunkState();
+            if (update.TotalChunks > 0)
+                s.Chunks.Total = update.TotalChunks;
+            var tc = update.TotalChunks;
+            var pc = update.ProcessedChunks;
+            if (tc > 0 && pc >= 0)
+            {
+                var completed = new List<int>();
+                var n = Math.Min(pc, tc);
+                for (var i = 0; i < n; i++)
+                    completed.Add(i);
+                s.Chunks.Completed = completed;
+                s.Chunks.Active = update.State == "Running" && pc < tc
+                    ? new List<int> { pc }
+                    : new List<int>();
+            }
+
+            if (update.ChunkVirtualModel is { Count: > 0 })
+                s.Chunks.ChunkVirtualModel = update.ChunkVirtualModel;
+            if (!string.IsNullOrWhiteSpace(update.TranscriptionFooterHint))
+                s.TranscriptionFooterHint = update.TranscriptionFooterHint;
+            if (update.State == "Completed")
+            {
+                s.Phase = "awaiting_refiner";
+                s.MdOutputPath = update.MdOutputPath;
+                s.TranscriptionError = null;
+            }
+            else if (update.State == "Failed" || update.State == "Cancelled")
+            {
+                s.Phase = "idle";
+                s.TranscriptionError = string.IsNullOrEmpty(update.ErrorMessage)
+                    ? (update.State == "Cancelled" ? "Transcription cancelled." : "Transcription failed.")
+                    : update.ErrorMessage;
+            }
+            else if (update.State == "NotFound")
+            {
+                s.Phase = "idle";
+                s.TranscriptionError = "Agent04 no longer knows this job (restart?)";
+            }
+        }, ct);
+        Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
+        var evtPhase = update.State == "Completed"
+            ? "awaiting_refiner"
+            : (update.State is "Failed" or "Cancelled" or "NotFound" ? "idle" : "transcriber");
+        Broadcast(jobId, "status", JsonSerializer.Serialize(new { status = MapState(update.State), phase = evtPhase, progress_percent = update.ProgressPercent }, ApiJson.CamelCase));
+    }
+
+    /// <summary>
+    /// Consumes Agent06 refine status updates with stream reconnects (no unary fallback on the refiner client).
+    /// Returns false after 10 consecutive failed cycles.
+    /// </summary>
+    private async Task<bool> ConsumeRefinerStatusAsync(string jobId, string refineJobId, CancellationToken ct)
+    {
+        var failures = 0;
+        while (true)
+        {
+            try
+            {
+                await foreach (var update in _refiner.StreamRefineStatusAsync(refineJobId, ct))
+                {
+                    failures = 0;
+                    await ApplyRefinerUpdateAsync(jobId, update, ct);
+                    if (update.State is "Completed" or "Failed" or "Cancelled")
+                        return true;
+                }
+                throw new IOException("Agent06 refine status stream ended without a terminal state.");
+            }
+            catch (Exception ex) when (ex is RpcException or IOException or HttpRequestException)
+            {
+                failures++;
+                _logger.LogWarning(ex,
+                    "Job {JobId}: Agent06 refine stream dropped (attempt {Attempt}/10); retrying",
+                    jobId, failures);
+                if (failures >= 10)
+                    return false;
+                await Task.Delay(BackoffDelay(failures), ct);
+            }
+        }
+    }
+
+    private async Task ApplyRefinerUpdateAsync(string jobId, RefineStatusUpdate update, CancellationToken ct)
+    {
+        await UpdateAndBroadcastAsync(jobId, s =>
+        {
+            if (update.State == "Completed")
+            { s.Phase = "completed"; s.Status = "done"; }
+            else if (update.State == "Failed" || update.State == "Cancelled")
+            { s.Phase = "awaiting_refiner"; s.Status = update.State == "Failed" ? "failed" : "done"; }
+        }, ct);
+        var fresh = await _store.GetAsync(jobId, ct);
+        Broadcast(jobId, "status", JsonSerializer.Serialize(
+            new { phase = fresh?.Phase, status = fresh?.Status, progress_percent = update.ProgressPercent },
+            ApiJson.CamelCase));
+    }
+
+    private static bool IsTerminalTranscriptionState(string state) =>
+        state is "Completed" or "Failed" or "Cancelled" or "NotFound";
+
+    private static TimeSpan BackoffDelay(int attempt) => attempt switch
+    {
+        <= 1 => TimeSpan.FromSeconds(1),
+        2 => TimeSpan.FromSeconds(2),
+        3 => TimeSpan.FromSeconds(5),
+        _ => TimeSpan.FromSeconds(15),
+    };
+
     private static string MapState(string state) =>
         state switch
         {
             "Completed" => "done",
             "Failed" => "failed",
             "Cancelled" => "done",
+            "NotFound" => "failed",
             "Running" => "running",
             "Pending" => "queued",
             _ => "running"
