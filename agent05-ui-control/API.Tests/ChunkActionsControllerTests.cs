@@ -415,9 +415,12 @@ public class ChunkActionsControllerTests
         public static readonly IBroadcaster Instance = new NoOpBroadcaster();
         private sealed class NoOpBroadcaster : IBroadcaster
         {
-            public void Publish(string jobId, string payloadJson) { }
-            public void Subscribe(string jobId, Action<string> handler) { }
-            public void Unsubscribe(string jobId, Action<string> handler) { }
+            public void Publish(string jobId, BroadcastEvent evt) { }
+            public IDisposable Subscribe(string jobId, System.Threading.Channels.ChannelWriter<BroadcastEvent> writer) => new NoOpSubscription();
+            private sealed class NoOpSubscription : IDisposable
+            {
+                public void Dispose() { }
+            }
         }
     }
 }

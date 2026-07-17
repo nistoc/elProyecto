@@ -498,7 +498,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         var data = string.IsNullOrEmpty(payloadJson)
             ? $"{{\"type\":\"{eventType}\"}}"
             : $"{{\"type\":\"{eventType}\",\"payload\":{payloadJson}}}";
-        _broadcaster.Publish(jobId, data);
+        _broadcaster.Publish(jobId, new BroadcastEvent(eventType, data));
     }
 
     private async Task<string> GetSnapshotJsonAsync(string jobId)

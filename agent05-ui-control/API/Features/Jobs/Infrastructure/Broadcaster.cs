@@ -1,44 +1,33 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
+using XtractManager.Features.Jobs.Application;
 
 namespace XtractManager.Features.Jobs.Infrastructure;
 
-public sealed class Broadcaster : Application.IBroadcaster
+public sealed class Broadcaster : IBroadcaster
 {
-    private readonly ConcurrentDictionary<string, List<Action<string>>> _subs = new();
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<Guid, ChannelWriter<BroadcastEvent>>> _subs = new();
 
-    public void Subscribe(string jobId, Action<string> send)
+    public IDisposable Subscribe(string jobId, ChannelWriter<BroadcastEvent> writer)
     {
-        _subs.AddOrUpdate(jobId, _ => new List<Action<string>> { send }, (_, list) =>
-        {
-            lock (list) list.Add(send);
-            return list;
-        });
+        // Empty per-job dictionaries are intentionally never removed: removing them would race
+        // with a concurrent Subscribe that already obtained the doomed instance.
+        var perJob = _subs.GetOrAdd(jobId, _ => new ConcurrentDictionary<Guid, ChannelWriter<BroadcastEvent>>());
+        var id = Guid.NewGuid();
+        perJob[id] = writer;
+        return new Subscription(perJob, id);
     }
 
-    public void Unsubscribe(string jobId, Action<string> send)
+    public void Publish(string jobId, BroadcastEvent evt)
     {
-        if (!_subs.TryGetValue(jobId, out var list))
+        if (!_subs.TryGetValue(jobId, out var perJob))
             return;
-        lock (list)
-        {
-            list.RemoveAll(a => a == send);
-            if (list.Count == 0)
-                _subs.TryRemove(jobId, out _);
-        }
+        foreach (var writer in perJob.Values)
+            writer.TryWrite(evt);
     }
 
-    public void Publish(string jobId, string payload)
+    private sealed class Subscription(ConcurrentDictionary<Guid, ChannelWriter<BroadcastEvent>> perJob, Guid id) : IDisposable
     {
-        if (!_subs.TryGetValue(jobId, out var list))
-            return;
-        List<Action<string>> copy;
-        lock (list)
-        {
-            copy = list.ToList();
-        }
-        foreach (var send in copy)
-        {
-            try { send(payload); } catch { /* ignore */ }
-        }
+        public void Dispose() => perJob.TryRemove(id, out _);
     }
 }

@@ -95,7 +95,7 @@ public class JobsController : ControllerBase
         jobSnap.JobDirectoryPath ??= _workspace.GetJobDirectoryPath(jobId);
         await MergeAgent04LiveIntoSnapshotAsync(jobSnap, ct).ConfigureAwait(false);
         var snapshotJson = JsonSerializer.Serialize(new { type = "snapshot", payload = jobSnap }, ApiJson.CamelCase);
-        _broadcaster.Publish(jobId, snapshotJson);
+        _broadcaster.Publish(jobId, new BroadcastEvent("snapshot", snapshotJson));
     }
 
     /// <summary>
@@ -574,7 +574,7 @@ public class JobsController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>SSE stream: snapshot then status/log/chunk/done events.</summary>
+    /// <summary>SSE stream: snapshot first, then status/snapshot/done events; ": ping" comments keep the connection alive.</summary>
     [HttpGet("{id}/stream")]
     public async Task Stream(string id, CancellationToken ct = default)
     {
@@ -590,30 +590,51 @@ public class JobsController : ControllerBase
         Response.ContentType = "text/event-stream";
         Response.Headers.CacheControl = "no-cache";
         await Response.StartAsync(ct);
+
+        var channel = System.Threading.Channels.Channel.CreateBounded<BroadcastEvent>(
+            new System.Threading.Channels.BoundedChannelOptions(256)
+            {
+                FullMode = System.Threading.Channels.BoundedChannelFullMode.DropOldest,
+            });
+        // Subscribe BEFORE writing the snapshot so events published in between are not lost.
+        using var subscription = _broadcaster.Subscribe(id, channel.Writer);
+
         var snapshotJson = JsonSerializer.Serialize(new { type = "snapshot", payload = job }, ApiJson.CamelCase);
         await Response.WriteAsync($"data: {snapshotJson}\n\n", ct);
         await Response.Body.FlushAsync(ct);
-        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        void Send(string payload)
+
+        using var heartbeat = new PeriodicTimer(TimeSpan.FromSeconds(15));
+        var heartbeatTask = Task.Run(async () =>
         {
             try
             {
-                Response.WriteAsync($"data: {payload}\n\n", ct).GetAwaiter().GetResult();
-                Response.Body.FlushAsync(ct).GetAwaiter().GetResult();
-                if (payload.Contains("\"type\":\"done\"", StringComparison.Ordinal))
-                    done.TrySetResult();
+                while (await heartbeat.WaitForNextTickAsync(ct))
+                    channel.Writer.TryWrite(new BroadcastEvent("ping", ""));
             }
-            catch { done.TrySetResult(); }
-        }
-        _broadcaster.Subscribe(id, Send);
+            catch (OperationCanceledException) { }
+        }, CancellationToken.None);
+
         try
         {
-            await Task.WhenAny(done.Task, Task.Delay(Timeout.Infinite, ct));
+            await foreach (var evt in channel.Reader.ReadAllAsync(ct))
+            {
+                if (evt.Type == "ping")
+                    await Response.WriteAsync(": ping\n\n", ct);
+                else
+                    await Response.WriteAsync($"data: {evt.Json}\n\n", ct);
+                await Response.Body.FlushAsync(ct);
+                if (evt.Type == "done")
+                    break;
+            }
         }
-        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is OperationCanceledException or IOException)
+        {
+            // Client went away — normal termination for an SSE request.
+        }
         finally
         {
-            _broadcaster.Unsubscribe(id, Send);
+            heartbeat.Dispose();
+            await heartbeatTask;
         }
     }
 }
