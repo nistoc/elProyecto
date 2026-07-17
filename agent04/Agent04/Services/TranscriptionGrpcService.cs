@@ -797,7 +797,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
 
     /// <summary>
     /// Config path from the client is relative. Prefer <paramref name="workspaceRoot"/> (shared jobs folder), then Agent04 content root
-    /// so <c>config/default.json</c> next to the app works when WorkspaceRoot points only at job data (e.g. agent-browser/runtime).
+    /// so <c>config/default.json</c> next to the app works when WorkspaceRoot points only at job data (e.g. the repo-root runtime folder).
     /// </summary>
     private string ResolveChunkCancelBase(string agent04JobId, string jobDirectoryRelativeFromRequest)
     {

@@ -106,7 +106,7 @@ public class ChunkArtifactGroupingTests
         var repoRoot = FindRepoRoot();
         var runtimeJob = Path.Combine(
             repoRoot,
-            "agent-browser", "runtime", "0b8a3b0b-a847-4d06-835d-d5941ff8ebfd");
+            "runtime", "0b8a3b0b-a847-4d06-835d-d5941ff8ebfd");
         if (!Directory.Exists(runtimeJob))
             return;
 
@@ -126,7 +126,7 @@ public class ChunkArtifactGroupingTests
         while (dir != null)
         {
             if (File.Exists(Path.Combine(dir.FullName, "elProyecto.sln")) ||
-                Directory.Exists(Path.Combine(dir.FullName, "agent-browser")))
+                Directory.Exists(Path.Combine(dir.FullName, "agent04")))
                 return dir.FullName;
             dir = dir.Parent;
         }

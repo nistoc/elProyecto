@@ -22,7 +22,7 @@ Bootstrapped documents set `recovered_from_artifacts: true` and `schema_version`
 
 ## Examples
 
-See sample job folders under `agent-browser/runtime/` (e.g. `6df0edec-*`, `4b31c2cf-*`) for `chunks/` + `chunks_json/` pairs.
+See sample job folders under `runtime/` at the repo root (e.g. `6df0edec-*`, `4b31c2cf-*`) for `chunks/` + `chunks_json/` pairs.
 
 ## Related
 
