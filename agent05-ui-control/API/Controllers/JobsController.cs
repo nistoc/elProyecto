@@ -575,6 +575,43 @@ public class JobsController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>
+    /// Manually starts the refiner (agent06) for a job whose transcription finished, or skips it.
+    /// The refiner never runs automatically — the operator reviews the transcript first. Body: <c>{ "skip": bool }</c>.
+    /// Allowed when phase is <c>awaiting_refiner</c> or <c>completed</c> (re-run), or when a transcript file exists on disk.
+    /// </summary>
+    [HttpPost("{id}/refine")]
+    public async Task<IActionResult> StartRefine(string id, [FromBody] RefineActionRequest? body, CancellationToken ct = default)
+    {
+        var job = await _store.GetAsync(id, ct);
+        if (job == null)
+            return NotFound();
+
+        var phase = job.Phase ?? "";
+        var phaseAllows = string.Equals(phase, "awaiting_refiner", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(phase, "completed", StringComparison.OrdinalIgnoreCase);
+        var jobDir = _workspace.GetJobDirectoryPath(id);
+        var transcriptOnDisk = Directory.Exists(jobDir) &&
+            new DirectoryInfo(jobDir).EnumerateFiles("transcript*.md")
+                .Any(f => !f.Name.Contains("_fixed", StringComparison.OrdinalIgnoreCase));
+        if (!phaseAllows && !transcriptOnDisk)
+            return Conflict(new { error = "refiner can start only after transcription produced a transcript (phase awaiting_refiner/completed or transcript*.md on disk)" });
+
+        if (string.Equals(phase, "refiner", StringComparison.OrdinalIgnoreCase))
+            return Conflict(new { error = "refiner is already running for this job" });
+
+        if (body?.Skip == true)
+        {
+            await _store.UpdateAsync(id, s => { s.Phase = "completed"; s.Status = "done"; s.CompletedAt = DateTime.UtcNow.ToString("O"); });
+            await PublishEnrichedSnapshotAsync(id, ct);
+            _broadcaster.Publish(id, new BroadcastEvent("done", "{\"type\":\"done\"}"));
+            return Ok(new { ok = true, message = "refiner_skipped" });
+        }
+
+        _pipelineQueue.EnqueueRefiner(id);
+        return Accepted(new { ok = true, message = "refiner_started" });
+    }
+
     /// <summary>SSE stream: snapshot first, then status/snapshot/done events; ": ping" comments keep the connection alive.</summary>
     [HttpGet("{id}/stream")]
     public async Task Stream(string id, CancellationToken ct = default)
@@ -652,3 +689,9 @@ public sealed class ChunkActionRequest
 }
 
 public record ChunkActionResponse(bool Ok, string Message);
+
+public sealed class RefineActionRequest
+{
+    /// <summary>When true, mark the job completed without running the refiner.</summary>
+    public bool Skip { get; set; }
+}

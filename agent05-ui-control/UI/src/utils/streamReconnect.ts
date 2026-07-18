@@ -12,9 +12,14 @@ export function computeReconnectDelay(
   return base + random() * RECONNECT_JITTER_MS;
 }
 
-/** A snapshot is terminal when the job will produce no further updates. */
+/**
+ * A snapshot is terminal when the job will produce no further updates.
+ * Note: transcription finishing leaves the job at phase=awaiting_refiner with status=done —
+ * that is NOT terminal, because the refiner is started manually afterwards. Only a completed
+ * phase (refiner done or skipped) or a failed status ends the job.
+ */
 export function isTerminalSnapshot(
-  snap: Pick<JobSnapshot, 'status'> | null | undefined
+  snap: Pick<JobSnapshot, 'status' | 'phase'> | null | undefined
 ): boolean {
-  return snap?.status === 'done' || snap?.status === 'failed';
+  return snap?.status === 'failed' || snap?.phase === 'completed';
 }

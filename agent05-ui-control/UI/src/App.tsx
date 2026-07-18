@@ -33,6 +33,7 @@ function AppContent() {
     handleDeleteJob,
     jobSnapshotRevision,
     refreshJobSnapshot,
+    startRefiner,
   } = useJob();
 
   // SSE snapshots arrive ~every 2s while transcribing; debounce the heavy /files and
@@ -199,6 +200,27 @@ function AppContent() {
                     {job.phase === 'completed' && (
                       <p className="step-panel__hint">{t('refinerCompleted')}</p>
                     )}
+                    <div className="refiner-actions">
+                      <button
+                        type="button"
+                        className="refiner-actions__run"
+                        disabled={job.phase === 'refiner'}
+                        onClick={() => startRefiner(false)}
+                      >
+                        {job.phase === 'completed'
+                          ? t('refinerRerun')
+                          : t('refinerRun')}
+                      </button>
+                      {job.phase === 'awaiting_refiner' && (
+                        <button
+                          type="button"
+                          className="refiner-actions__skip"
+                          onClick={() => startRefiner(true)}
+                        >
+                          {t('refinerSkip')}
+                        </button>
+                      )}
+                    </div>
                     <ResultSection
                       jobId={jobId}
                       job={job}
@@ -378,6 +400,29 @@ function AppContent() {
         .step-panel__files-heading { margin: 1rem 0 0.35rem 0; font-size: 0.9rem; color: var(--color-heading); }
         .step-panel__empty { color: var(--color-text-muted); margin: 0; }
         .step-panel__hint { margin: 0 0 0.75rem 0; font-size: 0.875rem; color: var(--color-label); }
+        .refiner-actions { display: flex; gap: 0.5rem; margin: 0 0 1rem 0; }
+        .refiner-actions__run {
+          padding: 0.4rem 0.9rem;
+          border-radius: 6px;
+          border: 1px solid var(--color-border-strong);
+          background: var(--color-primary);
+          color: var(--color-on-primary);
+          font-size: 0.875rem;
+          font-weight: 500;
+          cursor: pointer;
+        }
+        .refiner-actions__run:hover:not(:disabled) { background: var(--color-primary-hover); }
+        .refiner-actions__run:disabled { opacity: 0.5; cursor: not-allowed; }
+        .refiner-actions__skip {
+          padding: 0.4rem 0.9rem;
+          border-radius: 6px;
+          border: 1px solid var(--color-border-strong);
+          background: var(--color-surface);
+          color: var(--color-text);
+          font-size: 0.875rem;
+          cursor: pointer;
+        }
+        .refiner-actions__skip:hover { background: var(--color-surface-hover); }
         .step-panel__transcription-error {
           margin: 0 0 1rem 0;
           padding: 0.65rem 0.85rem;

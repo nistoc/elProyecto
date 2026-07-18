@@ -30,14 +30,18 @@ describe('computeReconnectDelay', () => {
 });
 
 describe('isTerminalSnapshot', () => {
-  it('done and failed are terminal', () => {
-    expect(isTerminalSnapshot({ status: 'done' })).toBe(true);
-    expect(isTerminalSnapshot({ status: 'failed' })).toBe(true);
+  it('completed phase and failed status are terminal', () => {
+    expect(isTerminalSnapshot({ status: 'done', phase: 'completed' })).toBe(true);
+    expect(isTerminalSnapshot({ status: 'failed', phase: 'idle' })).toBe(true);
+  });
+
+  it('awaiting_refiner (transcription done) is NOT terminal — refiner is manual', () => {
+    expect(isTerminalSnapshot({ status: 'done', phase: 'awaiting_refiner' })).toBe(false);
   });
 
   it('running, queued and missing snapshots are not terminal', () => {
-    expect(isTerminalSnapshot({ status: 'running' })).toBe(false);
-    expect(isTerminalSnapshot({ status: 'queued' })).toBe(false);
+    expect(isTerminalSnapshot({ status: 'running', phase: 'transcriber' })).toBe(false);
+    expect(isTerminalSnapshot({ status: 'queued', phase: 'idle' })).toBe(false);
     expect(isTerminalSnapshot(null)).toBe(false);
     expect(isTerminalSnapshot(undefined)).toBe(false);
   });

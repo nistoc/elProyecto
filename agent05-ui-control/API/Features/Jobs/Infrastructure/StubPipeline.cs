@@ -7,4 +7,6 @@ public sealed class StubPipeline : Application.IPipeline
         // Stub: no-op. Real implementation will call agent04/agent06.
         return Task.CompletedTask;
     }
+
+    public Task RunRefinerAsync(string jobId, CancellationToken ct = default) => Task.CompletedTask;
 }

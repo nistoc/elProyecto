@@ -13,6 +13,7 @@ import {
   createJob,
   deleteJob,
   subscribeToJob,
+  startRefine,
 } from '../api';
 
 export type StepId = 'upload' | 'transcriber' | 'refiner' | 'result';
@@ -90,6 +91,8 @@ export function useJob(): {
   handleStart: (tags?: string[]) => Promise<void>;
   handleReset: () => void;
   handleDeleteJob: (id: string) => Promise<void>;
+  /** Manually run the refiner (skip=true marks the job completed without refining). */
+  startRefiner: (skip?: boolean) => Promise<void>;
 } {
   const [jobId, setJobIdState] = useState<string | null>(() => readLastJobId());
   const [job, setJob] = useState<JobSnapshot | null>(null);
@@ -196,7 +199,9 @@ export function useJob(): {
       fetchJob(jobId).then((s) => {
         if (cancelled || !s) return;
         setJob(s);
-        if (s.status === 'done') setActiveStepState('result');
+        // Only jump to Result once the whole job is done (refiner completed/skipped),
+        // not when transcription finishes and the job is waiting for a manual refine.
+        if (s.phase === 'completed') setActiveStepState('result');
       });
       // Sidebar list still shows the pre-terminal status otherwise (it does not consume SSE).
       void refreshList();
@@ -334,6 +339,20 @@ export function useJob(): {
     [jobId, jobsList, refreshList, setJobId, handleReset]
   );
 
+  /** Manually start the refiner (or skip it) for the current job; updates arrive over SSE. */
+  const startRefiner = useCallback(
+    async (skip = false) => {
+      if (!jobId) return;
+      setError(null);
+      try {
+        await startRefine(jobId, skip);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to start refiner');
+      }
+    },
+    [jobId]
+  );
+
   const getStepStatusFor = useCallback(
     (step: StepId) => getStepStatus(step, job),
     [job]
@@ -360,5 +379,6 @@ export function useJob(): {
     handleStart,
     handleReset,
     handleDeleteJob,
+    startRefiner,
   };
 }

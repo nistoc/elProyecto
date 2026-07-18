@@ -9,9 +9,11 @@ namespace XtractManager.Features.Jobs.Infrastructure;
 /// </summary>
 public sealed class PipelineBackgroundService : BackgroundService, IPipelineQueue
 {
-    private readonly Channel<string> _queue = Channel.CreateUnbounded<string>();
+    private readonly Channel<WorkItem> _queue = Channel.CreateUnbounded<WorkItem>();
     private readonly IPipeline _pipeline;
     private readonly ILogger<PipelineBackgroundService> _logger;
+
+    private readonly record struct WorkItem(string JobId, bool RefinerOnly);
 
     public PipelineBackgroundService(IPipeline pipeline, ILogger<PipelineBackgroundService> logger)
     {
@@ -19,22 +21,27 @@ public sealed class PipelineBackgroundService : BackgroundService, IPipelineQueu
         _logger = logger;
     }
 
-    public void Enqueue(string jobId) => _queue.Writer.TryWrite(jobId);
+    public void Enqueue(string jobId) => _queue.Writer.TryWrite(new WorkItem(jobId, RefinerOnly: false));
+
+    public void EnqueueRefiner(string jobId) => _queue.Writer.TryWrite(new WorkItem(jobId, RefinerOnly: true));
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var jobId in _queue.Reader.ReadAllAsync(stoppingToken))
+        await foreach (var item in _queue.Reader.ReadAllAsync(stoppingToken))
         {
-            var id = jobId;
+            var work = item;
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await _pipeline.RunAsync(id, stoppingToken);
+                    if (work.RefinerOnly)
+                        await _pipeline.RunRefinerAsync(work.JobId, stoppingToken);
+                    else
+                        await _pipeline.RunAsync(work.JobId, stoppingToken);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Pipeline failed for job {JobId}", id);
+                    _logger.LogError(ex, "Pipeline failed for job {JobId} (refinerOnly={RefinerOnly})", work.JobId, work.RefinerOnly);
                 }
             }, stoppingToken);
         }

@@ -159,86 +159,111 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             return;
         }
 
+        // Transcription finished. The refiner is NOT started automatically — it waits for an explicit
+        // POST /api/jobs/{id}/refine so the operator can review the transcript first (RunRefinerAsync).
+        // The SSE stream is deliberately left open (no 'done') while the job sits at awaiting_refiner.
         snap = await _store.GetAsync(jobId, ct);
-        if (snap?.Phase != "awaiting_refiner")
+        if (snap?.Phase == "awaiting_refiner")
         {
-            Broadcast(jobId, "done", null);
+            _logger.LogInformation("Job {JobId}: transcription complete — awaiting manual refiner start", jobId);
+            Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
             return;
         }
 
+        Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
+        Broadcast(jobId, "done", null);
+    }
+
+    public async Task RunRefinerAsync(string jobId, CancellationToken ct = default)
+    {
+        try
+        {
+            await RunRefinerCoreAsync(jobId, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Job {JobId}: refiner run crashed; finalizing as awaiting_refiner/failed", jobId);
+            try
+            {
+                await UpdateAndBroadcastAsync(jobId, s => { s.Phase = "awaiting_refiner"; s.Status = "failed"; }, CancellationToken.None);
+                Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
+                Broadcast(jobId, "done", null);
+            }
+            catch (Exception finalizeEx)
+            {
+                _logger.LogError(finalizeEx, "Job {JobId}: failed to finalize crashed refiner run", jobId);
+            }
+        }
+    }
+
+    private async Task RunRefinerCoreAsync(string jobId, CancellationToken ct)
+    {
+        var snap = await _store.GetAsync(jobId, ct);
+        if (snap == null) return;
+
+        var workspaceRoot = _configuration["Agent04:WorkspaceRoot"]?.Trim();
+        var jobsPath = Path.GetFullPath(_configuration["Jobs:WorkspacePath"] ?? "./runtime");
+        if (string.IsNullOrEmpty(workspaceRoot))
+            workspaceRoot = jobsPath;
+        var jobDir = _workspace.GetJobDirectoryPath(jobId);
+
+        await UpdateAndBroadcastAsync(jobId, s => { s.Phase = "refiner"; s.Status = "running"; }, ct);
+        Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = "refiner", status = "running" }, ApiJson.CamelCase));
+
         string? transcriptContent = null;
-        snap = await _store.GetAsync(jobId, ct);
-        var mdRel = snap?.MdOutputPath?.Trim().TrimStart('/', '\\');
-        _logger.LogInformation("Job {JobId}: resolving transcript, MdOutputPath(rel)={MdRel}, workspaceRoot={WorkspaceRoot}, jobDir={JobDir}",
+        var mdRel = snap.MdOutputPath?.Trim().TrimStart('/', '\\');
+        _logger.LogInformation("Job {JobId}: refiner resolving transcript, MdOutputPath(rel)={MdRel}, workspaceRoot={Root}, jobDir={JobDir}",
             jobId, mdRel ?? "null", workspaceRoot, jobDir);
         if (!string.IsNullOrEmpty(mdRel))
         {
             var mdFull = Path.Combine(workspaceRoot, mdRel.Replace('/', Path.DirectorySeparatorChar));
-            _logger.LogInformation("Job {JobId}: transcript path (from Agent04)={Path}, exists={Exists}", jobId, mdFull, File.Exists(mdFull));
             if (File.Exists(mdFull))
             {
-                try
-                {
-                    transcriptContent = await File.ReadAllTextAsync(mdFull, Encoding.UTF8, ct);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Job {JobId}: could not read transcript at {Path}", jobId, mdFull);
-                }
+                try { transcriptContent = await File.ReadAllTextAsync(mdFull, Encoding.UTF8, ct); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Job {JobId}: could not read transcript at {Path}", jobId, mdFull); }
             }
         }
         if (string.IsNullOrEmpty(transcriptContent))
         {
             var fallbackMd = Path.Combine(jobDir, "transcript.md");
-            _logger.LogInformation("Job {JobId}: fallback transcript path={Path}, exists={Exists}", jobId, fallbackMd, File.Exists(fallbackMd));
             if (File.Exists(fallbackMd))
             {
                 try { transcriptContent = await File.ReadAllTextAsync(fallbackMd, Encoding.UTF8, ct); } catch { /* ignore */ }
             }
         }
-
-        await UpdateAndBroadcastAsync(jobId, s => s.Phase = "refiner", ct);
-        Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = "refiner" }, ApiJson.CamelCase));
+        // Recovered/legacy jobs name the combined file transcript_<agent04JobId>.md — take the newest one.
+        if (string.IsNullOrEmpty(transcriptContent) && Directory.Exists(jobDir))
+        {
+            var candidate = new DirectoryInfo(jobDir).EnumerateFiles("transcript*.md")
+                .Where(f => !f.Name.Contains("_fixed", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .FirstOrDefault();
+            if (candidate != null)
+            {
+                try { transcriptContent = await File.ReadAllTextAsync(candidate.FullName, Encoding.UTF8, ct); } catch { /* ignore */ }
+            }
+        }
 
         var outputRelForRefiner = TryGetRefinerOutputRelativePath(jobId, jobDir);
-        if (outputRelForRefiner != null)
-            _logger.LogInformation("Job {JobId}: Agent06 output under job dir (legacy rel was {LegacyRel})", jobId, outputRelForRefiner);
-
-        Application.SubmitRefineJobResult? refinerResult = null;
-        var tagsList = snap?.Tags?.ToList();
+        var tagsList = snap.Tags?.ToList();
+        Application.SubmitRefineJobResult refinerResult;
         try
         {
-            // Per-job artifact root on Agent06: same physical file as legacy "{jobId}/transcript_fixed.md" under shared workspace.
             var refineInput = outputRelForRefiner != null
-                ? new RefineJobInput(
-                    InputFilePath: null,
-                    InputContent: transcriptContent ?? "",
-                    OutputFilePath: "transcript_fixed.md",
-                    BatchSize: 5,
-                    ContextLines: 2,
-                    Tags: tagsList,
-                    JobDirectoryRelative: jobId)
-                : new RefineJobInput(
-                    InputFilePath: null,
-                    InputContent: transcriptContent ?? "",
-                    OutputFilePath: null,
-                    BatchSize: 5,
-                    ContextLines: 2,
-                    Tags: tagsList,
-                    JobDirectoryRelative: null);
-
+                ? new RefineJobInput(null, transcriptContent ?? "", "transcript_fixed.md", 5, 2, tagsList, jobId)
+                : new RefineJobInput(null, transcriptContent ?? "", null, 5, 2, tagsList, null);
             refinerResult = await _refiner.SubmitRefineJobAsync(refineInput, ct);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Job {JobId}: Agent06 SubmitRefineJob failed", jobId);
-            await UpdateAndBroadcastAsync(jobId, s => { s.Phase = "awaiting_refiner"; s.Status = "done"; }, ct);
+            await UpdateAndBroadcastAsync(jobId, s => { s.Phase = "awaiting_refiner"; s.Status = "failed"; }, ct);
+            Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = "awaiting_refiner", status = "failed" }, ApiJson.CamelCase));
             Broadcast(jobId, "done", null);
             return;
         }
 
-        var refineJobId = refinerResult.JobId;
-        var refineOk = await ConsumeRefinerStatusAsync(jobId, refineJobId, ct);
+        var refineOk = await ConsumeRefinerStatusAsync(jobId, refinerResult.JobId, ct);
         if (!refineOk)
         {
             await UpdateAndBroadcastAsync(jobId, s => { s.Phase = "awaiting_refiner"; s.Status = "failed"; }, ct);
@@ -248,7 +273,8 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         }
 
         var completedAt = DateTime.UtcNow.ToString("O");
-        await UpdateAndBroadcastAsync(jobId, s => { if (s.Phase != "completed") s.Phase = "completed"; s.Status = "done"; s.CompletedAt = completedAt; }, ct);
+        await UpdateAndBroadcastAsync(jobId, s => { s.Phase = "completed"; s.Status = "done"; s.CompletedAt = completedAt; }, ct);
+        Broadcast(jobId, "snapshot", await GetSnapshotJsonAsync(jobId));
         Broadcast(jobId, "done", null);
     }
 

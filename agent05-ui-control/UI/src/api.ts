@@ -204,6 +204,37 @@ export async function deleteJob(id: string): Promise<void> {
   await del(`/api/jobs/${id}`);
 }
 
+/** Manually start the refiner (agent06) for a job whose transcription finished, or skip it. */
+export async function startRefine(
+  jobId: string,
+  skip = false
+): Promise<{ ok: boolean; message: string }> {
+  const r = await fetch(
+    `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/refine`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skip }),
+    }
+  );
+  const text = await r.text();
+  if (!r.ok) {
+    let msg = text || `HTTP ${r.status}`;
+    try {
+      const j = JSON.parse(text) as { error?: string };
+      if (j?.error) msg = j.error;
+    } catch {
+      /* keep */
+    }
+    throw new Error(msg);
+  }
+  try {
+    return JSON.parse(text) as { ok: boolean; message: string };
+  } catch {
+    return { ok: true, message: skip ? 'refiner_skipped' : 'refiner_started' };
+  }
+}
+
 export type ChunkActionName =
   | 'cancel'
   | 'retranscribe'
