@@ -367,6 +367,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         foreach (var f in catalog.Transcripts) resp.Transcripts.Add(ToProtoJobFile(f));
         foreach (var f in catalog.Chunks) resp.Chunks.Add(ToProtoJobFile(f));
         foreach (var f in catalog.ChunkJson) resp.ChunkJson.Add(ToProtoJobFile(f));
+        foreach (var f in catalog.ChunkMd) resp.ChunkMd.Add(ToProtoJobFile(f));
         foreach (var f in catalog.Intermediate) resp.Intermediate.Add(ToProtoJobFile(f));
         foreach (var f in catalog.Converted) resp.Converted.Add(ToProtoJobFile(f));
         foreach (var f in catalog.SplitChunks) resp.SplitChunks.Add(ToProtoJobFile(f));

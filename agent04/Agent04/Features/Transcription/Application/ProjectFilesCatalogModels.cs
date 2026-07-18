@@ -7,6 +7,7 @@ public sealed record ProjectFilesCatalogResult
     public IReadOnlyList<ArtifactFileEntry> Transcripts { get; init; } = Array.Empty<ArtifactFileEntry>();
     public IReadOnlyList<ArtifactFileEntry> Chunks { get; init; } = Array.Empty<ArtifactFileEntry>();
     public IReadOnlyList<ArtifactFileEntry> ChunkJson { get; init; } = Array.Empty<ArtifactFileEntry>();
+    public IReadOnlyList<ArtifactFileEntry> ChunkMd { get; init; } = Array.Empty<ArtifactFileEntry>();
     public IReadOnlyList<ArtifactFileEntry> Intermediate { get; init; } = Array.Empty<ArtifactFileEntry>();
     public IReadOnlyList<ArtifactFileEntry> Converted { get; init; } = Array.Empty<ArtifactFileEntry>();
     public IReadOnlyList<ArtifactFileEntry> SplitChunks { get; init; } = Array.Empty<ArtifactFileEntry>();

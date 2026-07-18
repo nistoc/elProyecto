@@ -9,6 +9,7 @@ public class JobProjectFiles
     public IReadOnlyList<JobProjectFile> Original { get; set; } = Array.Empty<JobProjectFile>();
     public IReadOnlyList<JobProjectFile> Chunks { get; set; } = Array.Empty<JobProjectFile>();
     public IReadOnlyList<JobProjectFile> ChunkJson { get; set; } = Array.Empty<JobProjectFile>();
+    public IReadOnlyList<JobProjectFile> ChunkMd { get; set; } = Array.Empty<JobProjectFile>();
     public IReadOnlyList<JobProjectFile> Transcripts { get; set; } = Array.Empty<JobProjectFile>();
     public IReadOnlyList<JobProjectFile> Intermediate { get; set; } = Array.Empty<JobProjectFile>();
     public IReadOnlyList<JobProjectFile> Converted { get; set; } = Array.Empty<JobProjectFile>();

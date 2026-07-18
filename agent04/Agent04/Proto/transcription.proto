@@ -217,4 +217,5 @@ message GetProjectFilesResponse {
   repeated JobArtifactFileEntry intermediate = 5;
   repeated JobArtifactFileEntry converted = 6;
   repeated JobArtifactFileEntry split_chunks = 7;
+  repeated JobArtifactFileEntry chunk_md = 8;
 }

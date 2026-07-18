@@ -106,6 +106,7 @@ export interface JobProjectFiles {
   original: JobProjectFile[];
   chunks: JobProjectFile[];
   chunkJson: JobProjectFile[];
+  chunkMd: JobProjectFile[];
   transcripts: JobProjectFile[];
   intermediate: JobProjectFile[];
   converted: JobProjectFile[];

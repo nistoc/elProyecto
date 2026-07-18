@@ -357,6 +357,16 @@ export function ProjectFilesView({
               t={t}
               onEditText={openEditor}
             />
+            <Section
+              title={indexedSectionTitle(
+                data.chunkMd ?? [],
+                t('sectionChunkMd')
+              )}
+              jobId={jobId}
+              items={data.chunkMd ?? []}
+              t={t}
+              onEditText={openEditor}
+            />
           </>
         )}
         <Section

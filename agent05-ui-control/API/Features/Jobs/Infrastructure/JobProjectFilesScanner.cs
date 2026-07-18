@@ -47,6 +47,7 @@ public static class JobProjectFilesScanner
 
         var chunksDir = Path.Combine(jobDir, "chunks");
         var chunksJsonDir = Path.Combine(jobDir, "chunks_json");
+        var chunksMdDir = Path.Combine(jobDir, "chunks_md");
         var intermediateDir = Path.Combine(jobDir, "intermediate_results");
         var convertedDir = Path.Combine(jobDir, "converted_wav");
 
@@ -56,6 +57,7 @@ public static class JobProjectFilesScanner
             Transcripts = transcripts,
             Chunks = ScanChunkFolder(chunksDir, "chunks", withIndex: true),
             ChunkJson = ScanChunkFolder(chunksJsonDir, "chunks_json", withIndex: true),
+            ChunkMd = ScanChunkFolder(chunksMdDir, "chunks_md", withIndex: true),
             Intermediate = ScanSimpleFolder(intermediateDir, "intermediate_results"),
             Converted = ScanSimpleFolder(convertedDir, "converted_wav"),
             SplitChunks = ScanSplitChunks(jobDir),

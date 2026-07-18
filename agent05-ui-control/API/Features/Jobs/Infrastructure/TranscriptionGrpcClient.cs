@@ -253,6 +253,7 @@ public sealed class TranscriptionGrpcClient : Application.ITranscriptionServiceC
             Transcripts = r.Transcripts.Select(MapArtifactFile).ToList(),
             Chunks = r.Chunks.Select(MapArtifactFile).ToList(),
             ChunkJson = r.ChunkJson.Select(MapArtifactFile).ToList(),
+            ChunkMd = r.ChunkMd.Select(MapArtifactFile).ToList(),
             Intermediate = r.Intermediate.Select(MapArtifactFile).ToList(),
             Converted = r.Converted.Select(MapArtifactFile).ToList(),
             SplitChunks = r.SplitChunks.Select(MapArtifactFile).ToList()
