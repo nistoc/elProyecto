@@ -18,6 +18,13 @@ internal static class GrpcChannelFactory
             PooledConnectionIdleTimeout = Timeout.InfiniteTimeSpan,
             EnableMultipleHttp2Connections = true,
         };
-        return GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = handler });
+        return GrpcChannel.ForAddress(address, new GrpcChannelOptions
+        {
+            HttpHandler = handler,
+            // After an outage the balancer's default reconnect backoff grows to minutes,
+            // so calls kept failing long after the service was back. Cap it at 5s.
+            InitialReconnectBackoff = TimeSpan.FromSeconds(1),
+            MaxReconnectBackoff = TimeSpan.FromSeconds(5),
+        });
     }
 }

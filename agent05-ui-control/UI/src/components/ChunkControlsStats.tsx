@@ -246,7 +246,9 @@ export function ChunkControlsStats({
     job.phase === 'transcriber' && job.status === 'running';
   const jobStatusAllowsPostDoneChunkOps = (() => {
     const s = (job.status || '').toLowerCase();
-    return s === 'done' || s === 'completed';
+    // 'failed' included: after a crash/outage the operator must be able to
+    // retranscribe missing chunks and rebuild the transcript.
+    return s === 'done' || s === 'completed' || s === 'failed';
   })();
   const canTranscribeSubChunk =
     Boolean(job.agent04JobId?.trim()) &&
@@ -277,8 +279,8 @@ export function ChunkControlsStats({
 
   const artifactGroupsLoading = agent04ArtifactGroups === null;
 
-  const readOnly =
-    job.status === 'failed' && (vmAll?.length ?? 0) > 0;
+  // Failed jobs stay operable (retranscribe / rebuild after a crash); nothing is read-only anymore.
+  const readOnly = false;
   const live = transcriberRunning && total > 0;
 
   const groups = overlayVmFromJobWhenMissing(

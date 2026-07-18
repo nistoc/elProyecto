@@ -472,9 +472,10 @@ public class JobsController : ControllerBase
             var st = job.Status ?? "";
             var running = string.Equals(st, "running", StringComparison.OrdinalIgnoreCase);
             var doneLike = string.Equals(st, "done", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(st, "completed", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(st, "completed", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(st, "failed", StringComparison.OrdinalIgnoreCase);
             if (!running && !doneLike)
-                return Conflict(new { error = "cancel requires status running, done, or completed" });
+                return Conflict(new { error = "cancel requires status running, done, completed, or failed" });
             if (running && !string.Equals(job.Phase, "transcriber", StringComparison.OrdinalIgnoreCase))
                 return Conflict(new { error = "this action requires phase=transcriber and status=running" });
         }
@@ -483,8 +484,9 @@ public class JobsController : ControllerBase
         if (allowAfterDone
             && !string.Equals(job.Status, "running", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(job.Status, "done", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(job.Status, "completed", StringComparison.OrdinalIgnoreCase))
-            return Conflict(new { error = "split / transcribe_sub / retranscribe / rebuild_combined / rebuild_split_merged require status running, done, or completed" });
+            && !string.Equals(job.Status, "completed", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(job.Status, "failed", StringComparison.OrdinalIgnoreCase))
+            return Conflict(new { error = "split / transcribe_sub / retranscribe / rebuild_combined / rebuild_split_merged require status running, done, completed, or failed" });
 
         if (action == TranscriptionChunkAction.Split && (body.SplitParts is null || body.SplitParts < 2))
             return BadRequest(new { error = "split requires splitParts >= 2" });
