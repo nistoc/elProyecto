@@ -33,7 +33,6 @@ public class JobSnapshot
     public string Id { get; set; } = "";
     public string Status { get; set; } = "queued";
     public string Phase { get; set; } = "idle";
-    public IReadOnlyList<LogEntry> Logs { get; set; } = Array.Empty<LogEntry>();
     public ChunkState? Chunks { get; set; }
     public JobResult? Result { get; set; }
     public string? OriginalFilename { get; set; }
@@ -63,6 +62,35 @@ public class JobSnapshot
     /// Deprecated: no longer populated. Use <c>GET /api/jobs/{id}/files</c> for structured project files. Kept for JSON backward compatibility with older clients.
     /// </summary>
     public IReadOnlyList<JobFileInfo>? Files { get; set; }
+
+    /// <summary>Deep copy so readers can serialize/mutate their view while writers mutate the stored instance.</summary>
+    public JobSnapshot Clone() => new()
+    {
+        Id = Id,
+        Status = Status,
+        Phase = Phase,
+        Chunks = Chunks?.Clone(),
+        Result = Result?.Clone(),
+        OriginalFilename = OriginalFilename,
+        Tags = Tags?.ToList(),
+        CreatedAt = CreatedAt,
+        CompletedAt = CompletedAt,
+        AgentPaused = AgentPaused,
+        Agent04JobId = Agent04JobId,
+        TranscriptionFooterHint = TranscriptionFooterHint,
+        TranscriptionSyncDebug = TranscriptionSyncDebug,
+        TranscriptionError = TranscriptionError,
+        MdOutputPath = MdOutputPath,
+        JobDirectoryPath = JobDirectoryPath,
+        Files = Files?.Select(f => new JobFileInfo
+        {
+            Name = f.Name,
+            Kind = f.Kind,
+            SizeBytes = f.SizeBytes,
+            LineCount = f.LineCount,
+            DurationSeconds = f.DurationSeconds,
+        }).ToList(),
+    };
 }
 
 /// <summary>Legacy flat file row (root-only scan). Prefer <see cref="JobProjectFiles"/> via GET /api/jobs/:id/files.</summary>
@@ -78,13 +106,6 @@ public class JobFileInfo
     public double? DurationSeconds { get; set; }
 }
 
-public class LogEntry
-{
-    public long Ts { get; set; }
-    public string Level { get; set; } = "info";
-    public string Message { get; set; } = "";
-}
-
 public class ChunkState
 {
     public int Total { get; set; }
@@ -96,6 +117,18 @@ public class ChunkState
     public IReadOnlyDictionary<int, SplitJob>? SplitJobs { get; set; }
     /// <summary>Per-chunk virtual model from Agent04 (ISO8601 timestamps); survives page refresh.</summary>
     public IReadOnlyList<ChunkVirtualModelEntry>? ChunkVirtualModel { get; set; }
+
+    public ChunkState Clone() => new()
+    {
+        Total = Total,
+        Active = Active.ToList(),
+        Completed = Completed.ToList(),
+        Cancelled = Cancelled.ToList(),
+        Failed = Failed.ToList(),
+        Skipped = Skipped?.ToList(),
+        SplitJobs = SplitJobs?.ToDictionary(kv => kv.Key, kv => kv.Value.Clone()),
+        ChunkVirtualModel = ChunkVirtualModel?.Select(e => e.Clone()).ToList(),
+    };
 }
 
 public sealed class ChunkVirtualModelEntry
@@ -115,6 +148,19 @@ public sealed class ChunkVirtualModelEntry
 
     /// <summary>Per-chunk transcription diagnostics from Agent04 (retries, HTTP OK, etc.).</summary>
     public string? TranscriptActivityLog { get; set; }
+
+    public ChunkVirtualModelEntry Clone() => new()
+    {
+        Index = Index,
+        StartedAt = StartedAt,
+        CompletedAt = CompletedAt,
+        State = State,
+        ErrorMessage = ErrorMessage,
+        IsSubChunk = IsSubChunk,
+        ParentChunkIndex = ParentChunkIndex,
+        SubChunkIndex = SubChunkIndex,
+        TranscriptActivityLog = TranscriptActivityLog,
+    };
 }
 
 public class SplitJob
@@ -125,6 +171,16 @@ public class SplitJob
     public IReadOnlyList<SubChunk> SubChunks { get; set; } = Array.Empty<SubChunk>();
     public string? MergedText { get; set; }
     public string? Error { get; set; }
+
+    public SplitJob Clone() => new()
+    {
+        ParentIdx = ParentIdx,
+        Parts = Parts,
+        Status = Status,
+        SubChunks = SubChunks.Select(s => new SubChunk { Idx = s.Idx, Status = s.Status, AudioPath = s.AudioPath }).ToList(),
+        MergedText = MergedText,
+        Error = Error,
+    };
 }
 
 public class SubChunk
@@ -140,4 +196,12 @@ public class JobResult
     public string? TranscriptFixed { get; set; }
     public IReadOnlyList<string>? TranscriptFixedAll { get; set; }
     public string? RawJson { get; set; }
+
+    public JobResult Clone() => new()
+    {
+        Transcript = Transcript,
+        TranscriptFixed = TranscriptFixed,
+        TranscriptFixedAll = TranscriptFixedAll?.ToList(),
+        RawJson = RawJson,
+    };
 }

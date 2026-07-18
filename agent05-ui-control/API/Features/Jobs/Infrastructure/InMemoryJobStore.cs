@@ -5,16 +5,34 @@ namespace XtractManager.Features.Jobs.Infrastructure;
 public sealed class InMemoryJobStore : Application.IJobStore
 {
     private readonly ConcurrentDictionary<string, Application.JobSnapshot> _jobs = new();
+    private readonly ConcurrentDictionary<string, object> _locks = new();
+
+    private object LockFor(string jobId) => _locks.GetOrAdd(jobId, _ => new object());
 
     public Task<Application.JobSnapshot?> GetAsync(string jobId, CancellationToken ct = default)
     {
-        _jobs.TryGetValue(jobId, out var snap);
-        return Task.FromResult(snap);
+        if (!_jobs.TryGetValue(jobId, out var snap))
+            return Task.FromResult<Application.JobSnapshot?>(null);
+        // Readers get a deep copy: writers keep mutating the stored instance under the per-job lock,
+        // so serializing a shared snapshot mid-update can no longer tear.
+        lock (LockFor(jobId))
+        {
+            return Task.FromResult<Application.JobSnapshot?>(snap.Clone());
+        }
     }
 
     public Task<IReadOnlyList<Application.JobListItem>> ListAsync(Application.JobListFilter filter, CancellationToken ct = default)
     {
-        var list = _jobs.Values
+        var copies = new List<Application.JobSnapshot>();
+        foreach (var (jobId, snap) in _jobs)
+        {
+            lock (LockFor(jobId))
+            {
+                copies.Add(snap.Clone());
+            }
+        }
+
+        var list = copies
             .Where(j => Filter(j, filter))
             .OrderByDescending(j => j.CreatedAt ?? "")
             .Skip(filter.Offset)
@@ -68,12 +86,17 @@ public sealed class InMemoryJobStore : Application.IJobStore
     {
         if (!_jobs.TryGetValue(jobId, out var snap))
             return Task.FromResult(false);
-        update(snap);
+        lock (LockFor(jobId))
+        {
+            update(snap);
+        }
         return Task.FromResult(true);
     }
 
     public Task<bool> DeleteAsync(string jobId, CancellationToken ct = default)
     {
-        return Task.FromResult(_jobs.TryRemove(jobId, out _));
+        var removed = _jobs.TryRemove(jobId, out _);
+        _locks.TryRemove(jobId, out _);
+        return Task.FromResult(removed);
     }
 }
