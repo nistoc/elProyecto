@@ -332,19 +332,6 @@ export function ChunkControlsStats({
   return (
     <section className="chunk-stats" aria-label={t('chunkStatsTitle')}>
       <h4 className="chunk-stats__title">{t('chunkStatsTitle')}</h4>
-      {showList && canPostDoneChunkOps && !readOnly && (
-        <div className="chunk-stats__global-actions">
-          <button
-            type="button"
-            className="chunk-stats__rebuild-combined"
-            disabled={busy}
-            title={t('chunkRebuildCombinedHint')}
-            onClick={() => void runAction('rebuild_combined', 0)}
-          >
-            {t('chunkRebuildCombined')}
-          </button>
-        </div>
-      )}
       {showList && anyVmTelemetry && (
         <p className="chunk-stats__hint">{t('chunkVmTimerNote')}</p>
       )}
@@ -833,6 +820,19 @@ export function ChunkControlsStats({
             );
           })}
         </ul>
+      )}
+      {showList && canPostDoneChunkOps && !readOnly && (
+        <div className="chunk-stats__global-actions">
+          <button
+            type="button"
+            className="chunk-stats__rebuild-combined"
+            disabled={busy}
+            title={t('chunkRebuildCombinedHint')}
+            onClick={() => void runAction('rebuild_combined', 0)}
+          >
+            {t('chunkRebuildCombined')}
+          </button>
+        </div>
       )}
       {message && <p className="chunk-stats__message">{message}</p>}
       {editTarget && (

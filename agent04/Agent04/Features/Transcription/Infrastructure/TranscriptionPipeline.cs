@@ -1136,11 +1136,15 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         if (config.Get<bool?>("save_per_chunk_json") != true)
             throw new InvalidOperationException("rebuild_combined requires save_per_chunk_json=true");
 
-        var baseName = ResolveCombinedOutputBaseName(config, artifactRoot);
-        var mdRel = ResolveOutputPattern(config.MdOutputPath, baseName, agentJobId);
-        var jsonRel = ResolveOutputPattern(config.RawJsonOutputPath, baseName, agentJobId);
-        var mdPath = Path.Combine(artifactRoot, mdRel);
-        var jsonPath = Path.Combine(artifactRoot, jsonRel);
+        // Guard: fail early if we can't tell what job this is (no input/chunks). Result unused for naming.
+        _ = ResolveCombinedOutputBaseName(config, artifactRoot);
+        // Each rebuild writes a NEW timestamped combined file (legacy convention
+        // transcript_<yyyyMMdd_HHmmss_fff>.md) instead of overwriting the previous one.
+        var stamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss_fff", System.Globalization.CultureInfo.InvariantCulture);
+        var mdPath = Path.Combine(artifactRoot,
+            $"{Path.GetFileNameWithoutExtension(config.MdOutputPath)}_{stamp}{Path.GetExtension(config.MdOutputPath)}");
+        var jsonPath = Path.Combine(artifactRoot,
+            $"{Path.GetFileNameWithoutExtension(config.RawJsonOutputPath)}_{stamp}{Path.GetExtension(config.RawJsonOutputPath)}");
         EnsureDirectoryFor(mdPath);
         EnsureDirectoryFor(jsonPath);
 
