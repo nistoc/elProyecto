@@ -331,6 +331,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             .ConfigureAwait(false);
         var workVm = ChunkVirtualModelFromWorkState.Build(workState);
         var vm = ChunkVirtualModelMerge.Merge(workVm, mergedClientLive);
+        vm = ChunkVirtualModelArtifactValidation.Apply(vm, resp.Groups, job?.State == JobState.Running);
 
         ChunkArtifactGroupVirtualModelBinder.ApplyToResponse(resp, vm);
 
