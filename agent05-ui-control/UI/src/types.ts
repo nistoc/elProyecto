@@ -4,12 +4,6 @@ export type JobStatus = string;
 /** Job phase: idle | transcriber | awaiting_refiner | refiner | completed */
 export type JobPhase = string;
 
-export interface LogEntry {
-  ts: number;
-  level: string;
-  message: string;
-}
-
 export interface SubChunk {
   idx: number;
   status: string;
@@ -62,7 +56,6 @@ export interface JobSnapshot {
   id: string;
   status: JobStatus;
   phase: JobPhase;
-  logs: LogEntry[];
   chunks?: ChunkState | null;
   result?: JobResult | null;
   originalFilename?: string | null;

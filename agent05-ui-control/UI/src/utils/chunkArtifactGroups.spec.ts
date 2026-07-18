@@ -140,7 +140,6 @@ describe('overlayVmFromJobWhenMissing', () => {
       id: 'j1',
       status: 'done',
       phase: 'completed',
-      logs: [],
       chunks: {
         total: 1,
         active: [],

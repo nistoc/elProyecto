@@ -14,7 +14,6 @@ import {
   deleteJob,
   subscribeToJob,
 } from '../api';
-import { useLogBuffer } from './useLogBuffer';
 
 export type StepId = 'upload' | 'transcriber' | 'refiner' | 'result';
 
@@ -91,10 +90,6 @@ export function useJob(): {
   handleStart: (tags?: string[]) => Promise<void>;
   handleReset: () => void;
   handleDeleteJob: (id: string) => Promise<void>;
-  logsPaused: boolean;
-  bufferedCount: number;
-  toggleLogsPause: () => void;
-  clearLogsForStep: () => void;
 } {
   const [jobId, setJobIdState] = useState<string | null>(() => readLastJobId());
   const [job, setJob] = useState<JobSnapshot | null>(null);
@@ -111,7 +106,6 @@ export function useJob(): {
     useState<ConnectionState>('connected');
   /** Bumps on each SSE snapshot so project files + chunk-artifact-groups refetch (disk artifacts). */
   const [jobSnapshotRevision, setJobSnapshotRevision] = useState(0);
-  const logBuffer = useLogBuffer();
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const prevJobIdsRef = useRef<Set<string>>(new Set());
   const listHydratedRef = useRef(false);
@@ -338,12 +332,6 @@ export function useJob(): {
     [jobId, jobsList, refreshList, setJobId, handleReset]
   );
 
-  const toggleLogsPause = logBuffer.togglePause;
-  const clearLogsForStep = useCallback(() => {
-    logBuffer.reset();
-    setJob((prev) => (prev ? { ...prev, logs: [] } : null));
-  }, [logBuffer]);
-
   const getStepStatusFor = useCallback(
     (step: StepId) => getStepStatus(step, job),
     [job]
@@ -370,9 +358,5 @@ export function useJob(): {
     handleStart,
     handleReset,
     handleDeleteJob,
-    logsPaused: logBuffer.logsPaused,
-    bufferedCount: logBuffer.bufferedCount,
-    toggleLogsPause,
-    clearLogsForStep,
   };
 }

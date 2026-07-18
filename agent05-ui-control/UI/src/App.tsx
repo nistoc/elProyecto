@@ -3,10 +3,10 @@ import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { useJob, type StepId } from './hooks/useJob';
 import { useJobChunkArtifactGroups } from './hooks/useJobChunkArtifactGroups';
 import { useJobProjectFiles } from './hooks/useJobProjectFiles';
+import { useDebouncedValue } from './hooks/useDebouncedValue';
 import { StepCard } from './components/StepCard';
 import { UploadCard } from './components/UploadCard';
 import { JobsList } from './components/JobsList';
-import { LogsSection } from './components/LogsSection';
 import { ResultSection } from './components/ResultSection';
 import { ProjectFilesPanel } from './components/ProjectFilesPanel';
 import { ChunkControlsStats } from './components/ChunkControlsStats';
@@ -33,14 +33,14 @@ function AppContent() {
     handleDeleteJob,
     jobSnapshotRevision,
     refreshJobSnapshot,
-    logsPaused,
-    bufferedCount,
-    toggleLogsPause,
-    clearLogsForStep,
   } = useJob();
 
-  const jobFiles = useJobProjectFiles(jobId, jobSnapshotRevision);
-  const jobChunkGroups = useJobChunkArtifactGroups(jobId, jobSnapshotRevision);
+  // SSE snapshots arrive ~every 2s while transcribing; debounce the heavy /files and
+  // /chunk-artifact-groups refetches so they hit Agent04 at most once per 3s. Job switches
+  // stay instant (both hooks key on jobId) and manual reloads bypass this via .reload().
+  const debouncedRevision = useDebouncedValue(jobSnapshotRevision, 3000);
+  const jobFiles = useJobProjectFiles(jobId, debouncedRevision);
+  const jobChunkGroups = useJobChunkArtifactGroups(jobId, debouncedRevision);
 
   const steps: { id: StepId; title: string }[] = [
     { id: 'transcriber', title: t('transcriber') },
@@ -145,14 +145,6 @@ function AppContent() {
                         </p>
                       </div>
                     )}
-                    <LogsSection
-                      title={t('logs')}
-                      logs={job.logs ?? []}
-                      paused={logsPaused}
-                      bufferedCount={bufferedCount}
-                      onTogglePause={toggleLogsPause}
-                      onClearLogs={clearLogsForStep}
-                    />
                     {jobId && (
                       <>
                         <ChunkControlsStats
@@ -178,7 +170,7 @@ function AppContent() {
                           jobId={jobId}
                           mode="full"
                           t={t}
-                          filesRefreshKey={jobSnapshotRevision}
+                          filesRefreshKey={debouncedRevision}
                           managedFiles={jobFiles}
                           managedChunkGroups={jobChunkGroups}
                           hideChunkSections
@@ -207,14 +199,6 @@ function AppContent() {
                     {job.phase === 'completed' && (
                       <p className="step-panel__hint">{t('refinerCompleted')}</p>
                     )}
-                    <LogsSection
-                      title={t('logs')}
-                      logs={job.logs ?? []}
-                      paused={logsPaused}
-                      bufferedCount={bufferedCount}
-                      onTogglePause={toggleLogsPause}
-                      onClearLogs={clearLogsForStep}
-                    />
                     <ResultSection
                       jobId={jobId}
                       job={job}
@@ -231,16 +215,6 @@ function AppContent() {
 
             {activeStep === 'result' && jobId && (
               <div className="step-panel">
-                {job && (
-                  <LogsSection
-                    title={t('logs')}
-                    logs={job.logs ?? []}
-                    paused={logsPaused}
-                    bufferedCount={bufferedCount}
-                    onTogglePause={toggleLogsPause}
-                    onClearLogs={clearLogsForStep}
-                  />
-                )}
                 <ResultSection
                   jobId={jobId}
                   job={job}
