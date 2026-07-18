@@ -198,6 +198,8 @@ export function useJob(): {
         setJob(s);
         if (s.status === 'done') setActiveStepState('result');
       });
+      // Sidebar list still shows the pre-terminal status otherwise (it does not consume SSE).
+      void refreshList();
     };
     (async () => {
       const snap = await fetchJob(jobId);
@@ -257,7 +259,7 @@ export function useJob(): {
       ac.abort();
       close();
     };
-  }, [jobId]);
+  }, [jobId, refreshList]);
 
   const handleSelectJob = useCallback(
     (id: string) => {
