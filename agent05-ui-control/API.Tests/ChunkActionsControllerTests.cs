@@ -403,10 +403,10 @@ public class ChunkActionsControllerTests
 
     private static class MockPipeline
     {
-        public static readonly IPipeline Instance = new NoOpPipeline();
-        private sealed class NoOpPipeline : IPipeline
+        public static readonly IPipelineQueue Instance = new NoOpPipelineQueue();
+        private sealed class NoOpPipelineQueue : IPipelineQueue
         {
-            public Task RunAsync(string jobId, CancellationToken ct = default) => Task.CompletedTask;
+            public void Enqueue(string jobId) { }
         }
     }
 

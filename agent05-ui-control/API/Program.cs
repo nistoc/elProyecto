@@ -28,6 +28,9 @@ builder.Services.AddSingleton<IJobStore>(sp => new WorkspaceAwareJobStore(
     sp.GetRequiredService<ILogger<WorkspaceAwareJobStore>>()));
 builder.Services.AddSingleton<IBroadcaster, Broadcaster>();
 builder.Services.AddSingleton<IPipeline, TranscriptionRefinerPipeline>();
+builder.Services.AddSingleton<PipelineBackgroundService>();
+builder.Services.AddSingleton<IPipelineQueue>(sp => sp.GetRequiredService<PipelineBackgroundService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PipelineBackgroundService>());
 builder.Services.AddSingleton<ITranscriptionServiceClient, TranscriptionGrpcClient>();
 builder.Services.AddSingleton<IRefinerServiceClient, RefinerGrpcClient>();
 builder.Services.AddSingleton<XtractManager.Features.Jobs.Application.IJobWorkspace, JobWorkspace>();

@@ -14,25 +14,28 @@ public class JobsController : ControllerBase
 {
     private readonly IJobStore _store;
     private readonly IJobWorkspace _workspace;
-    private readonly IPipeline _pipeline;
+    private readonly IPipelineQueue _pipelineQueue;
     private readonly IBroadcaster _broadcaster;
     private readonly ITranscriptionServiceClient _transcription;
     private readonly ILogger<JobsController> _logger;
+    private readonly IHostApplicationLifetime? _lifetime;
 
     public JobsController(
         IJobStore store,
         IJobWorkspace workspace,
-        IPipeline pipeline,
+        IPipelineQueue pipelineQueue,
         IBroadcaster broadcaster,
         ITranscriptionServiceClient transcription,
-        ILogger<JobsController> logger)
+        ILogger<JobsController> logger,
+        IHostApplicationLifetime? lifetime = null)
     {
         _store = store;
         _workspace = workspace;
-        _pipeline = pipeline;
+        _pipelineQueue = pipelineQueue;
         _broadcaster = broadcaster;
         _transcription = transcription;
         _logger = logger;
+        _lifetime = lifetime;
     }
 
     [HttpPost]
@@ -63,7 +66,7 @@ public class JobsController : ControllerBase
             return StatusCode(500, ToProblemDetails("Failed to save uploaded file."));
         }
 
-        RunPipelineInBackground(jobId);
+        _pipelineQueue.Enqueue(jobId);
 
         return Accepted(new CreateJobResponse(jobId));
     }
@@ -74,18 +77,6 @@ public class JobsController : ControllerBase
             return null;
         var list = tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return list.Length > 0 ? list : null;
-    }
-
-    private async void RunPipelineInBackground(string jobId)
-    {
-        try
-        {
-            await _pipeline.RunAsync(jobId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Pipeline failed for job {JobId}", jobId);
-        }
     }
 
     private async Task PublishEnrichedSnapshotAsync(string jobId, CancellationToken ct)
@@ -139,22 +130,30 @@ public class JobsController : ControllerBase
 
     private void ScheduleTranscribeSubFollowUpSnapshots(string jobId)
     {
-        foreach (var ms in new[] { 600, 2000, 6000, 15000, 30000, 60000, 120000 })
+        // One task walking the delay ladder (same absolute marks as before: 0.6s … 120s),
+        // cancelled on host shutdown and stopped once the job disappears from the store.
+        var ct = _lifetime?.ApplicationStopping ?? CancellationToken.None;
+        _ = Task.Run(async () =>
         {
-            var delayMs = ms;
-            _ = Task.Run(async () =>
+            try
             {
-                try
+                foreach (var deltaMs in new[] { 600, 1400, 4000, 9000, 15000, 30000, 60000 })
                 {
-                    await Task.Delay(delayMs).ConfigureAwait(false);
-                    await PublishEnrichedSnapshotAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+                    await Task.Delay(deltaMs, ct).ConfigureAwait(false);
+                    if (await _store.GetAsync(jobId, ct).ConfigureAwait(false) == null)
+                        return;
+                    await PublishEnrichedSnapshotAsync(jobId, ct).ConfigureAwait(false);
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Follow-up snapshot after transcribe_sub for job {JobId}", jobId);
-                }
-            });
-        }
+            }
+            catch (OperationCanceledException)
+            {
+                // host shutting down
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Follow-up snapshot after transcribe_sub for job {JobId}", jobId);
+            }
+        }, CancellationToken.None);
     }
 
     private static ProblemDetails ToProblemDetails(string detail) =>
