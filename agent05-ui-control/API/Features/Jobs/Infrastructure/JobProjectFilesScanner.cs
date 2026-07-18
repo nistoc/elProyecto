@@ -15,6 +15,9 @@ public static class JobProjectFilesScanner
     private static readonly string[] AudioExtensions = { ".m4a", ".mp3", ".wav", ".ogg", ".flac" };
 
     private static readonly Regex FirstDigits = new(@"\d+", RegexOptions.Compiled);
+    // Chunk files are named "<basename>_part_<NNN>.<ext>"; the basename often starts with a
+    // date, so the FIRST digit run is the year, not the chunk index. Prefer "_part_NNN".
+    private static readonly Regex PartIndex = new(@"_part_(\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex SubChunkIndex = new(@"_sub_(\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex SubChunkResult = new(@"sub_chunk_(\d+)_result\.json$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ChunkMerged = new(@"^chunk_(\d+)_merged\.(json|md)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -218,8 +221,17 @@ public static class JobProjectFilesScanner
 
     private static int? ParseFirstInt(string fileName)
     {
-        var m = FirstDigits.Match(fileName);
-        return m.Success && int.TryParse(m.Value, out var n) ? n : null;
+        // Prefer the explicit "_part_NNN" chunk index.
+        var part = PartIndex.Match(fileName);
+        if (part.Success && int.TryParse(part.Groups[1].Value, out var pi))
+            return pi;
+        // Fallback: the LAST digit run of the name-without-extension (chunk index is a
+        // trailing suffix; a leading date must not win). e.g. "..._silc_part_000" -> 0.
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+        var matches = FirstDigits.Matches(stem);
+        if (matches.Count > 0 && int.TryParse(matches[^1].Value, out var last))
+            return last;
+        return null;
     }
 
     private static int? CountLines(string filePath)

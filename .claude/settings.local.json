@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git rm *)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m 'chore: remove legacy python/node agents \\(agent01, agent03, agent-browser, drafts\\) *)",
+      "Bash(ls \"C:/trash/spanish/elProyecto/agent-browser/runtime\" 2>/dev/null | head -20; echo \"--- size ---\"; du -sh \"C:/trash/spanish/elProyecto/agent-browser/runtime\" 2>/dev/null; echo \"--- root runtime exists? ---\"; ls -d \"C:/trash/spanish/elProyecto/runtime\" 2>/dev/null || echo \"no root runtime\")",
+      "PowerShell(Get-Process dotnet, node, Agent04, Api, API -ErrorAction SilentlyContinue)",
+      "PowerShell(\"---\")",
+      "PowerShell(\"done\")",
+      "Bash(curl -s \"http://localhost:5010/api/jobs/9a1e2e785ffc/chunk-artifact-groups\")",
+      "Bash(python -c ' *)",
+      "Bash(dotnet test *)",
+      "Bash(netstat -ano)",
+      "Bash(curl -s -X POST \"http://localhost:5010/api/jobs/9a1e2e785ffc/chunk-actions\" -H \"Content-Type: application/json\" -d '{\"action\":\"retranscribe\",\"chunkIndex\":8}')",
+      "Bash(xargs du -sch)",
+      "Bash(curl -s -X POST \"http://localhost:5010/api/jobs/9a1e2e785ffc/chunk-actions\" -H \"Content-Type: application/json\" -d '{\"action\":\"rebuild_combined\",\"chunkIndex\":0}')",
+      "Bash(dotnet run *)",
+      "Bash(curl -s \"http://localhost:5010/api/jobs/9a1e2e785ffc/project-files\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('keys:', list\\(d.keys\\(\\)\\)\\); print\\('chunkMd count:', len\\(d.get\\('chunkMd'\\) or d.get\\('chunk_md'\\) or []\\)\\); import pprint; pprint.pprint\\(\\(d.get\\('chunkMd'\\) or d.get\\('chunk_md'\\) or []\\)[:2]\\)\")",
+      "Bash(curl -s -m 3 \"http://localhost:5010/health\")",
+      "Bash(curl -s -m 3 \"http://localhost:5032/health\")",
+      "Bash(curl -s -m 5 \"http://localhost:5010/api/jobs/9a1e2e785ffc/files\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); f=d.get\\('files',{}\\); print\\('files keys:', list\\(f.keys\\(\\)\\)\\); print\\('chunkMd count:', len\\(f.get\\('chunkMd',[]\\)\\)\\); print\\('sample:', \\(f.get\\('chunkMd'\\) or [{}]\\)[0]\\)\")",
+      "Bash(grep -n \"ScanChunkFolder\\\\|withIndex\\\\|index\\\\|Index\\\\|ParseIndex\\\\|part_\\\\|Regex\\\\|\\\\\\\\\\\\\\\\d\" agent04/Agent04/Features/Transcription/Infrastructure/ProjectFilesCatalogScanner.cs)",
+      "Bash(dotnet build *)",
+      "Bash(powershell.exe -NoProfile -Command \"Get-CimInstance Win32_Process -Filter \\\\\"Name='Agent04.exe' or Name='API.exe' or Name='XtractManager.exe'\\\\\" | Select-Object ProcessId,Name,CommandLine | Format-List\")",
+      "Bash(powershell.exe -NoProfile -Command \"Stop-Process -Id 80948,87168 -Force; Start-Sleep -Milliseconds 800; 'stopped'\")",
+      "Bash(nohup dotnet run --no-build)",
+      "Bash(echo \"agent04 launching pid $!\")",
+      "Bash(cd /c/trash/spanish/elProyecto/.claude/worktrees/spanish-lesson-transcription-cea895/agent05-ui-control/API *)"
+    ]
+  }
+}

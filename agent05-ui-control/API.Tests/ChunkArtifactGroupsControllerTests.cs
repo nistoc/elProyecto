@@ -172,6 +172,7 @@ public class ChunkArtifactGroupsControllerTests
         private sealed class NoOpPipelineQueue : IPipelineQueue
         {
             public void Enqueue(string jobId) { }
+            public void EnqueueRefiner(string jobId) { }
         }
     }
 
