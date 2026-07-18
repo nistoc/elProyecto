@@ -28,6 +28,7 @@
   "fallback_models": [ "gpt-4o-mini-transcribe", "whisper-1" ],
   "save_per_chunk_json": true,
   "per_chunk_json_dir": "chunks_json",
+  "per_chunk_md_dir": "chunks_md",
   "cache_dir": "cache",
   "convert_to_wav": true,
   "wav_output_dir": "converted_wav",

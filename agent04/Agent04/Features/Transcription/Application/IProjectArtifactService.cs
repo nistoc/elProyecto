@@ -75,6 +75,12 @@ public interface IProjectArtifactService
 
     void FinalizeJobMarkdownOutput(string mdPath);
 
+    /// <summary>Writes <c>{outputDir}/{chunkBasename}.md</c> for one chunk (the source of the stitched combined transcript).</summary>
+    void WriteJobPerChunkMarkdown(string chunkBasename, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, string outputDir);
+
+    /// <summary>Rebuilds <paramref name="finalMdPath"/> by concatenating per-chunk <c>chunks_md</c> / split merged md in index order.</summary>
+    void StitchJobMarkdownFromChunks(string artifactRoot, IReadOnlyList<string> chunkBasenames, string perChunkMdDir, string splitChunksDir, string finalMdPath);
+
     void SaveJobCombinedTranscriptionJson(string jsonPath, IReadOnlyList<TranscriptionResult> results);
 
     void SaveJobPerChunkTranscriptionJson(string chunkBasename, IReadOnlyDictionary<string, object?> response, string outputDir);

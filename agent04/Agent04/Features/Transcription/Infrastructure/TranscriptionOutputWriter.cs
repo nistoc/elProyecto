@@ -47,6 +47,29 @@ public sealed class TranscriptionOutputWriter : ITranscriptionOutputWriter
         _logger?.LogInformation("Finalized Markdown: {Path}", mdPath);
     }
 
+    public void WritePerChunkMarkdown(string chunkBasename, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, string outputDir)
+    {
+        Directory.CreateDirectory(outputDir);
+        var safeBase = Path.GetFileNameWithoutExtension(chunkBasename);
+        var outPath = Path.Combine(outputDir, safeBase + ".md");
+        // Local speaker map so each chunk file starts at speaker_0 (independent of other chunks and thread-safe).
+        var localMap = new Dictionary<string, string>();
+        using var fs = new FileStream(outPath, FileMode.Create, FileAccess.Write, FileShare.Read);
+        using var w = new StreamWriter(fs);
+        w.Write(">>>>>>>\n");
+        foreach (var seg in segments)
+        {
+            var isFallback = Math.Abs(seg.Start) < Eps && Math.Abs(seg.End) < Eps;
+            if (!isFallback && (seg.Start + Eps) < emitGuard)
+                continue;
+            var speaker = NormalizeSpeakerInto(localMap, seg.Speaker);
+            var timestamp = (seg.Start + offset).ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+            var text = (seg.Text ?? "").Replace("\"", "\\\"");
+            w.Write($"- {timestamp} {speaker}: \"{text}\"\n");
+        }
+        w.Write("<<<<<\n");
+    }
+
     public void SaveCombinedJson(string jsonPath, IReadOnlyList<TranscriptionResult> results)
     {
         var dir = Path.GetDirectoryName(jsonPath);
@@ -89,14 +112,16 @@ public sealed class TranscriptionOutputWriter : ITranscriptionOutputWriter
         _speakerMap.Clear();
     }
 
-    private string NormalizeSpeaker(string? speakerLabel)
+    private string NormalizeSpeaker(string? speakerLabel) => NormalizeSpeakerInto(_speakerMap, speakerLabel);
+
+    private static string NormalizeSpeakerInto(Dictionary<string, string> map, string? speakerLabel)
     {
         if (string.IsNullOrEmpty(speakerLabel))
             return "speaker_0";
-        if (!_speakerMap.TryGetValue(speakerLabel, out var mapped))
+        if (!map.TryGetValue(speakerLabel, out var mapped))
         {
-            mapped = "speaker_" + _speakerMap.Count;
-            _speakerMap[speakerLabel] = mapped;
+            mapped = "speaker_" + map.Count;
+            map[speakerLabel] = mapped;
         }
         return mapped;
     }

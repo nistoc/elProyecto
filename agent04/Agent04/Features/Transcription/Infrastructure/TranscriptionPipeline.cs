@@ -165,8 +165,10 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         EnsureDirectoryFor(mdPath);
         EnsureDirectoryFor(jsonPath);
 
-        _artifacts.InitializeJobMarkdownOutput(mdPath);
-        _artifacts.ResetJobTranscriptionSpeakerMap();
+        // Combined transcript.md is stitched from per-chunk chunks_md at the end (see merge phase);
+        // no incremental append here.
+        var perChunkMdRel = config.Get<string>("per_chunk_md_dir") ?? "chunks_md";
+        var perChunkMdDirFull = Path.Combine(artifactRoot, perChunkMdRel);
 
         var cacheDirFull = Path.Combine(artifactRoot, config.CacheDir);
         EnsureDirectoryFor(cacheDirFull);
@@ -214,7 +216,6 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         var chunkResolved = new bool[totalChunks];
         var chunkResults = new TranscriptionResult?[totalChunks];
-        var nextAppendIndex = 0;
         var failedLocalCount = 0;
         var successCount = 0;
 
@@ -241,18 +242,6 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             }
         }
 
-        void TryAppendMarkdownInOrder()
-        {
-            while (nextAppendIndex < totalChunks && chunkResolved[nextAppendIndex])
-            {
-                var r = chunkResults[nextAppendIndex];
-                if (r != null)
-                    _artifacts.AppendJobMarkdownSegments(mdPath, r.Segments, r.Offset, r.EmitGuard);
-
-                nextAppendIndex++;
-            }
-        }
-
         void MarkChunkResolved(int idx, TranscriptionResult? result, bool success)
         {
             lock (mdLock)
@@ -260,7 +249,6 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 chunkResolved[idx] = true;
                 if (success && result != null)
                     chunkResults[idx] = result;
-                TryAppendMarkdownInOrder();
             }
         }
 
@@ -361,6 +349,11 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                         _artifacts.SaveJobPerChunkTranscriptionJson(Path.GetFileName(chunkInfos[idx].Path), result.RawResponse, perChunkDirFull);
                     }
 
+                    // Per-chunk markdown — the source material the combined transcript is stitched from.
+                    // Written before the chunk is marked Completed (crash consistency), same as the JSON above.
+                    _artifacts.WriteJobPerChunkMarkdown(
+                        Path.GetFileName(chunkInfos[idx].Path), result.Segments, result.Offset, result.EmitGuard, perChunkMdDirFull);
+
                     var completedAt = DateTimeOffset.UtcNow;
                     await PersistChunkAsync(idx, JobState.Completed, chunkStartedAt, completedAt, null).ConfigureAwait(false);
                     MarkChunkResolved(idx, result, true);
@@ -421,7 +414,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         StepStart(jobId ?? "", "merge", "phase");
         UpdateProgress(JobState.Running, 90, "Merging", totalChunks, totalChunks, null, null, null);
-        _artifacts.FinalizeJobMarkdownOutput(mdPath);
+        var stitchBasenames = chunkInfos.Select(c => Path.GetFileNameWithoutExtension(c.Path)).ToList();
+        _artifacts.StitchJobMarkdownFromChunks(artifactRoot, stitchBasenames, perChunkMdRel, config.SplitChunksDir, mdPath);
         var sortedResults = new List<TranscriptionResult>();
         for (var i = 0; i < totalChunks; i++)
         {
@@ -1186,6 +1180,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             total = list.Count;
         }
 
+        var perChunkMdRel = config.Get<string>("per_chunk_md_dir") ?? "chunks_md";
+        var perChunkMdDirFull = Path.Combine(artifactRoot, perChunkMdRel);
         var merged = new List<TranscriptionResult>();
         for (var i = 0; i < total; i++)
         {
@@ -1194,15 +1190,15 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             if (loaded == null)
                 throw new InvalidOperationException($"rebuild_combined: missing or invalid chunks_json for chunk {i}.");
             merged.Add(loaded);
+            // (Re)generate the per-chunk md from the chunk's JSON so the stitch source exists (also backfills legacy jobs).
+            _artifacts.WriteJobPerChunkMarkdown(
+                Path.GetFileName(chunkInfos[i].Path), loaded.Segments, loaded.Offset, loaded.EmitGuard, perChunkMdDirFull);
         }
 
-        _artifacts.InitializeJobMarkdownOutput(mdPath);
-        _artifacts.ResetJobTranscriptionSpeakerMap();
-        foreach (var r in merged)
-            _artifacts.AppendJobMarkdownSegments(mdPath, r.Segments, r.Offset, r.EmitGuard);
-        _artifacts.FinalizeJobMarkdownOutput(mdPath);
+        var stitchBasenames = chunkInfos.Select(c => Path.GetFileNameWithoutExtension(c.Path)).ToList();
+        _artifacts.StitchJobMarkdownFromChunks(artifactRoot, stitchBasenames, perChunkMdRel, config.SplitChunksDir, mdPath);
         _artifacts.SaveJobCombinedTranscriptionJson(jsonPath, merged);
-        _logger?.LogInformation("rebuild_combined: wrote {Md} and {Json}", mdPath, jsonPath);
+        _logger?.LogInformation("rebuild_combined: wrote {Md} and {Json} (+{N} chunks_md)", mdPath, jsonPath, merged.Count);
     }
 
     private static string ResolveCombinedOutputBaseName(TranscriptionConfig config, string artifactRoot)
