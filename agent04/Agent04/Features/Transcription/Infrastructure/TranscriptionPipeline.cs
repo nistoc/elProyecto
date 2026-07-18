@@ -247,17 +247,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             {
                 var r = chunkResults[nextAppendIndex];
                 if (r != null)
-                {
-                    var idx = nextAppendIndex;
-                    if (config.Get<bool?>("save_per_chunk_json") == true)
-                    {
-                        var perChunkRel = config.Get<string>("per_chunk_json_dir") ?? "chunks_json";
-                        var perChunkDirFull = Path.Combine(artifactRoot, perChunkRel);
-                        _artifacts.SaveJobPerChunkTranscriptionJson(Path.GetFileName(chunkInfos[idx].Path), r.RawResponse, perChunkDirFull);
-                    }
-
                     _artifacts.AppendJobMarkdownSegments(mdPath, r.Segments, r.Offset, r.EmitGuard);
-                }
 
                 nextAppendIndex++;
             }
@@ -358,6 +348,17 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                             null,
                             null,
                             null);
+                    }
+
+                    // Crash consistency: the per-chunk JSON must hit disk before the chunk is
+                    // persisted as Completed. Previously it was written by the in-order markdown
+                    // appender, so a crash while an earlier chunk was in flight lost the finished
+                    // results of later chunks (state said Completed, JSON was memory-only).
+                    if (config.Get<bool?>("save_per_chunk_json") == true)
+                    {
+                        var perChunkRel = config.Get<string>("per_chunk_json_dir") ?? "chunks_json";
+                        var perChunkDirFull = Path.Combine(artifactRoot, perChunkRel);
+                        _artifacts.SaveJobPerChunkTranscriptionJson(Path.GetFileName(chunkInfos[idx].Path), result.RawResponse, perChunkDirFull);
                     }
 
                     var completedAt = DateTimeOffset.UtcNow;
