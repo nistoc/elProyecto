@@ -224,7 +224,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 foreach (var e in mergedVm)
                     msg.ChunkVirtualModel.Add(e.Clone());
                 await responseStream.WriteAsync(msg);
-                if (job.State is JobState.Failed or JobState.Cancelled)
+                if (job.State is JobState.Completed or JobState.Failed or JobState.Cancelled)
                     return;
             }
             var pollMs = _configuration.GetValue("Agent04:StreamJobStatusPollMs", 2000);
