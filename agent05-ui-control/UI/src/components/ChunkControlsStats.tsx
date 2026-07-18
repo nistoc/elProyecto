@@ -223,6 +223,7 @@ export interface ChunkControlsStatsProps {
 export function ChunkControlsStats({
   jobId,
   job,
+  files,
   filesLoading,
   filesError,
   locale,
@@ -289,6 +290,11 @@ export function ChunkControlsStats({
   );
   const showList = groups.length > 0;
   const anyVmTelemetry = groups.some((g) => vmRowHasTelemetry(g.vmRow));
+  // Per-chunk compact markdown (chunks_md/*.md), matched to a chunk by index — shown next to the raw JSON.
+  const chunkMdByIndex = new Map<number, JobProjectFile>();
+  for (const f of files?.chunkMd ?? []) {
+    if (typeof f.index === 'number') chunkMdByIndex.set(f.index, f);
+  }
 
   const runAction = async (
     action: ChunkActionName,
@@ -559,7 +565,9 @@ export function ChunkControlsStats({
                   </div>
                 </div>
 
-                {(g.audioFiles.length > 0 || g.jsonFiles.length > 0) && (
+                {(g.audioFiles.length > 0 ||
+                  g.jsonFiles.length > 0 ||
+                  chunkMdByIndex.has(g.index)) && (
                   <div
                     className="chunk-stats__media-row"
                     aria-label={`${t('chunkStatsAudio')} / ${t('chunkStatsJson')}`}
@@ -584,7 +592,7 @@ export function ChunkControlsStats({
                       )}
                     </div>
                     <div className="chunk-stats__media-row__text">
-                      {g.jsonFiles.length > 0 ? (
+                      {g.jsonFiles.length > 0 || chunkMdByIndex.has(g.index) ? (
                         <ul className="pf-list chunk-stats__pf-list">
                           {g.jsonFiles.map((f) => (
                             <FileRow
@@ -595,6 +603,15 @@ export function ChunkControlsStats({
                               onEditText={openEditor}
                             />
                           ))}
+                          {chunkMdByIndex.get(g.index) && (
+                            <FileRow
+                              key={`md-${g.index}`}
+                              jobId={jobId}
+                              f={chunkMdByIndex.get(g.index)!}
+                              t={t}
+                              onEditText={openEditor}
+                            />
+                          )}
                         </ul>
                       ) : (
                         <p className="chunk-stats__media-row__empty chunk-stats__muted">
