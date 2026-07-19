@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { I18nProvider, useI18n } from './contexts/I18nContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { useJob, type StepId } from './hooks/useJob';
@@ -42,6 +43,23 @@ function AppContent() {
   const debouncedRevision = useDebouncedValue(jobSnapshotRevision, 3000);
   const jobFiles = useJobProjectFiles(jobId, debouncedRevision);
   const jobChunkGroups = useJobChunkArtifactGroups(jobId, debouncedRevision);
+
+  // The combined transcript the refiner will consume: newest transcript*.md that is NOT a
+  // _fixed output. Timestamped names (transcript_YYYYMMDD_HHmmss_fff.md) sort by time
+  // lexicographically; mirrors the backend's newest-combined resolution in the pipeline.
+  const refinerInputName = useMemo(() => {
+    const ts = jobFiles.data?.transcripts ?? [];
+    const combined = ts.filter(
+      (f) =>
+        f.name.toLowerCase().endsWith('.md') &&
+        !f.name.toLowerCase().includes('_fixed')
+    );
+    if (combined.length === 0) return null;
+    const sorted = combined
+      .map((f) => f.name)
+      .sort((a, b) => a.localeCompare(b));
+    return sorted[sorted.length - 1] ?? null;
+  }, [jobFiles.data]);
 
   const steps: { id: StepId; title: string }[] = [
     { id: 'transcriber', title: t('transcriber') },
@@ -191,34 +209,56 @@ function AppContent() {
               <div className="step-panel">
                 {job && jobId ? (
                   <>
-                    {job.phase === 'awaiting_refiner' && (
-                      <p className="step-panel__hint">{t('refinerAwaitingHint')}</p>
-                    )}
-                    {job.phase === 'refiner' && (
-                      <p className="step-panel__hint">{t('refinerRunning')}</p>
-                    )}
-                    {job.phase === 'completed' && (
-                      <p className="step-panel__hint">{t('refinerCompleted')}</p>
-                    )}
-                    <div className="refiner-actions">
-                      <button
-                        type="button"
-                        className="refiner-actions__run"
-                        disabled={job.phase === 'refiner'}
-                        onClick={() => startRefiner(false)}
-                      >
-                        {job.phase === 'completed'
-                          ? t('refinerRerun')
-                          : t('refinerRun')}
-                      </button>
-                      {job.phase === 'awaiting_refiner' && (
+                    <div className="refiner-panel">
+                      <div className="refiner-panel__head">
+                        <span className="refiner-panel__title">
+                          {t('refinerInputLabel')}
+                        </span>
+                        {job.phase === 'refiner' && (
+                          <span className="refiner-panel__badge refiner-panel__badge--running">
+                            {t('refinerRunning')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="refiner-panel__io">
+                        <code className="refiner-panel__file">
+                          {refinerInputName ?? t('refinerInputUnknown')}
+                        </code>
+                        <span className="refiner-panel__arrow">→</span>
+                        <code className="refiner-panel__file refiner-panel__file--out">
+                          transcript_fixed.md
+                        </code>
+                      </div>
+                      <div className="refiner-actions">
                         <button
                           type="button"
-                          className="refiner-actions__skip"
-                          onClick={() => startRefiner(true)}
+                          className="refiner-actions__run"
+                          disabled={job.phase === 'refiner' || !refinerInputName}
+                          onClick={() => startRefiner(false)}
                         >
-                          {t('refinerSkip')}
+                          {job.phase === 'completed'
+                            ? t('refinerRerun')
+                            : t('refinerRun')}
                         </button>
+                        {job.phase === 'awaiting_refiner' && (
+                          <button
+                            type="button"
+                            className="refiner-actions__skip"
+                            onClick={() => startRefiner(true)}
+                          >
+                            {t('refinerSkip')}
+                          </button>
+                        )}
+                      </div>
+                      {job.phase === 'awaiting_refiner' && (
+                        <p className="refiner-panel__hint">
+                          {t('refinerAwaitingHint')}
+                        </p>
+                      )}
+                      {job.phase === 'completed' && (
+                        <p className="refiner-panel__hint">
+                          {t('refinerCompleted')}
+                        </p>
                       )}
                     </div>
                     <ResultSection
@@ -400,7 +440,50 @@ function AppContent() {
         .step-panel__files-heading { margin: 1rem 0 0.35rem 0; font-size: 0.9rem; color: var(--color-heading); }
         .step-panel__empty { color: var(--color-text-muted); margin: 0; }
         .step-panel__hint { margin: 0 0 0.75rem 0; font-size: 0.875rem; color: var(--color-label); }
-        .refiner-actions { display: flex; gap: 0.5rem; margin: 0 0 1rem 0; }
+        .refiner-panel {
+          margin: 0 0 1rem 0;
+          padding: 0.85rem 1rem;
+          border: 1px solid var(--color-border);
+          border-radius: 8px;
+          background: var(--color-subtle-panel, var(--color-surface));
+        }
+        .refiner-panel__head {
+          display: flex;
+          align-items: center;
+          gap: 0.6rem;
+          margin-bottom: 0.55rem;
+        }
+        .refiner-panel__title { font-size: 0.9rem; color: var(--color-heading); font-weight: 500; }
+        .refiner-panel__badge {
+          font-size: 0.7rem;
+          padding: 0.1rem 0.45rem;
+          border-radius: 999px;
+        }
+        .refiner-panel__badge--running {
+          background: var(--color-accent, #2d7ff9);
+          color: #fff;
+        }
+        .refiner-panel__io {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+          margin-bottom: 0.75rem;
+        }
+        .refiner-panel__file {
+          font-family: var(--font-mono, monospace);
+          font-size: 0.78rem;
+          padding: 0.2rem 0.45rem;
+          border-radius: 5px;
+          background: var(--color-surface);
+          border: 1px solid var(--color-border);
+          color: var(--color-text);
+          word-break: break-all;
+        }
+        .refiner-panel__file--out { color: var(--color-text-secondary); }
+        .refiner-panel__arrow { color: var(--color-text-muted); }
+        .refiner-panel__hint { margin: 0.6rem 0 0 0; font-size: 0.8rem; color: var(--color-text-secondary); }
+        .refiner-actions { display: flex; gap: 0.5rem; margin: 0; }
         .refiner-actions__run {
           padding: 0.4rem 0.9rem;
           border-radius: 6px;

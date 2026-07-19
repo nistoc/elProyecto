@@ -859,11 +859,28 @@ export function ChunkControlsStats({
           color: var(--color-heading);
         }
         .chunk-stats__global-actions {
-          margin: -0.25rem 0 0.55rem 0;
+          margin: 1rem 0 0.25rem 0;
+          padding-top: 0.85rem;
+          border-top: 1px solid var(--color-border);
+          display: flex;
+          justify-content: flex-end;
         }
         .chunk-stats__rebuild-combined {
-          font-size: 0.75rem;
-          padding: 0.25rem 0.55rem;
+          font-size: 0.8rem;
+          padding: 0.4rem 0.85rem;
+          border: 1px solid var(--color-border);
+          border-radius: 6px;
+          background: var(--color-surface);
+          color: var(--color-text);
+          cursor: pointer;
+        }
+        .chunk-stats__rebuild-combined:hover:not(:disabled) {
+          background: var(--color-surface-hover);
+          border-color: var(--color-border-strong, var(--color-border));
+        }
+        .chunk-stats__rebuild-combined:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
         }
         .chunk-stats__hint {
           margin: -0.35rem 0 0.6rem 0;
