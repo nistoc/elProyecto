@@ -94,8 +94,8 @@ export function useJob(): {
   handleStart: (tags?: string[]) => Promise<void>;
   handleReset: () => void;
   handleDeleteJob: (id: string) => Promise<void>;
-  /** Manually run the refiner (skip=true marks the job completed without refining). */
-  startRefiner: (skip?: boolean) => Promise<void>;
+  /** Manually run the refiner (skip=true marks the job completed without refining; inputFile picks a specific combined transcript). */
+  startRefiner: (skip?: boolean, inputFile?: string | null) => Promise<void>;
   /** Live before/after refiner progress from SSE, or null when idle. */
   refineProgress: RefineProgressState | null;
 } {
@@ -370,12 +370,12 @@ export function useJob(): {
 
   /** Manually start the refiner (or skip it) for the current job; updates arrive over SSE. */
   const startRefiner = useCallback(
-    async (skip = false) => {
+    async (skip = false, inputFile?: string | null) => {
       if (!jobId) return;
       setError(null);
       if (!skip) setRefineProgress(null); // fresh run → drop the previous before/after table
       try {
-        await startRefine(jobId, skip);
+        await startRefine(jobId, skip, inputFile);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to start refiner');
       }

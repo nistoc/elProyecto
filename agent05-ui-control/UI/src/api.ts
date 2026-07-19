@@ -207,14 +207,15 @@ export async function deleteJob(id: string): Promise<void> {
 /** Manually start the refiner (agent06) for a job whose transcription finished, or skip it. */
 export async function startRefine(
   jobId: string,
-  skip = false
+  skip = false,
+  inputFile?: string | null
 ): Promise<{ ok: boolean; message: string }> {
   const r = await fetch(
     `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/refine`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skip }),
+      body: JSON.stringify(inputFile ? { skip, inputFile } : { skip }),
     }
   );
   const text = await r.text();

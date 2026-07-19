@@ -608,8 +608,22 @@ public class JobsController : ControllerBase
             return Ok(new { ok = true, message = "refiner_skipped" });
         }
 
-        _pipelineQueue.EnqueueRefiner(id);
-        return Accepted(new { ok = true, message = "refiner_started" });
+        // Validate an explicitly chosen input file: must be a bare name of an existing
+        // combined transcript (not a _fixed output) directly in the job folder.
+        string? chosen = null;
+        var requested = body?.InputFile?.Trim();
+        if (!string.IsNullOrEmpty(requested))
+        {
+            var name = Path.GetFileName(requested);
+            if (name.Contains("_fixed", StringComparison.OrdinalIgnoreCase)
+                || !name.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
+                || !System.IO.File.Exists(Path.Combine(jobDir, name)))
+                return BadRequest(new { error = "inputFile must be an existing combined transcript*.md (not a _fixed output) in the job folder" });
+            chosen = name;
+        }
+
+        _pipelineQueue.EnqueueRefiner(id, chosen);
+        return Accepted(new { ok = true, message = "refiner_started", inputFile = chosen });
     }
 
     /// <summary>SSE stream: snapshot first, then status/snapshot/done events; ": ping" comments keep the connection alive.</summary>
@@ -694,4 +708,7 @@ public sealed class RefineActionRequest
 {
     /// <summary>When true, mark the job completed without running the refiner.</summary>
     public bool Skip { get; set; }
+
+    /// <summary>Optional job-relative transcript file name to refine (e.g. <c>transcript_20260718_194306_499.md</c>). When null, the newest combined transcript is used.</summary>
+    public string? InputFile { get; set; }
 }

@@ -46,21 +46,18 @@ function AppContent() {
   const jobFiles = useJobProjectFiles(jobId, debouncedRevision);
   const jobChunkGroups = useJobChunkArtifactGroups(jobId, debouncedRevision);
 
-  // The combined transcript the refiner will consume: newest transcript*.md that is NOT a
-  // _fixed output. Timestamped names (transcript_YYYYMMDD_HHmmss_fff.md) sort by time
-  // lexicographically; mirrors the backend's newest-combined resolution in the pipeline.
-  const refinerInputName = useMemo(() => {
+  // Combined transcripts the refiner can consume: every transcript*.md that is NOT a _fixed
+  // output. Newest first — timestamped names (transcript_YYYYMMDD_HHmmss_fff.md) sort by time.
+  const refinerInputs = useMemo(() => {
     const ts = jobFiles.data?.transcripts ?? [];
-    const combined = ts.filter(
-      (f) =>
-        f.name.toLowerCase().endsWith('.md') &&
-        !f.name.toLowerCase().includes('_fixed')
-    );
-    if (combined.length === 0) return null;
-    const sorted = combined
-      .map((f) => f.name)
-      .sort((a, b) => a.localeCompare(b));
-    return sorted[sorted.length - 1] ?? null;
+    return ts
+      .filter(
+        (f) =>
+          f.name.toLowerCase().endsWith('.md') &&
+          !f.name.toLowerCase().includes('_fixed')
+      )
+      .slice()
+      .sort((a, b) => b.name.localeCompare(a.name));
   }, [jobFiles.data]);
 
   const steps: { id: StepId; title: string }[] = [
@@ -221,27 +218,6 @@ function AppContent() {
                             {t('refinerRunning')}
                           </span>
                         )}
-                      </div>
-                      <div className="refiner-panel__io">
-                        <code className="refiner-panel__file">
-                          {refinerInputName ?? t('refinerInputUnknown')}
-                        </code>
-                        <span className="refiner-panel__arrow">→</span>
-                        <code className="refiner-panel__file refiner-panel__file--out">
-                          transcript_fixed.md
-                        </code>
-                      </div>
-                      <div className="refiner-actions">
-                        <button
-                          type="button"
-                          className="refiner-actions__run"
-                          disabled={job.phase === 'refiner' || !refinerInputName}
-                          onClick={() => startRefiner(false)}
-                        >
-                          {job.phase === 'completed'
-                            ? t('refinerRerun')
-                            : t('refinerRun')}
-                        </button>
                         {job.phase === 'awaiting_refiner' && (
                           <button
                             type="button"
@@ -252,6 +228,35 @@ function AppContent() {
                           </button>
                         )}
                       </div>
+                      {refinerInputs.length === 0 ? (
+                        <p className="refiner-panel__hint">
+                          {t('refinerInputUnknown')}
+                        </p>
+                      ) : (
+                        <ul className="refiner-files">
+                          {refinerInputs.map((f) => (
+                            <li key={f.relativePath} className="refiner-files__row">
+                              <div className="refiner-files__meta">
+                                <code className="refiner-panel__file">{f.name}</code>
+                                <span className="refiner-panel__arrow">→</span>
+                                <code className="refiner-panel__file refiner-panel__file--out">
+                                  transcript_fixed.md
+                                </code>
+                              </div>
+                              <button
+                                type="button"
+                                className="refiner-actions__run"
+                                disabled={job.phase === 'refiner'}
+                                onClick={() => startRefiner(false, f.name)}
+                              >
+                                {job.phase === 'completed'
+                                  ? t('refinerRerun')
+                                  : t('refinerRun')}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       {job.phase === 'awaiting_refiner' && (
                         <p className="refiner-panel__hint">
                           {t('refinerAwaitingHint')}
@@ -485,6 +490,19 @@ function AppContent() {
         }
         .refiner-panel__file--out { color: var(--color-text-secondary); }
         .refiner-panel__arrow { color: var(--color-text-muted); }
+        .refiner-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+        .refiner-files__row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.75rem;
+          padding: 0.5rem 0.6rem;
+          border: 1px solid var(--color-border);
+          border-radius: 6px;
+          background: var(--color-surface);
+          flex-wrap: wrap;
+        }
+        .refiner-files__meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; min-width: 0; }
         .refiner-panel__hint { margin: 0.6rem 0 0 0; font-size: 0.8rem; color: var(--color-text-secondary); }
         .refiner-actions { display: flex; gap: 0.5rem; margin: 0; }
         .refiner-actions__run {

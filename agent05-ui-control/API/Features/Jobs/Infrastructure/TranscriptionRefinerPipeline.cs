@@ -174,11 +174,11 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         Broadcast(jobId, "done", null);
     }
 
-    public async Task RunRefinerAsync(string jobId, CancellationToken ct = default)
+    public async Task RunRefinerAsync(string jobId, string? inputFile, CancellationToken ct = default)
     {
         try
         {
-            await RunRefinerCoreAsync(jobId, ct);
+            await RunRefinerCoreAsync(jobId, inputFile, ct);
         }
         catch (Exception ex)
         {
@@ -196,7 +196,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         }
     }
 
-    private async Task RunRefinerCoreAsync(string jobId, CancellationToken ct)
+    private async Task RunRefinerCoreAsync(string jobId, string? inputFile, CancellationToken ct)
     {
         var snap = await _store.GetAsync(jobId, ct);
         if (snap == null) return;
@@ -211,7 +211,27 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = "refiner", status = "running" }, ApiJson.CamelCase));
 
         string? transcriptContent = null;
+
+        // Operator picked a specific combined transcript in the UI — refine exactly that file.
+        // Guard against traversal: only a bare file name directly inside the job folder is allowed.
+        if (!string.IsNullOrWhiteSpace(inputFile))
+        {
+            var safeName = Path.GetFileName(inputFile.Trim());
+            var picked = Path.Combine(jobDir, safeName);
+            if (File.Exists(picked))
+            {
+                try { transcriptContent = await File.ReadAllTextAsync(picked, Encoding.UTF8, ct); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Job {JobId}: could not read chosen transcript {Path}", jobId, picked); }
+            }
+            else
+            {
+                _logger.LogWarning("Job {JobId}: chosen refine input {File} not found in job dir; falling back to newest", jobId, safeName);
+            }
+        }
+
         var mdRel = snap.MdOutputPath?.Trim().TrimStart('/', '\\');
+        if (!string.IsNullOrEmpty(transcriptContent))
+            mdRel = null; // already resolved from the operator's choice; skip the default resolution below
         _logger.LogInformation("Job {JobId}: refiner resolving transcript, MdOutputPath(rel)={MdRel}, workspaceRoot={Root}, jobDir={JobDir}",
             jobId, mdRel ?? "null", workspaceRoot, jobDir);
         if (!string.IsNullOrEmpty(mdRel))
