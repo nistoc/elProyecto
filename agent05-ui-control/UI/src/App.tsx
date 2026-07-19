@@ -11,6 +11,7 @@ import { JobsList } from './components/JobsList';
 import { ResultSection } from './components/ResultSection';
 import { ProjectFilesPanel } from './components/ProjectFilesPanel';
 import { ChunkControlsStats } from './components/ChunkControlsStats';
+import { RefinerProgress } from './components/RefinerProgress';
 
 function AppContent() {
   const { t, locale, setLocale } = useI18n();
@@ -35,6 +36,7 @@ function AppContent() {
     jobSnapshotRevision,
     refreshJobSnapshot,
     startRefiner,
+    refineProgress,
   } = useJob();
 
   // SSE snapshots arrive ~every 2s while transcribing; debounce the heavy /files and
@@ -261,6 +263,7 @@ function AppContent() {
                         </p>
                       )}
                     </div>
+                    <RefinerProgress progress={refineProgress} t={t} />
                     <ResultSection
                       jobId={jobId}
                       job={job}

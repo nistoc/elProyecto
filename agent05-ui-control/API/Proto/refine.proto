@@ -59,6 +59,15 @@ message StreamRefineStatusRequest {
   string job_id = 1;
 }
 
+message RefineBatchDelta {
+  int32 index = 1;
+  int32 total = 2;
+  string original_text = 3;
+  string refined_text = 4;
+  bool ok = 5;
+  string error = 6;
+}
+
 message RefineStatusUpdate {
   string job_id = 1;
   string state = 2;
@@ -69,6 +78,8 @@ message RefineStatusUpdate {
   string output_file_path = 7;
   string error_message = 8;
   string updated_at = 9;
+  string prompt_preview = 10;
+  repeated RefineBatchDelta batches = 11;
 }
 
 message CancelRefineJobRequest {

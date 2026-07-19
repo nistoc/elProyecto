@@ -35,6 +35,14 @@ public sealed class InMemoryRefineJobStore : IRefineJobStore
         if (update.TotalBatches.HasValue) job.TotalBatches = update.TotalBatches.Value;
         if (update.OutputFilePath != null) job.OutputFilePath = update.OutputFilePath;
         if (update.ErrorMessage != null) job.ErrorMessage = update.ErrorMessage;
+        if (update.PromptPreview != null) job.PromptPreview = update.PromptPreview;
+        if (update.AppendBatch != null)
+        {
+            // Copy-on-write: readers (the gRPC stream loop) hold the old reference and keep
+            // enumerating it safely while we publish a new immutable list.
+            var next = new List<RefineBatchDelta>(job.Batches) { update.AppendBatch };
+            job.Batches = next;
+        }
         if (update.State == RefineJobState.Running && !job.StartedAt.HasValue) job.StartedAt = now;
         if (update.State is RefineJobState.Completed or RefineJobState.Failed or RefineJobState.Cancelled) job.CompletedAt = now;
         job.UpdatedAt = now;

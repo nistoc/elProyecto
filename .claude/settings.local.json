@@ -36,7 +36,10 @@
       "Bash(powershell.exe -NoProfile -Command \"Get-CimInstance Win32_Process -Filter \\\\\"Name='Agent04.exe' or Name='Api.exe'\\\\\" | Select-Object ProcessId,Name | Format-Table -Auto\")",
       "mcp__visualize__read_me",
       "mcp__visualize__show_widget",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(echo \"5032 \\(agent04\\): $\\(curl -s -m 2 -o /dev/null -w '%{http_code}' http://localhost:5032/health \\)\")",
+      "Bash(curl -s -m 2 -o /dev/null -w '%{http_code}' http://localhost:5033/health)",
+      "Bash(echo \"5033 \\(agent06\\): $\\(curl -s -m 2 -o /dev/null -w '%{http_code}' http://localhost:5033/health \\)\")"
     ]
   }
 }

@@ -25,4 +25,14 @@ public record RefineStatusUpdate(
     int CurrentBatch,
     int TotalBatches,
     string? OutputFilePath,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    string? PromptPreview = null,
+    IReadOnlyList<RefineBatchDelta>? Batches = null);
+
+public record RefineBatchDelta(
+    int Index,
+    int Total,
+    string OriginalText,
+    string RefinedText,
+    bool Ok,
+    string? Error);

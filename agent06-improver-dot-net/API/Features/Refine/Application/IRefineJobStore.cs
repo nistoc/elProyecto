@@ -22,6 +22,10 @@ public sealed class RefineJobStatusUpdate
     public int? TotalBatches { get; set; }
     public string? OutputFilePath { get; set; }
     public string? ErrorMessage { get; set; }
+    /// <summary>Set once at start: the resolved prompt shown to the operator.</summary>
+    public string? PromptPreview { get; set; }
+    /// <summary>When set, appended to the job's accumulated batch list (before/after progress).</summary>
+    public RefineBatchDelta? AppendBatch { get; set; }
 }
 
 public sealed class RefineJobStatus
@@ -40,6 +44,10 @@ public sealed class RefineJobStatus
     public string? ErrorMessage { get; set; }
     public string? CallbackUrl { get; set; }
     public IReadOnlyList<string> Tags { get; set; } = Array.Empty<string>();
+    /// <summary>The resolved prompt shown to the operator (set once).</summary>
+    public string? PromptPreview { get; set; }
+    /// <summary>Accumulated before/after batch deltas. Replaced (copy-on-write) on each append so stream readers see a consistent immutable snapshot.</summary>
+    public IReadOnlyList<RefineBatchDelta> Batches { get; set; } = Array.Empty<RefineBatchDelta>();
 }
 
 public sealed class RefineJobListFilter

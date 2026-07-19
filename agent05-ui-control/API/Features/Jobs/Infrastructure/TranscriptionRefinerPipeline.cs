@@ -486,6 +486,29 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         Broadcast(jobId, "status", JsonSerializer.Serialize(
             new { phase = fresh?.Phase, status = fresh?.Status, progress_percent = update.ProgressPercent },
             ApiJson.CamelCase));
+
+        // Per-batch before/after progress for the refiner UI. Prompt (small) rides along;
+        // batches are incremental (only ones new since the last stream write), so the UI merges.
+        var hasBatches = update.Batches is { Count: > 0 };
+        if (hasBatches || update.PromptPreview != null)
+        {
+            Broadcast(jobId, "refine_progress", JsonSerializer.Serialize(new
+            {
+                promptPreview = update.PromptPreview,
+                currentBatch = update.CurrentBatch,
+                totalBatches = update.TotalBatches,
+                progressPercent = update.ProgressPercent,
+                batches = (update.Batches ?? Array.Empty<Application.RefineBatchDelta>()).Select(b => new
+                {
+                    index = b.Index,
+                    total = b.Total,
+                    original = b.OriginalText,
+                    refined = b.RefinedText,
+                    ok = b.Ok,
+                    error = b.Error
+                })
+            }, ApiJson.CamelCase));
+        }
     }
 
     private static bool IsTerminalTranscriptionState(string state) =>

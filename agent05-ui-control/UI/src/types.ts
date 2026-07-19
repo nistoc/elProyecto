@@ -138,8 +138,44 @@ export interface CreateJobResponse {
 
 /** SSE stream event: snapshot | status | log | chunk | split | done; 'connection' is client-side (SSE health). */
 export interface StreamEvent {
-  type: 'snapshot' | 'status' | 'log' | 'chunk' | 'split' | 'done' | 'connection';
+  type:
+    | 'snapshot'
+    | 'status'
+    | 'log'
+    | 'chunk'
+    | 'split'
+    | 'done'
+    | 'connection'
+    | 'refine_progress';
   payload?: unknown;
+}
+
+/** One refined fragment: the text before and after the refiner touched it. */
+export interface RefineBatch {
+  index: number;
+  total: number;
+  original: string;
+  refined: string;
+  ok: boolean;
+  error?: string | null;
+}
+
+/** SSE 'refine_progress' payload: prompt + incremental batch deltas. */
+export interface RefineProgressEvent {
+  promptPreview?: string | null;
+  currentBatch?: number;
+  totalBatches?: number;
+  progressPercent?: number;
+  batches?: RefineBatch[];
+}
+
+/** Accumulated refiner progress held in the UI (batches merged by index). */
+export interface RefineProgressState {
+  promptPreview: string | null;
+  currentBatch: number;
+  totalBatches: number;
+  progressPercent: number;
+  batches: RefineBatch[];
 }
 
 /** Client-side SSE connection health, delivered as StreamEvent type 'connection'. */

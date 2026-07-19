@@ -54,7 +54,13 @@ public sealed class RefinerGrpcClient : Application.IRefinerServiceClient, IDisp
                 update.CurrentBatch,
                 update.TotalBatches,
                 update.OutputFilePath,
-                update.ErrorMessage
+                update.ErrorMessage,
+                string.IsNullOrEmpty(update.PromptPreview) ? null : update.PromptPreview,
+                update.Batches.Count > 0
+                    ? update.Batches.Select(b => new Application.RefineBatchDelta(
+                        b.Index, b.Total, b.OriginalText, b.RefinedText, b.Ok,
+                        string.IsNullOrEmpty(b.Error) ? null : b.Error)).ToList()
+                    : null
             );
             if (update.State is "Completed" or "Failed" or "Cancelled")
                 break;

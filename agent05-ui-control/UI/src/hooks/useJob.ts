@@ -5,6 +5,9 @@ import type {
   StreamEvent,
   StepStatus,
   ConnectionState,
+  RefineProgressEvent,
+  RefineProgressState,
+  RefineBatch,
 } from '../types';
 import { isTerminalSnapshot } from '../utils/streamReconnect';
 import {
@@ -93,6 +96,8 @@ export function useJob(): {
   handleDeleteJob: (id: string) => Promise<void>;
   /** Manually run the refiner (skip=true marks the job completed without refining). */
   startRefiner: (skip?: boolean) => Promise<void>;
+  /** Live before/after refiner progress from SSE, or null when idle. */
+  refineProgress: RefineProgressState | null;
 } {
   const [jobId, setJobIdState] = useState<string | null>(() => readLastJobId());
   const [job, setJob] = useState<JobSnapshot | null>(null);
@@ -109,6 +114,9 @@ export function useJob(): {
     useState<ConnectionState>('connected');
   /** Bumps on each SSE snapshot so project files + chunk-artifact-groups refetch (disk artifacts). */
   const [jobSnapshotRevision, setJobSnapshotRevision] = useState(0);
+  const [refineProgress, setRefineProgress] = useState<RefineProgressState | null>(
+    null
+  );
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const prevJobIdsRef = useRef<Set<string>>(new Set());
   const listHydratedRef = useRef(false);
@@ -188,6 +196,7 @@ export function useJob(): {
       setJob(null);
       return;
     }
+    setRefineProgress(null); // clear stale before/after progress when switching jobs
     let cancelled = false;
     let doneHandled = false;
     const ac = new AbortController();
@@ -250,6 +259,26 @@ export function useJob(): {
                 }
               : null
           );
+          return;
+        }
+        if (ev.type === 'refine_progress' && ev.payload) {
+          const p = ev.payload as RefineProgressEvent;
+          setRefineProgress((prev) => {
+            // Merge incremental batch deltas by index (idempotent across reconnects).
+            const byIndex = new Map<number, RefineBatch>();
+            (prev?.batches ?? []).forEach((b) => byIndex.set(b.index, b));
+            (p.batches ?? []).forEach((b) => byIndex.set(b.index, b));
+            const batches = Array.from(byIndex.values()).sort(
+              (a, b) => a.index - b.index
+            );
+            return {
+              promptPreview: p.promptPreview ?? prev?.promptPreview ?? null,
+              currentBatch: p.currentBatch ?? prev?.currentBatch ?? 0,
+              totalBatches: p.totalBatches ?? prev?.totalBatches ?? 0,
+              progressPercent: p.progressPercent ?? prev?.progressPercent ?? 0,
+              batches,
+            };
+          });
           return;
         }
         if (ev.type === 'done') {
@@ -344,6 +373,7 @@ export function useJob(): {
     async (skip = false) => {
       if (!jobId) return;
       setError(null);
+      if (!skip) setRefineProgress(null); // fresh run → drop the previous before/after table
       try {
         await startRefine(jobId, skip);
       } catch (e) {
@@ -380,5 +410,6 @@ export function useJob(): {
     handleReset,
     handleDeleteJob,
     startRefiner,
+    refineProgress,
   };
 }

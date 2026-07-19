@@ -97,12 +97,19 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
     {
         var jobId = request.JobId;
         var delay = TimeSpan.FromMilliseconds(500);
+        var sentBatches = 0;   // how many before/after deltas we have already streamed
         while (!context.CancellationToken.IsCancellationRequested)
         {
             var job = _store.Get(jobId);
             if (job == null)
                 throw new RpcException(new Status(StatusCode.NotFound, "Job not found"));
-            await responseStream.WriteAsync(ToUpdate(job));
+            var batches = job.Batches;   // immutable snapshot (copy-on-write in the store)
+            var update = ToUpdate(job);
+            // Send only batches not yet streamed on this connection; the consumer accumulates them.
+            for (var i = sentBatches; i < batches.Count; i++)
+                update.Batches.Add(ToProtoBatch(batches[i]));
+            sentBatches = batches.Count;
+            await responseStream.WriteAsync(update);
             if (job.State is RefineJobState.Completed or RefineJobState.Failed or RefineJobState.Cancelled)
                 break;
             await Task.Delay(delay, context.CancellationToken);
@@ -180,7 +187,18 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
             TotalBatches = job.TotalBatches,
             OutputFilePath = job.OutputFilePath ?? "",
             ErrorMessage = job.ErrorMessage ?? "",
-            UpdatedAt = job.UpdatedAt.ToString("O")
+            UpdatedAt = job.UpdatedAt.ToString("O"),
+            PromptPreview = job.PromptPreview ?? ""
         };
     }
+
+    private static Proto.RefineBatchDelta ToProtoBatch(Features.Refine.Domain.RefineBatchDelta d) => new()
+    {
+        Index = d.Index,
+        Total = d.Total,
+        OriginalText = d.OriginalText ?? "",
+        RefinedText = d.RefinedText ?? "",
+        Ok = d.Ok,
+        Error = d.Error ?? ""
+    };
 }

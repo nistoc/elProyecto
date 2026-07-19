@@ -72,6 +72,7 @@ public sealed class RefinePipeline : IRefinePipeline
         _nodeModel?.StartNode(refineParent);
 
         var promptTemplate = await _promptLoader.LoadAsync(request.PromptFile, workspaceRoot, cancellationToken);
+        _store.Update(jobId, new RefineJobStatusUpdate { PromptPreview = BuildPromptPreview(SystemPrompt, promptTemplate) });
         var intermediateDir = request.SaveIntermediate && !string.IsNullOrEmpty(request.IntermediateDir)
             ? Path.Combine(artifactRoot, request.IntermediateDir.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
             : null;
@@ -119,6 +120,21 @@ public sealed class RefinePipeline : IRefinePipeline
                     _logger?.LogWarning("Batch {Index} failed: {Error}", i, result.Error);
                 }
 
+                // Publish the before/after fragment so the UI can render this batch's improvement live.
+                var refinedForDelta = result.Success ? result.FixedLines : batchInfo.Lines;
+                _store.Update(jobId, new RefineJobStatusUpdate
+                {
+                    AppendBatch = new RefineBatchDelta
+                    {
+                        Index = i + 1,
+                        Total = batches.Count,
+                        OriginalText = JoinLines(batchInfo.Lines),
+                        RefinedText = JoinLines(refinedForDelta),
+                        Ok = result.Success,
+                        Error = result.Error
+                    }
+                });
+
                 _nodeModel?.CompleteNode(batchNodeId, result.Success ? RefineJobState.Completed : RefineJobState.Failed, DateTimeOffset.UtcNow, result.Error);
             }
 
@@ -161,6 +177,12 @@ public sealed class RefinePipeline : IRefinePipeline
 
         await FireCallbackAsync(jobId);
     }
+
+    private static string JoinLines(IReadOnlyList<string> lines) =>
+        string.Join("\n", lines.Select(l => l.TrimEnd('\n', '\r'))).TrimEnd();
+
+    private static string BuildPromptPreview(string systemPrompt, string userPromptTemplate) =>
+        $"[system]\n{systemPrompt.Trim()}\n\n[user template]\n{userPromptTemplate.Trim()}";
 
     private async Task FireCallbackAsync(string jobId)
     {
