@@ -146,7 +146,10 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
         await using var fileStream = File.OpenRead(audioPath);
         var fileContent = new StreamContent(fileStream);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-        var fileName = Path.GetFileName(audioPath);
+        // OpenAI detects the audio format from the multipart file name. A non-ASCII name
+        // (e.g. Cyrillic "Антон интервью_part_000.wav") is sent as filename*=utf-8''… which
+        // OpenAI ignores → "Unsupported file format". Send an ASCII-only name with the real extension.
+        var fileName = "audio" + Path.GetExtension(audioPath).ToLowerInvariant();
         content.Add(fileContent, "file", fileName);
 
         content.Add(new StringContent(model), "model");
