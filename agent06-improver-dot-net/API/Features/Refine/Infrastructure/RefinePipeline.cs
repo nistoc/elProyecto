@@ -73,7 +73,8 @@ public sealed class RefinePipeline : IRefinePipeline
         _nodeModel?.StartNode(refineParent);
 
         var promptTemplate = await _promptLoader.LoadAsync(request.PromptFile, workspaceRoot, cancellationToken);
-        _store.Update(jobId, new RefineJobStatusUpdate { PromptPreview = BuildPromptPreview(SystemPrompt, promptTemplate) });
+        var systemPrompt = request.SystemPrompt ?? SystemPrompt; // operator override from the Refiner tab
+        _store.Update(jobId, new RefineJobStatusUpdate { PromptPreview = BuildPromptPreview(systemPrompt, promptTemplate) });
         var intermediateDir = request.SaveIntermediate && !string.IsNullOrEmpty(request.IntermediateDir)
             ? Path.Combine(artifactRoot, request.IntermediateDir.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
             : null;
@@ -85,7 +86,7 @@ public sealed class RefinePipeline : IRefinePipeline
             {
                 try { File.Delete(old); } catch { /* best effort */ }
             }
-            await File.WriteAllTextAsync(Path.Combine(intermediateDir, "prompt.txt"), BuildPromptPreview(SystemPrompt, promptTemplate), Encoding.UTF8, cancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(intermediateDir, "prompt.txt"), BuildPromptPreview(systemPrompt, promptTemplate), Encoding.UTF8, cancellationToken);
         }
 
         var fixedContent = new List<string>();
@@ -110,7 +111,7 @@ public sealed class RefinePipeline : IRefinePipeline
                 var percent = batches.Count > 0 ? (i + 1) * 100 / batches.Count : 100;
                 _nodeModel?.UpdateNodeProgress(jobId, percent, $"Batch {i + 1}/{batches.Count}");
 
-                var result = await _client.RefineBatchAsync(batchInfo, request.Model, request.Temperature, SystemPrompt, promptTemplate, request.OpenAIBaseUrl, cancellationToken);
+                var result = await _client.RefineBatchAsync(batchInfo, request.Model, request.Temperature, systemPrompt, promptTemplate, request.OpenAIBaseUrl, cancellationToken);
 
                 if (result.Success)
                 {

@@ -11,6 +11,7 @@ namespace XtractManager.Features.Jobs.Infrastructure;
 public sealed class FileRefinerSettingsStore : IRefinerSettingsStore
 {
     private const string SettingsFileName = "refiner_settings.json";
+    private const string SystemPromptFileName = "refiner_system_prompt.txt";
     private readonly IJobWorkspace _workspace;
     private readonly object _gate = new();
 
@@ -18,17 +19,14 @@ public sealed class FileRefinerSettingsStore : IRefinerSettingsStore
 
     private string PromptPath => Path.Combine(_workspace.WorkspaceRootPath, IRefinerSettingsStore.PromptFileName);
     private string SettingsPath => Path.Combine(_workspace.WorkspaceRootPath, SettingsFileName);
+    private string SystemPromptPath => Path.Combine(_workspace.WorkspaceRootPath, SystemPromptFileName);
 
     public RefinerSettings Load()
     {
         lock (_gate)
         {
-            string? prompt = null;
-            if (File.Exists(PromptPath))
-            {
-                var text = File.ReadAllText(PromptPath, Encoding.UTF8);
-                prompt = string.IsNullOrWhiteSpace(text) ? null : text;
-            }
+            var prompt = ReadOptionalText(PromptPath);
+            var systemPrompt = ReadOptionalText(SystemPromptPath);
 
             Stored? stored = null;
             if (File.Exists(SettingsPath))
@@ -38,7 +36,7 @@ public sealed class FileRefinerSettingsStore : IRefinerSettingsStore
             }
 
             return new RefinerSettings(prompt, stored?.BatchSize, stored?.ContextLines,
-                string.IsNullOrWhiteSpace(stored?.Model) ? null : stored!.Model);
+                string.IsNullOrWhiteSpace(stored?.Model) ? null : stored!.Model, systemPrompt);
         }
     }
 
@@ -47,18 +45,32 @@ public sealed class FileRefinerSettingsStore : IRefinerSettingsStore
         lock (_gate)
         {
             Directory.CreateDirectory(_workspace.WorkspaceRootPath);
-            if (string.IsNullOrWhiteSpace(settings.PromptTemplate))
-            {
-                if (File.Exists(PromptPath)) File.Delete(PromptPath); // back to the built-in prompt
-            }
-            else
-            {
-                File.WriteAllText(PromptPath, settings.PromptTemplate, new UTF8Encoding(false));
-            }
+            WriteOptionalText(PromptPath, settings.PromptTemplate);
+            WriteOptionalText(SystemPromptPath, settings.SystemPrompt);
 
             var json = JsonSerializer.Serialize(new Stored(settings.BatchSize, settings.ContextLines, settings.Model),
                 new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(SettingsPath, json, new UTF8Encoding(false));
+        }
+    }
+
+    private static string? ReadOptionalText(string path)
+    {
+        if (!File.Exists(path)) return null;
+        var text = File.ReadAllText(path, Encoding.UTF8);
+        return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    /// <summary>Null/blank deletes the file, so the built-in prompt applies again.</summary>
+    private static void WriteOptionalText(string path, string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        else
+        {
+            File.WriteAllText(path, text, new UTF8Encoding(false));
         }
     }
 

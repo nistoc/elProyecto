@@ -47,7 +47,9 @@ public class RefinerController : ControllerBase
             promptTemplate = s.PromptTemplate ?? defaults.UserPromptTemplate,
             isCustomPrompt = s.PromptTemplate != null,
             defaultPromptTemplate = defaults.UserPromptTemplate,
-            systemPrompt = defaults.SystemPrompt,
+            systemPrompt = s.SystemPrompt ?? defaults.SystemPrompt,
+            isCustomSystemPrompt = s.SystemPrompt != null,
+            defaultSystemPrompt = defaults.SystemPrompt,
             batchSize = s.BatchSize ?? IRefinerSettingsStore.DefaultBatchSize,
             contextLines = s.ContextLines ?? IRefinerSettingsStore.DefaultContextLines,
             model = s.Model ?? IRefinerSettingsStore.DefaultModel,
@@ -76,24 +78,31 @@ public class RefinerController : ControllerBase
         if (prompt != null && !prompt.Contains("{batch}", StringComparison.Ordinal))
             return BadRequest(new { error = "promptTemplate must contain the {batch} placeholder" });
 
-        if (prompt != null)
+        var systemPrompt = string.IsNullOrWhiteSpace(body.SystemPrompt) ? null : body.SystemPrompt.Replace("\r\n", "\n");
+        if (prompt != null || systemPrompt != null)
         {
             try
             {
+                // Identical to built-in → don't pin a copy that would hide future default improvements.
                 var defaults = await _refiner.GetDefaultsAsync(ct);
-                if (string.Equals(prompt.Trim(), defaults.UserPromptTemplate.Replace("\r\n", "\n").Trim(), StringComparison.Ordinal))
-                    prompt = null; // identical to built-in → don't pin a copy that would hide future default improvements
+                if (prompt != null && SameText(prompt, defaults.UserPromptTemplate))
+                    prompt = null;
+                if (systemPrompt != null && SameText(systemPrompt, defaults.SystemPrompt))
+                    systemPrompt = null;
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Agent06 defaults unavailable while saving; keeping prompt as custom");
+                _logger.LogDebug(ex, "Agent06 defaults unavailable while saving; keeping prompts as custom");
             }
         }
 
         var model = string.IsNullOrWhiteSpace(body.Model) ? null : body.Model.Trim();
-        _settings.Save(new RefinerSettings(prompt, body.BatchSize, body.ContextLines, model));
+        _settings.Save(new RefinerSettings(prompt, body.BatchSize, body.ContextLines, model, systemPrompt));
         return await GetSettings(ct);
     }
+
+    private static bool SameText(string a, string b) =>
+        string.Equals(a.Replace("\r\n", "\n").Trim(), b.Replace("\r\n", "\n").Trim(), StringComparison.Ordinal);
 
     /// <summary>
     /// Batches of the job's last refiner run, as saved by agent06 under <c>refine_batches/</c>:
@@ -135,4 +144,5 @@ public sealed class RefinerSettingsRequest
     public int? BatchSize { get; set; }
     public int? ContextLines { get; set; }
     public string? Model { get; set; }
+    public string? SystemPrompt { get; set; }
 }

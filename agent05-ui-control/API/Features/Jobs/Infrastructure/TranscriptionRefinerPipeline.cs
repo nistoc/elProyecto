@@ -280,13 +280,13 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             var batchSize = settings.BatchSize ?? IRefinerSettingsStore.DefaultBatchSize;
             var contextLines = settings.ContextLines ?? IRefinerSettingsStore.DefaultContextLines;
             var promptFile = settings.PromptTemplate != null ? IRefinerSettingsStore.PromptFileName : null;
-            _logger.LogInformation("Job {JobId}: refiner settings batch={Batch} context={Context} model={Model} prompt={Prompt}",
-                jobId, batchSize, contextLines, settings.Model ?? IRefinerSettingsStore.DefaultModel, promptFile ?? "built-in");
+            _logger.LogInformation("Job {JobId}: refiner settings batch={Batch} context={Context} model={Model} prompt={Prompt} system={System}",
+                jobId, batchSize, contextLines, settings.Model ?? IRefinerSettingsStore.DefaultModel, promptFile ?? "built-in", settings.SystemPrompt != null ? "custom" : "built-in");
             var refineInput = outputRelForRefiner != null
                 ? new RefineJobInput(null, transcriptContent ?? "", "transcript_fixed.md", batchSize, contextLines, tagsList, jobId,
-                    promptFile, settings.Model, RefineBatchesDir)
+                    promptFile, settings.Model, RefineBatchesDir, settings.SystemPrompt)
                 : new RefineJobInput(null, transcriptContent ?? "", null, batchSize, contextLines, tagsList, null,
-                    promptFile, settings.Model);
+                    promptFile, settings.Model, null, settings.SystemPrompt);
             refinerResult = await _refiner.SubmitRefineJobAsync(refineInput, ct);
         }
         catch (Exception ex)

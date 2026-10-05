@@ -191,6 +191,8 @@ export interface RefinerSettings {
   isCustomPrompt: boolean;
   defaultPromptTemplate: string;
   systemPrompt: string;
+  isCustomSystemPrompt: boolean;
+  defaultSystemPrompt: string;
   batchSize: number;
   contextLines: number;
   model: string;

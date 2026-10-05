@@ -32,6 +32,7 @@ message SubmitRefineJobRequest {
   repeated string tags = 14;   // For semantic key query (one of these = semanticKey filter)
   /// Optional. Single segment under workspace_root (Xtract job folder). When set, input/output/intermediate paths resolve under workspace_root/job_directory_relative.
   string job_directory_relative = 15;
+  string system_prompt = 16;          // optional; empty = built-in system prompt
 }
 
 message SubmitRefineJobResponse {

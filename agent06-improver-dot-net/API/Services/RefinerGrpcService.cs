@@ -69,6 +69,7 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
             Model = string.IsNullOrWhiteSpace(request.Model) ? DefaultModel : request.Model.Trim(),
             Temperature = request.Temperature,
             PromptFile = string.IsNullOrEmpty(request.PromptFile) ? null : request.PromptFile.Trim(),
+            SystemPrompt = string.IsNullOrWhiteSpace(request.SystemPrompt) ? null : request.SystemPrompt.Trim(),
             OpenAIBaseUrl = string.IsNullOrEmpty(request.OpenaiBaseUrl) ? null : request.OpenaiBaseUrl.Trim(),
             OpenAIOrganization = string.IsNullOrEmpty(request.OpenaiOrganization) ? null : request.OpenaiOrganization.Trim(),
             SaveIntermediate = request.SaveIntermediate,

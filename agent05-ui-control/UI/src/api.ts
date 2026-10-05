@@ -439,6 +439,7 @@ export async function saveRefinerSettings(body: {
   batchSize: number;
   contextLines: number;
   model: string;
+  systemPrompt: string | null;
 }): Promise<RefinerSettings> {
   const r = await fetch(`${API_BASE}/api/refiner/settings`, {
     method: 'PUT',

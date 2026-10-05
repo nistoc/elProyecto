@@ -3,7 +3,7 @@ namespace XtractManager.Features.Jobs.Application;
 /// <summary>
 /// Operator-tuned refiner settings, shared by all jobs. A null value means "use the default".
 /// </summary>
-public sealed record RefinerSettings(string? PromptTemplate, int? BatchSize, int? ContextLines, string? Model);
+public sealed record RefinerSettings(string? PromptTemplate, int? BatchSize, int? ContextLines, string? Model, string? SystemPrompt = null);
 
 /// <summary>Persists <see cref="RefinerSettings"/> in the jobs workspace root, next to the job folders.</summary>
 public interface IRefinerSettingsStore
