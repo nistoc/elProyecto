@@ -74,6 +74,7 @@ public sealed class RefinePipeline : IRefinePipeline
 
         var promptTemplate = await _promptLoader.LoadAsync(request.PromptFile, workspaceRoot, cancellationToken);
         var systemPrompt = request.SystemPrompt ?? SystemPrompt; // operator override from the Refiner tab
+        await WriteRunRecordAsync(request, artifactRoot, systemPrompt, promptTemplate, batchSize, contextLines, cancellationToken);
         _store.Update(jobId, new RefineJobStatusUpdate { PromptPreview = BuildPromptPreview(systemPrompt, promptTemplate) });
         var intermediateDir = request.SaveIntermediate && !string.IsNullOrEmpty(request.IntermediateDir)
             ? Path.Combine(artifactRoot, request.IntermediateDir.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
@@ -204,6 +205,52 @@ public sealed class RefinePipeline : IRefinePipeline
 
     private static string JoinLines(IReadOnlyList<string> lines) =>
         string.Join("\n", lines.Select(l => l.TrimEnd('\n', '\r'))).TrimEnd();
+
+    /// <summary>
+    /// Writes <c>&lt;output&gt;.prompt.md</c> next to the refined file at the START of the run: which prompts,
+    /// model and batch geometry produced that output (kept even if the run fails), so runs can be compared.
+    /// </summary>
+    private async Task WriteRunRecordAsync(RefineJobRequest request, string artifactRoot, string systemPrompt, string promptTemplate,
+        int batchSize, int contextLines, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(request.OutputFilePath)) return;
+        try
+        {
+            var rel = request.OutputFilePath.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var outFull = Path.Combine(artifactRoot, rel);
+            var recordPath = Path.Combine(Path.GetDirectoryName(outFull)!, Path.GetFileNameWithoutExtension(outFull) + ".prompt.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(recordPath)!);
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var lines = new[]
+            {
+                "# Refiner run",
+                "",
+                $"- Started: {DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss", inv)} UTC",
+                $"- Source: {request.SourceName ?? "(inline content)"}",
+                $"- Output: {Path.GetFileName(outFull)}",
+                $"- Model: {request.Model}, temperature {request.Temperature.ToString(inv)}",
+                $"- Lines per block: {batchSize}, context lines: {contextLines}",
+                "",
+                "## System prompt" + (request.SystemPrompt == null ? " (built-in)" : ""),
+                "",
+                "```text",
+                systemPrompt.Trim(),
+                "```",
+                "",
+                "## User prompt template" + (string.IsNullOrEmpty(request.PromptFile) ? " (built-in)" : ""),
+                "",
+                "```text",
+                promptTemplate.Trim(),
+                "```",
+                ""
+            };
+            await File.WriteAllTextAsync(recordPath, string.Join("\n", lines), new UTF8Encoding(false), ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogWarning(ex, "Could not write refiner run record for {Output}", request.OutputFilePath);
+        }
+    }
 
     private static string BuildPromptPreview(string systemPrompt, string userPromptTemplate) =>
         $"[system]\n{systemPrompt.Trim()}\n\n[user template]\n{userPromptTemplate.Trim()}";

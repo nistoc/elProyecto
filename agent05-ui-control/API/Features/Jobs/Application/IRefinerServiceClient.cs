@@ -23,7 +23,8 @@ public record RefineJobInput(
     string? PromptFile = null,
     string? Model = null,
     string? IntermediateDir = null,
-    string? SystemPrompt = null);
+    string? SystemPrompt = null,
+    string? SourceName = null);
 
 public record SubmitRefineJobResult(string JobId);
 

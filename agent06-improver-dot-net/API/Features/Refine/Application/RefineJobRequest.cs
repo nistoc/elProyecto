@@ -15,6 +15,8 @@ public sealed class RefineJobRequest
     public string? PromptFile { get; set; }
     /// <summary>Optional system prompt override; null = built-in <c>RefinePipeline.SystemPrompt</c>.</summary>
     public string? SystemPrompt { get; set; }
+    /// <summary>Optional input transcript name, only recorded in the run's prompt file.</summary>
+    public string? SourceName { get; set; }
     public string? OpenAIBaseUrl { get; set; }
     public string? OpenAIOrganization { get; set; }
     public bool SaveIntermediate { get; set; } = true;

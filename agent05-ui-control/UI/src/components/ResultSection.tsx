@@ -28,12 +28,22 @@ function transcriptFixedVariantSortKey(name: string): number {
   return m ? parseInt(m[1], 10) : 0;
 }
 
+/** Per-run refiner output: `transcript_fixed_20261005_112233_444.md` (one file per Run Refiner). */
+const TRANSCRIPT_FIXED_RUN_RE = /^transcript_fixed_(\d{8})_(\d{6})_(\d{3})\.md$/i;
+
+/** `20261005`, `112233` → `2026-10-05 11:22:33 UTC`. */
+function formatRunStamp(d: string, t: string): string {
+  return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)} ${t.slice(0, 2)}:${t.slice(2, 4)}:${t.slice(4, 6)} UTC`;
+}
+
 function hasAnyTranscriptFixedOnDisk(
   transcripts: { name: string; relativePath?: string }[] | undefined
 ): boolean {
   if (!transcripts?.length) return false;
   if (transcripts.some((f) => f.name === 'transcript_fixed.md')) return true;
-  return transcripts.some((f) => TRANSCRIPT_FIXED_VARIANT_RE.test(f.name));
+  return transcripts.some(
+    (f) => TRANSCRIPT_FIXED_VARIANT_RE.test(f.name) || TRANSCRIPT_FIXED_RUN_RE.test(f.name)
+  );
 }
 
 function buildKeyLinks(
@@ -43,6 +53,18 @@ function buildKeyLinks(
   const entries: { label: string; path: string }[] = [];
   const tr = findByName(transcripts, 'transcript.md');
   if (tr) entries.push({ label: t('linkTranscript'), path: tr.relativePath });
+
+  // Refiner runs, newest first; each run's prompts live next to it in <name>.prompt.md.
+  const runs = transcripts
+    .filter((f) => TRANSCRIPT_FIXED_RUN_RE.test(f.name))
+    .sort((a, b) => b.name.localeCompare(a.name));
+  for (const f of runs) {
+    const m = f.name.match(TRANSCRIPT_FIXED_RUN_RE)!;
+    entries.push({ label: `${t('linkTranscriptFixed')} · ${formatRunStamp(m[1], m[2])}`, path: f.relativePath });
+    const promptName = f.name.replace(/\.md$/i, '.prompt.md');
+    const pf = findByName(transcripts, promptName);
+    if (pf) entries.push({ label: `${t('linkRefinerRunPrompt')} · ${formatRunStamp(m[1], m[2])}`, path: pf.relativePath });
+  }
 
   const tf = findByName(transcripts, 'transcript_fixed.md');
   if (tf) entries.push({ label: t('linkTranscriptFixed'), path: tf.relativePath });

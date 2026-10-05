@@ -242,7 +242,7 @@ function AppContent() {
                                 <code className="refiner-panel__file">{f.name}</code>
                                 <span className="refiner-panel__arrow">→</span>
                                 <code className="refiner-panel__file refiner-panel__file--out">
-                                  transcript_fixed.md
+                                  transcript_fixed_&lt;{t('refinerOutputTime')}&gt;.md
                                 </code>
                               </div>
                               <button

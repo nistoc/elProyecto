@@ -217,6 +217,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         Broadcast(jobId, "status", JsonSerializer.Serialize(new { phase = "refiner", status = "running" }, ApiJson.CamelCase));
 
         string? transcriptContent = null;
+        string? sourceName = null; // which combined transcript is refined (recorded next to the output)
 
         // Operator picked a specific combined transcript in the UI — refine exactly that file.
         // Guard against traversal: only a bare file name directly inside the job folder is allowed.
@@ -226,7 +227,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             var picked = Path.Combine(jobDir, safeName);
             if (File.Exists(picked))
             {
-                try { transcriptContent = await File.ReadAllTextAsync(picked, Encoding.UTF8, ct); }
+                try { transcriptContent = await File.ReadAllTextAsync(picked, Encoding.UTF8, ct); sourceName = safeName; }
                 catch (Exception ex) { _logger.LogWarning(ex, "Job {JobId}: could not read chosen transcript {Path}", jobId, picked); }
             }
             else
@@ -245,7 +246,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             var mdFull = Path.Combine(workspaceRoot, mdRel.Replace('/', Path.DirectorySeparatorChar));
             if (File.Exists(mdFull))
             {
-                try { transcriptContent = await File.ReadAllTextAsync(mdFull, Encoding.UTF8, ct); }
+                try { transcriptContent = await File.ReadAllTextAsync(mdFull, Encoding.UTF8, ct); sourceName = Path.GetFileName(mdFull); }
                 catch (Exception ex) { _logger.LogWarning(ex, "Job {JobId}: could not read transcript at {Path}", jobId, mdFull); }
             }
         }
@@ -254,7 +255,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             var fallbackMd = Path.Combine(jobDir, "transcript.md");
             if (File.Exists(fallbackMd))
             {
-                try { transcriptContent = await File.ReadAllTextAsync(fallbackMd, Encoding.UTF8, ct); } catch { /* ignore */ }
+                try { transcriptContent = await File.ReadAllTextAsync(fallbackMd, Encoding.UTF8, ct); sourceName = "transcript.md"; } catch { /* ignore */ }
             }
         }
         // Recovered/legacy jobs name the combined file transcript_<agent04JobId>.md — take the newest one.
@@ -266,11 +267,14 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                 .FirstOrDefault();
             if (candidate != null)
             {
-                try { transcriptContent = await File.ReadAllTextAsync(candidate.FullName, Encoding.UTF8, ct); } catch { /* ignore */ }
+                try { transcriptContent = await File.ReadAllTextAsync(candidate.FullName, Encoding.UTF8, ct); sourceName = candidate.Name; } catch { /* ignore */ }
             }
         }
 
-        var outputRelForRefiner = TryGetRefinerOutputRelativePath(jobId, jobDir);
+        // Every run writes a NEW refined file (same timestamp convention as rebuild_combined), so runs with
+        // different prompts can be compared; agent06 puts the run's prompts next to it (<name>.prompt.md).
+        var outputName = "transcript_fixed_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss_fff", System.Globalization.CultureInfo.InvariantCulture) + ".md";
+        var outputRelForRefiner = TryGetRefinerOutputRelativePath(jobId, jobDir, outputName);
         var tagsList = snap.Tags?.ToList();
         Application.SubmitRefineJobResult refinerResult;
         try
@@ -283,10 +287,10 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
             _logger.LogInformation("Job {JobId}: refiner settings batch={Batch} context={Context} model={Model} prompt={Prompt} system={System}",
                 jobId, batchSize, contextLines, settings.Model ?? IRefinerSettingsStore.DefaultModel, promptFile ?? "built-in", settings.SystemPrompt != null ? "custom" : "built-in");
             var refineInput = outputRelForRefiner != null
-                ? new RefineJobInput(null, transcriptContent ?? "", "transcript_fixed.md", batchSize, contextLines, tagsList, jobId,
-                    promptFile, settings.Model, RefineBatchesDir, settings.SystemPrompt)
+                ? new RefineJobInput(null, transcriptContent ?? "", outputName, batchSize, contextLines, tagsList, jobId,
+                    promptFile, settings.Model, RefineBatchesDir, settings.SystemPrompt, sourceName)
                 : new RefineJobInput(null, transcriptContent ?? "", null, batchSize, contextLines, tagsList, null,
-                    promptFile, settings.Model, null, settings.SystemPrompt);
+                    promptFile, settings.Model, null, settings.SystemPrompt, sourceName);
             refinerResult = await _refiner.SubmitRefineJobAsync(refineInput, ct);
         }
         catch (Exception ex)
@@ -317,24 +321,24 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
     /// agent06 requires <c>output_file_path</c> relative to its WorkspaceRoot.
     /// When <c>Agent06:WorkspaceRoot</c> is unset, we assume it matches <see cref="IJobWorkspace.WorkspaceRootPath"/> (same folder as Jobs:WorkspacePath).
     /// </summary>
-    private string? TryGetRefinerOutputRelativePath(string jobId, string jobDir)
+    private string? TryGetRefinerOutputRelativePath(string jobId, string jobDir, string outputName)
     {
         var refinerRoot = ResolveRefinerWorkspaceRootFullPath();
-        var outputFull = Path.GetFullPath(Path.Combine(jobDir, "transcript_fixed.md"));
+        var outputFull = Path.GetFullPath(Path.Combine(jobDir, outputName));
         try
         {
             var rel = Path.GetRelativePath(refinerRoot, outputFull);
             var normalized = rel.Replace('\\', '/');
             if (string.IsNullOrEmpty(normalized) || normalized == ".")
             {
-                _logger.LogWarning("Job {JobId}: unexpected relative path for transcript_fixed.md (rel empty or '.'); OutputFilePath omitted", jobId);
+                _logger.LogWarning("Job {JobId}: unexpected relative path for the refined output (rel empty or '.'); OutputFilePath omitted", jobId);
                 return null;
             }
 
             if (normalized.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(rel))
             {
                 _logger.LogWarning(
-                    "Job {JobId}: transcript_fixed.md is not under Agent06 workspace root {Root} (relative={Rel}). Set Agent06:WorkspaceRoot to the same path as Jobs:WorkspacePath to write the file next to the job.",
+                    "Job {JobId}: refined output is not under Agent06 workspace root {Root} (relative={Rel}). Set Agent06:WorkspaceRoot to the same path as Jobs:WorkspacePath to write the file next to the job.",
                     jobId, refinerRoot, rel);
                 return null;
             }
