@@ -1194,9 +1194,13 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             if (loaded == null)
                 throw new InvalidOperationException($"rebuild_combined: missing or invalid chunks_json for chunk {i}.");
             merged.Add(loaded);
-            // (Re)generate the per-chunk md from the chunk's JSON so the stitch source exists (also backfills legacy jobs).
-            _artifacts.WriteJobPerChunkMarkdown(
-                Path.GetFileName(chunkInfos[i].Path), loaded.Segments, loaded.Offset, loaded.EmitGuard, perChunkMdDirFull);
+            // chunks_md/*.md are the operator's editable source of the combined transcript: NEVER overwrite
+            // an existing one here (rebuild = stitch the operator's edits). Generate from JSON only when the
+            // file is missing (legacy jobs created before per-chunk md existed).
+            var chunkMdPath = Path.Combine(perChunkMdDirFull, Path.GetFileNameWithoutExtension(chunkInfos[i].Path) + ".md");
+            if (!File.Exists(chunkMdPath))
+                _artifacts.WriteJobPerChunkMarkdown(
+                    Path.GetFileName(chunkInfos[i].Path), loaded.Segments, loaded.Offset, loaded.EmitGuard, perChunkMdDirFull);
         }
 
         var stitchBasenames = chunkInfos.Select(c => Path.GetFileNameWithoutExtension(c.Path)).ToList();
