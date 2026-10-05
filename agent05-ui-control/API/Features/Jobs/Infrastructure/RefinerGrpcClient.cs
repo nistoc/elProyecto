@@ -29,7 +29,11 @@ public sealed class RefinerGrpcClient : Application.IRefinerServiceClient, IDisp
             OutputFilePath = input.OutputFilePath ?? "",
             BatchSize = input.BatchSize,
             ContextLines = input.ContextLines,
-            JobDirectoryRelative = input.JobDirectoryRelative ?? ""
+            JobDirectoryRelative = input.JobDirectoryRelative ?? "",
+            PromptFile = input.PromptFile ?? "",
+            Model = input.Model ?? "",
+            SaveIntermediate = !string.IsNullOrEmpty(input.IntermediateDir),
+            IntermediateDir = input.IntermediateDir ?? ""
         };
         if (input.Tags != null)
             request.Tags.AddRange(input.Tags);
@@ -59,7 +63,8 @@ public sealed class RefinerGrpcClient : Application.IRefinerServiceClient, IDisp
                 update.Batches.Count > 0
                     ? update.Batches.Select(b => new Application.RefineBatchDelta(
                         b.Index, b.Total, b.OriginalText, b.RefinedText, b.Ok,
-                        string.IsNullOrEmpty(b.Error) ? null : b.Error)).ToList()
+                        string.IsNullOrEmpty(b.Error) ? null : b.Error,
+                        b.ContextText, b.StartLine, b.EndLine)).ToList()
                     : null
             );
             if (update.State is "Completed" or "Failed" or "Cancelled")
@@ -72,5 +77,11 @@ public sealed class RefinerGrpcClient : Application.IRefinerServiceClient, IDisp
         var request = new CancelRefineJobRequest { JobId = jobId };
         var response = await _client.CancelRefineJobAsync(request, cancellationToken: ct);
         return response.Cancelled;
+    }
+
+    public async Task<Application.RefineDefaults> GetDefaultsAsync(CancellationToken ct = default)
+    {
+        var r = await _client.GetRefineDefaultsAsync(new GetRefineDefaultsRequest(), cancellationToken: ct);
+        return new Application.RefineDefaults(r.SystemPrompt, r.UserPromptTemplate, r.Model);
     }
 }

@@ -4,7 +4,8 @@ namespace TranslationImprover.Features.Refine.Infrastructure;
 
 public sealed class FilePromptLoader : IPromptLoader
 {
-    private const string DefaultPrompt = @"You are fixing a Russian-Spanish language learning transcript.
+    /// <summary>Built-in user prompt template (placeholders {context}, {batch}).</summary>
+    public const string DefaultPrompt = @"You are fixing a Russian-Spanish language learning transcript.
 
 The transcript contains Russian speech where Spanish words/phrases were transcribed phonetically in Cyrillic.
 

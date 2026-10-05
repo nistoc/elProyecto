@@ -34,6 +34,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<PipelineBackground
 builder.Services.AddSingleton<ITranscriptionServiceClient, TranscriptionGrpcClient>();
 builder.Services.AddSingleton<IRefinerServiceClient, RefinerGrpcClient>();
 builder.Services.AddSingleton<XtractManager.Features.Jobs.Application.IJobWorkspace, JobWorkspace>();
+builder.Services.AddSingleton<XtractManager.Features.Jobs.Application.IRefinerSettingsStore, FileRefinerSettingsStore>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();

@@ -9,6 +9,8 @@ namespace TranslationImprover.Services;
 
 public class RefinerGrpcService : RefinerService.RefinerServiceBase
 {
+    private const string DefaultModel = "gpt-4o-mini";
+
     private readonly IRefineJobStore _store;
     private readonly IRefinePipeline _pipeline;
     private readonly IRefineJobCancellation _cancellation;
@@ -64,7 +66,7 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
             OutputFilePath = string.IsNullOrEmpty(request.OutputFilePath) ? null : request.OutputFilePath.Trim(),
             BatchSize = request.BatchSize > 0 ? request.BatchSize : 10,
             ContextLines = request.ContextLines >= 0 ? request.ContextLines : 3,
-            Model = request.Model ?? "gpt-4o-mini",
+            Model = string.IsNullOrWhiteSpace(request.Model) ? DefaultModel : request.Model.Trim(),
             Temperature = request.Temperature,
             PromptFile = string.IsNullOrEmpty(request.PromptFile) ? null : request.PromptFile.Trim(),
             OpenAIBaseUrl = string.IsNullOrEmpty(request.OpenaiBaseUrl) ? null : request.OpenaiBaseUrl.Trim(),
@@ -199,6 +201,17 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
         OriginalText = d.OriginalText ?? "",
         RefinedText = d.RefinedText ?? "",
         Ok = d.Ok,
-        Error = d.Error ?? ""
+        Error = d.Error ?? "",
+        ContextText = d.ContextText ?? "",
+        StartLine = d.StartLine,
+        EndLine = d.EndLine
     };
+
+    public override Task<GetRefineDefaultsResponse> GetRefineDefaults(GetRefineDefaultsRequest request, ServerCallContext context) =>
+        Task.FromResult(new GetRefineDefaultsResponse
+        {
+            SystemPrompt = Features.Refine.Infrastructure.RefinePipeline.SystemPrompt,
+            UserPromptTemplate = Features.Refine.Infrastructure.FilePromptLoader.DefaultPrompt,
+            Model = DefaultModel
+        });
 }

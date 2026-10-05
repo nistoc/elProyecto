@@ -17,4 +17,7 @@ public sealed class StubRefinerServiceClient : Application.IRefinerServiceClient
     {
         return Task.FromResult(false);
     }
+
+    public Task<Application.RefineDefaults> GetDefaultsAsync(CancellationToken ct = default) =>
+        Task.FromResult(new Application.RefineDefaults("", "{context}\n{batch}", "gpt-4o-mini"));
 }

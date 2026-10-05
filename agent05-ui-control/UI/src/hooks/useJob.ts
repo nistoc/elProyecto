@@ -17,6 +17,7 @@ import {
   deleteJob,
   subscribeToJob,
   startRefine,
+  fetchRefineBatches,
 } from '../api';
 
 export type StepId = 'upload' | 'transcriber' | 'refiner' | 'result';
@@ -198,6 +199,26 @@ export function useJob(): {
     }
     setRefineProgress(null); // clear stale before/after progress when switching jobs
     let cancelled = false;
+    // Show the last saved refiner run (survives reloads); a live stream replaces it.
+    fetchRefineBatches(jobId)
+      .then((saved) => {
+        if (cancelled || saved.batches.length === 0) return;
+        setRefineProgress((prev) =>
+          prev && !prev.fromDisk
+            ? prev
+            : {
+                promptPreview: saved.promptPreview,
+                currentBatch: saved.batches.length,
+                totalBatches: saved.batches[0]?.total ?? saved.batches.length,
+                progressPercent: 100,
+                batches: saved.batches,
+                fromDisk: true,
+              }
+        );
+      })
+      .catch(() => {
+        /* no saved run — nothing to show */
+      });
     let doneHandled = false;
     const ac = new AbortController();
     setConnectionState('connected');
@@ -266,16 +287,17 @@ export function useJob(): {
           setRefineProgress((prev) => {
             // Merge incremental batch deltas by index (idempotent across reconnects).
             const byIndex = new Map<number, RefineBatch>();
-            (prev?.batches ?? []).forEach((b) => byIndex.set(b.index, b));
+            const base = prev?.fromDisk ? null : prev; // a live run supersedes the saved one
+            (base?.batches ?? []).forEach((b) => byIndex.set(b.index, b));
             (p.batches ?? []).forEach((b) => byIndex.set(b.index, b));
             const batches = Array.from(byIndex.values()).sort(
               (a, b) => a.index - b.index
             );
             return {
-              promptPreview: p.promptPreview ?? prev?.promptPreview ?? null,
-              currentBatch: p.currentBatch ?? prev?.currentBatch ?? 0,
-              totalBatches: p.totalBatches ?? prev?.totalBatches ?? 0,
-              progressPercent: p.progressPercent ?? prev?.progressPercent ?? 0,
+              promptPreview: p.promptPreview ?? base?.promptPreview ?? null,
+              currentBatch: p.currentBatch ?? base?.currentBatch ?? 0,
+              totalBatches: p.totalBatches ?? base?.totalBatches ?? 0,
+              progressPercent: p.progressPercent ?? base?.progressPercent ?? 0,
               batches,
             };
           });

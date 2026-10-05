@@ -8,7 +8,8 @@ namespace TranslationImprover.Features.Refine.Infrastructure;
 
 public sealed class RefinePipeline : IRefinePipeline
 {
-    private const string SystemPrompt = "You are a precise transcript editor. You fix Cyrillic transliterations of Spanish words back to Latin script. You preserve everything else exactly as is.";
+    /// <summary>Fixed system prompt; the operator edits only the user template.</summary>
+    public const string SystemPrompt = "You are a precise transcript editor. You fix Cyrillic transliterations of Spanish words back to Latin script. You preserve everything else exactly as is.";
 
     private readonly IRefineJobStore _store;
     private readonly IOpenAIRefineClient _client;
@@ -77,7 +78,15 @@ public sealed class RefinePipeline : IRefinePipeline
             ? Path.Combine(artifactRoot, request.IntermediateDir.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
             : null;
         if (intermediateDir != null)
+        {
             Directory.CreateDirectory(intermediateDir);
+            // The folder holds the LAST run only: drop the previous run's batches, then record the prompt used.
+            foreach (var old in Directory.EnumerateFiles(intermediateDir, "batch_*.json"))
+            {
+                try { File.Delete(old); } catch { /* best effort */ }
+            }
+            await File.WriteAllTextAsync(Path.Combine(intermediateDir, "prompt.txt"), BuildPromptPreview(SystemPrompt, promptTemplate), Encoding.UTF8, cancellationToken);
+        }
 
         var fixedContent = new List<string>();
         IReadOnlyList<string>? previousContext = null;
@@ -107,11 +116,6 @@ public sealed class RefinePipeline : IRefinePipeline
                 {
                     fixedContent.AddRange(result.FixedLines);
                     previousContext = result.FixedLines;
-                    if (intermediateDir != null)
-                    {
-                        var json = JsonSerializer.Serialize(new { batchInfo.Index, result.Success, result.Error, fixed_lines = result.FixedLines.Select(l => l.TrimEnd()).ToList() });
-                        await File.WriteAllTextAsync(Path.Combine(intermediateDir, $"batch_{i + 1:D4}_of_{batches.Count:D4}.json"), json, Encoding.UTF8, cancellationToken);
-                    }
                 }
                 else
                 {
@@ -122,18 +126,37 @@ public sealed class RefinePipeline : IRefinePipeline
 
                 // Publish the before/after fragment so the UI can render this batch's improvement live.
                 var refinedForDelta = result.Success ? result.FixedLines : batchInfo.Lines;
-                _store.Update(jobId, new RefineJobStatusUpdate
+                var delta = new RefineBatchDelta
                 {
-                    AppendBatch = new RefineBatchDelta
+                    Index = i + 1,
+                    Total = batches.Count,
+                    OriginalText = JoinLines(batchInfo.Lines),
+                    RefinedText = JoinLines(refinedForDelta),
+                    Ok = result.Success,
+                    Error = result.Error,
+                    ContextText = batchInfo.Context is { Count: > 0 } ctx ? JoinLines(ctx) : "",
+                    StartLine = batchInfo.StartLine + 1, // parser: 0-based start, exclusive end → 1-based inclusive
+                    EndLine = batchInfo.EndLine
+                };
+                _store.Update(jobId, new RefineJobStatusUpdate { AppendBatch = delta });
+
+                // Persist every batch (ok or failed) so the before/after view survives a page reload.
+                if (intermediateDir != null)
+                {
+                    var json = JsonSerializer.Serialize(new
                     {
-                        Index = i + 1,
-                        Total = batches.Count,
-                        OriginalText = JoinLines(batchInfo.Lines),
-                        RefinedText = JoinLines(refinedForDelta),
-                        Ok = result.Success,
-                        Error = result.Error
-                    }
-                });
+                        index = delta.Index,
+                        total = delta.Total,
+                        startLine = delta.StartLine,
+                        endLine = delta.EndLine,
+                        contextText = delta.ContextText,
+                        originalText = delta.OriginalText,
+                        refinedText = delta.RefinedText,
+                        ok = delta.Ok,
+                        error = delta.Error
+                    });
+                    await File.WriteAllTextAsync(Path.Combine(intermediateDir, $"batch_{i + 1:D4}_of_{batches.Count:D4}.json"), json, Encoding.UTF8, cancellationToken);
+                }
 
                 _nodeModel?.CompleteNode(batchNodeId, result.Success ? RefineJobState.Completed : RefineJobState.Failed, DateTimeOffset.UtcNow, result.Error);
             }

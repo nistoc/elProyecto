@@ -158,6 +158,11 @@ export interface RefineBatch {
   refined: string;
   ok: boolean;
   error?: string | null;
+  /** Lines of the previous (already refined) batch sent along as context — the seam between blocks. */
+  context?: string;
+  /** 1-based content line range of this batch in the transcript. */
+  startLine?: number;
+  endLine?: number;
 }
 
 /** SSE 'refine_progress' payload: prompt + incremental batch deltas. */
@@ -176,6 +181,20 @@ export interface RefineProgressState {
   totalBatches: number;
   progressPercent: number;
   batches: RefineBatch[];
+  /** True when loaded from the saved last run (refine_batches/), not from the live stream. */
+  fromDisk?: boolean;
+}
+
+/** Operator-tuned refiner settings (GET/PUT /api/refiner/settings), shared by all jobs. */
+export interface RefinerSettings {
+  promptTemplate: string;
+  isCustomPrompt: boolean;
+  defaultPromptTemplate: string;
+  systemPrompt: string;
+  batchSize: number;
+  contextLines: number;
+  model: string;
+  defaults: { batchSize: number; contextLines: number; model: string };
 }
 
 /** Client-side SSE connection health, delivered as StreamEvent type 'connection'. */

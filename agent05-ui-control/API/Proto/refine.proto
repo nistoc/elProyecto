@@ -10,6 +10,8 @@ service RefinerService {
   rpc StreamRefineStatus(StreamRefineStatusRequest) returns (stream RefineStatusUpdate);
   rpc CancelRefineJob(CancelRefineJobRequest) returns (CancelRefineJobResponse);
   rpc QueryRefineJobs(QueryRefineJobsRequest) returns (QueryRefineJobsResponse);
+  // Built-in prompts, so the operator can start editing from the default template.
+  rpc GetRefineDefaults(GetRefineDefaultsRequest) returns (GetRefineDefaultsResponse);
 }
 
 message SubmitRefineJobRequest {
@@ -66,6 +68,9 @@ message RefineBatchDelta {
   string refined_text = 4;
   bool ok = 5;
   string error = 6;
+  string context_text = 7;    // lines from the previous refined batch sent as context (the seam)
+  int32 start_line = 8;       // 1-based first content line of this batch
+  int32 end_line = 9;         // 1-based last content line of this batch
 }
 
 message RefineStatusUpdate {
@@ -101,4 +106,12 @@ message QueryRefineJobsRequest {
 
 message QueryRefineJobsResponse {
   repeated RefineStatusResponse jobs = 1;
+}
+
+message GetRefineDefaultsRequest {}
+
+message GetRefineDefaultsResponse {
+  string system_prompt = 1;
+  string user_prompt_template = 2;   // placeholders: {context}, {batch}
+  string model = 3;
 }

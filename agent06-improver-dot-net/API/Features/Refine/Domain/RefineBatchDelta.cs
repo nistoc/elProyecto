@@ -16,4 +16,9 @@ public sealed class RefineBatchDelta
     /// <summary>True when the OpenAI call succeeded; false means the original was kept as-is.</summary>
     public bool Ok { get; init; }
     public string? Error { get; init; }
+    /// <summary>Context lines from the previous refined batch that were sent with this one (how batches are stitched); empty for the first batch.</summary>
+    public string ContextText { get; init; } = "";
+    /// <summary>1-based first/last content line of this batch in the transcript body.</summary>
+    public int StartLine { get; init; }
+    public int EndLine { get; init; }
 }

@@ -12,6 +12,7 @@ import { ResultSection } from './components/ResultSection';
 import { ProjectFilesPanel } from './components/ProjectFilesPanel';
 import { ChunkControlsStats } from './components/ChunkControlsStats';
 import { RefinerProgress } from './components/RefinerProgress';
+import { RefinerSettingsPanel } from './components/RefinerSettingsPanel';
 
 function AppContent() {
   const { t, locale, setLocale } = useI18n();
@@ -208,6 +209,7 @@ function AppContent() {
               <div className="step-panel">
                 {job && jobId ? (
                   <>
+                    <RefinerSettingsPanel t={t} disabled={job.phase === 'refiner'} />
                     <div className="refiner-panel">
                       <div className="refiner-panel__head">
                         <span className="refiner-panel__title">

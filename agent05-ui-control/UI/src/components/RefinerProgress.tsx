@@ -18,7 +18,11 @@ export function RefinerProgress({ progress, t }: Props) {
     return null;
   }
 
-  const { promptPreview, currentBatch, totalBatches, batches } = progress;
+  const { promptPreview, currentBatch, totalBatches, batches, fromDisk } = progress;
+  // Live run: the batch currently at OpenAI has no result yet — show it as an in-flight row.
+  const lastDone = batches.length > 0 ? batches[batches.length - 1].index : 0;
+  const inFlight =
+    !fromDisk && totalBatches > 0 && lastDone < totalBatches ? lastDone + 1 : null;
   const changedCount = batches.filter((b) => b.original !== b.refined).length;
   const pct =
     totalBatches > 0
@@ -28,7 +32,12 @@ export function RefinerProgress({ progress, t }: Props) {
   return (
     <div className="refine-progress">
       <div className="refine-progress__head">
-        <span className="refine-progress__title">{t('refineProgressTitle')}</span>
+        <span className="refine-progress__title">
+          {t('refineProgressTitle')}
+          {fromDisk && (
+            <span className="refine-progress__saved"> · {t('refineProgressSaved')}</span>
+          )}
+        </span>
         {totalBatches > 0 && (
           <span className="refine-progress__counter">
             {t('refineProgressBatch')} {currentBatch}/{totalBatches}
@@ -60,9 +69,9 @@ export function RefinerProgress({ progress, t }: Props) {
           <table className="refine-progress__table">
             <thead>
               <tr>
-                <th className="refine-progress__col-idx">#</th>
-                <th>{t('refineProgressBefore')}</th>
-                <th>{t('refineProgressAfter')}</th>
+                <th className="refine-progress__col-idx">{t('refineProgressOrder')}</th>
+                <th>{t('refineProgressSent')}</th>
+                <th>{t('refineProgressReceived')}</th>
               </tr>
             </thead>
             <tbody>
@@ -80,7 +89,12 @@ export function RefinerProgress({ progress, t }: Props) {
                     }
                   >
                     <td className="refine-progress__col-idx">
-                      {b.index}
+                      <div className="refine-progress__n">{b.index}</div>
+                      {b.startLine != null && b.startLine > 0 && (
+                        <div className="refine-progress__lines">
+                          {b.startLine}–{b.endLine}
+                        </div>
+                      )}
                       {!b.ok && (
                         <span
                           className="refine-progress__flag"
@@ -92,6 +106,14 @@ export function RefinerProgress({ progress, t }: Props) {
                       )}
                     </td>
                     <td>
+                      {b.context && (
+                        <div className="refine-progress__context">
+                          <div className="refine-progress__context-label">
+                            ↳ {t('refineProgressContext')} #{b.index - 1}
+                          </div>
+                          <pre>{b.context}</pre>
+                        </div>
+                      )}
                       <pre>{b.original}</pre>
                     </td>
                     <td>
@@ -100,6 +122,14 @@ export function RefinerProgress({ progress, t }: Props) {
                   </tr>
                 );
               })}
+              {inFlight != null && (
+                <tr className="refine-progress__row--inflight">
+                  <td className="refine-progress__col-idx">
+                    <div className="refine-progress__n">{inFlight}</div>
+                  </td>
+                  <td colSpan={2}>{t('refineProgressInFlight')}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -181,7 +211,18 @@ export function RefinerProgress({ progress, t }: Props) {
           border-bottom: 1px solid var(--color-border);
           z-index: 1;
         }
-        .refine-progress__col-idx { width: 3rem; text-align: right; color: var(--color-text-muted); }
+        .refine-progress__col-idx { width: 4.5rem; text-align: right; color: var(--color-text-muted); }
+        .refine-progress__n { font-weight: 500; color: var(--color-text-secondary); }
+        .refine-progress__lines { font-size: 0.68rem; white-space: nowrap; }
+        .refine-progress__saved { font-weight: 400; font-size: 0.78rem; color: var(--color-text-muted); }
+        .refine-progress__context {
+          margin-bottom: 0.35rem;
+          padding: 0.25rem 0.4rem;
+          border-left: 2px dashed var(--color-border);
+          opacity: 0.6;
+        }
+        .refine-progress__context-label { font-size: 0.66rem; color: var(--color-text-muted); margin-bottom: 0.15rem; }
+        .refine-progress__row--inflight td { color: var(--color-text-muted); font-style: italic; }
         .refine-progress__table td {
           padding: 0.35rem 0.55rem;
           vertical-align: top;

@@ -15,6 +15,10 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
     private readonly Application.IBroadcaster _broadcaster;
     private readonly Application.ITranscriptionServiceClient _transcription;
     private readonly Application.IRefinerServiceClient _refiner;
+    private readonly Application.IRefinerSettingsStore _refinerSettings;
+
+    /// <summary>Per-job folder (under the job dir) where agent06 saves every refined batch of the last run.</summary>
+    public const string RefineBatchesDir = "refine_batches";
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _hostEnvironment;
     private readonly ILogger<TranscriptionRefinerPipeline> _logger;
@@ -27,8 +31,10 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         IRefinerServiceClient refiner,
         IConfiguration configuration,
         IHostEnvironment hostEnvironment,
-        ILogger<TranscriptionRefinerPipeline> logger)
+        ILogger<TranscriptionRefinerPipeline> logger,
+        IRefinerSettingsStore refinerSettings)
     {
+        _refinerSettings = refinerSettings;
         _store = store;
         _workspace = workspace;
         _broadcaster = broadcaster;
@@ -269,9 +275,18 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         Application.SubmitRefineJobResult refinerResult;
         try
         {
+            // Operator-tuned settings (Refiner tab): custom prompt file, batch geometry, model.
+            var settings = _refinerSettings.Load();
+            var batchSize = settings.BatchSize ?? IRefinerSettingsStore.DefaultBatchSize;
+            var contextLines = settings.ContextLines ?? IRefinerSettingsStore.DefaultContextLines;
+            var promptFile = settings.PromptTemplate != null ? IRefinerSettingsStore.PromptFileName : null;
+            _logger.LogInformation("Job {JobId}: refiner settings batch={Batch} context={Context} model={Model} prompt={Prompt}",
+                jobId, batchSize, contextLines, settings.Model ?? IRefinerSettingsStore.DefaultModel, promptFile ?? "built-in");
             var refineInput = outputRelForRefiner != null
-                ? new RefineJobInput(null, transcriptContent ?? "", "transcript_fixed.md", 5, 2, tagsList, jobId)
-                : new RefineJobInput(null, transcriptContent ?? "", null, 5, 2, tagsList, null);
+                ? new RefineJobInput(null, transcriptContent ?? "", "transcript_fixed.md", batchSize, contextLines, tagsList, jobId,
+                    promptFile, settings.Model, RefineBatchesDir)
+                : new RefineJobInput(null, transcriptContent ?? "", null, batchSize, contextLines, tagsList, null,
+                    promptFile, settings.Model);
             refinerResult = await _refiner.SubmitRefineJobAsync(refineInput, ct);
         }
         catch (Exception ex)
@@ -525,7 +540,10 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                     original = b.OriginalText,
                     refined = b.RefinedText,
                     ok = b.Ok,
-                    error = b.Error
+                    error = b.Error,
+                    context = b.ContextText,
+                    startLine = b.StartLine,
+                    endLine = b.EndLine
                 })
             }, ApiJson.CamelCase));
         }

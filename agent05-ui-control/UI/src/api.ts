@@ -6,6 +6,8 @@ import type {
   StreamEvent,
   ConnectionState,
   JobFilesApiResponse,
+  RefinerSettings,
+  RefineBatch,
 } from './types';
 import type { ChunkArtifactGroup } from './utils/chunkArtifactGroups';
 import {
@@ -413,4 +415,70 @@ export function subscribeToJob(
 
   connect();
   return close;
+}
+
+async function readError(r: Response): Promise<string> {
+  const text = await r.text();
+  try {
+    const j = JSON.parse(text) as { error?: string };
+    if (j?.error) return j.error;
+  } catch {
+    /* not JSON */
+  }
+  return text || `HTTP ${r.status}`;
+}
+
+export async function fetchRefinerSettings(): Promise<RefinerSettings> {
+  const r = await fetch(`${API_BASE}/api/refiner/settings`);
+  if (!r.ok) throw new Error(await readError(r));
+  return r.json() as Promise<RefinerSettings>;
+}
+
+export async function saveRefinerSettings(body: {
+  promptTemplate: string | null;
+  batchSize: number;
+  contextLines: number;
+  model: string;
+}): Promise<RefinerSettings> {
+  const r = await fetch(`${API_BASE}/api/refiner/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await readError(r));
+  return r.json() as Promise<RefinerSettings>;
+}
+
+/** Saved batches of the job's last refiner run (agent06 writes them to refine_batches/). */
+export async function fetchRefineBatches(
+  jobId: string
+): Promise<{ promptPreview: string | null; batches: RefineBatch[] }> {
+  const raw = await get<{
+    promptPreview: string | null;
+    batches: Array<{
+      index: number;
+      total: number;
+      startLine?: number;
+      endLine?: number;
+      contextText?: string;
+      originalText: string;
+      refinedText: string;
+      ok: boolean;
+      error?: string | null;
+    }>;
+  }>(`/api/jobs/${encodeURIComponent(jobId)}/refine-batches`);
+  return {
+    promptPreview: raw.promptPreview,
+    batches: raw.batches.map((b) => ({
+      index: b.index,
+      total: b.total,
+      original: b.originalText,
+      refined: b.refinedText,
+      ok: b.ok,
+      error: b.error,
+      context: b.contextText,
+      startLine: b.startLine,
+      endLine: b.endLine,
+    })),
+  };
 }
