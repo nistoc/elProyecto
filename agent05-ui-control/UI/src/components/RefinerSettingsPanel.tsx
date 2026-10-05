@@ -50,18 +50,19 @@ export function RefinerSettingsPanel({ t, disabled }: Props) {
       contextLines !== saved.contextLines ||
       model !== saved.model);
 
-  /** `null` in an override = reset that prompt to the built-in one. */
-  const save = async (overrides?: { prompt?: null; system?: null }) => {
+  // A prompt saved equal to the built-in text is stored as "built-in" by the API, so the
+  // restore buttons only put the original text into the field; Save makes it effective.
+  const save = async () => {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
       const next = await saveRefinerSettings({
-        promptTemplate: overrides && 'prompt' in overrides ? null : prompt,
+        promptTemplate: prompt,
         batchSize,
         contextLines,
         model,
-        systemPrompt: overrides && 'system' in overrides ? null : systemPrompt,
+        systemPrompt,
       });
       apply(next);
       setNotice(t('refinerSettingsSaved'));
@@ -102,23 +103,9 @@ export function RefinerSettingsPanel({ t, disabled }: Props) {
         <>
           <p className="refiner-settings__hint">{t('refinerSettingsHint')}</p>
 
-          <div className="refiner-settings__label-row">
-            <label className="refiner-settings__label" htmlFor="refiner-system-prompt">
-              {t('refinerSettingsSystem')}
-            </label>
-            <button
-              type="button"
-              className="refiner-settings__link"
-              disabled={
-                disabled ||
-                busy ||
-                (!saved.isCustomSystemPrompt && systemPrompt === saved.defaultSystemPrompt)
-              }
-              onClick={() => save({ system: null })}
-            >
-              {t('refinerSettingsResetOne')}
-            </button>
-          </div>
+          <label className="refiner-settings__label" htmlFor="refiner-system-prompt">
+            {t('refinerSettingsSystem')}
+          </label>
           <textarea
             id="refiner-system-prompt"
             className="refiner-settings__prompt"
@@ -129,23 +116,9 @@ export function RefinerSettingsPanel({ t, disabled }: Props) {
             rows={3}
           />
 
-          <div className="refiner-settings__label-row">
           <label className="refiner-settings__label" htmlFor="refiner-prompt">
             {t('refinerSettingsPrompt')}
           </label>
-            <button
-              type="button"
-              className="refiner-settings__link"
-              disabled={
-                disabled ||
-                busy ||
-                (!saved.isCustomPrompt && prompt === saved.defaultPromptTemplate)
-              }
-              onClick={() => save({ prompt: null })}
-            >
-              {t('refinerSettingsResetOne')}
-            </button>
-          </div>
           <textarea
             id="refiner-prompt"
             className="refiner-settings__prompt"
@@ -204,6 +177,24 @@ export function RefinerSettingsPanel({ t, disabled }: Props) {
             >
               {t('refinerSettingsSave')}
             </button>
+            <button
+              type="button"
+              className="refiner-actions__skip"
+              disabled={disabled || busy || systemPrompt === saved.defaultSystemPrompt}
+              onClick={() => setSystemPrompt(saved.defaultSystemPrompt)}
+              title={t('refinerSettingsRestoreHint')}
+            >
+              {t('refinerSettingsRestoreSystem')}
+            </button>
+            <button
+              type="button"
+              className="refiner-actions__skip"
+              disabled={disabled || busy || prompt === saved.defaultPromptTemplate}
+              onClick={() => setPrompt(saved.defaultPromptTemplate)}
+              title={t('refinerSettingsRestoreHint')}
+            >
+              {t('refinerSettingsRestoreTemplate')}
+            </button>
             {dirty && (
               <span className="refiner-settings__dirty">{t('refinerSettingsUnsaved')}</span>
             )}
@@ -244,17 +235,7 @@ export function RefinerSettingsPanel({ t, disabled }: Props) {
           color: var(--color-accent, #2d7ff9);
         }
         .refiner-settings__hint { margin: 0.6rem 0; font-size: 0.8rem; color: var(--color-text-secondary); }
-        .refiner-settings__label { display: block; font-size: 0.8rem; color: var(--color-text-secondary); }
-        .refiner-settings__label-row { display: flex; align-items: baseline; gap: 0.75rem; margin: 0.7rem 0 0.3rem 0; }
-        .refiner-settings__link {
-          padding: 0;
-          border: none;
-          background: none;
-          font-size: 0.75rem;
-          color: var(--color-accent, #2d7ff9);
-          cursor: pointer;
-        }
-        .refiner-settings__link:disabled { color: var(--color-text-muted); cursor: default; }
+        .refiner-settings__label { display: block; margin: 0.7rem 0 0.3rem 0; font-size: 0.8rem; color: var(--color-text-secondary); }
         .refiner-settings__prompt {
           width: 100%;
           box-sizing: border-box;
