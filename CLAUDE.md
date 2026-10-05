@@ -9,7 +9,7 @@ Pipeline for transcribing Spanish lesson audio recordings: audio → diarized tr
 | Directory | Service | Stack | Port |
 |---|---|---|---|
 | `agent04/` | Transcriber | .NET 9, **gRPC only** (no REST) | 5032 (h2c) |
-| `agent06-improver-dot-net/` | Refiner (TranslationImprover) | .NET 9, REST + gRPC | 5033 |
+| `agent06-improver-dot-net/` | Refiner (TranslationImprover) | .NET 9, gRPC (h2c) + REST | 5033 gRPC / 5034 REST |
 | `agent05-ui-control/` | Orchestrator API (XtractManager) + React UI | .NET 9 + React 18/Vite/TS | 5010 / 5173 |
 
 A first generation in Python (`agent01`, `agent03-trans-improver`, Node `agent-browser`) was removed in commit `88b7477`; retrieve from git history if ever needed. agent04/agent06 keep artifact and config formats compatible with it, which is why code comments still reference agent01/agent-browser.
@@ -50,7 +50,7 @@ Startup order for the full pipeline: agent04 and agent06 first, then agent05 API
 
 **Job config contract.** agent04 job configs (`agent04/Agent04/config/default.json`) use the legacy agent01 JSON schema: `file`, `model`, `openai_api_key: "env:OPENAI_API_KEY"`, `pre_split`, `target_chunk_mb`, `parallel_transcription_workers`, `md_output_path`, etc.
 
-**gRPC over plain HTTP (h2c).** No TLS anywhere locally. agent05's client sets `Http2UnencryptedSupport`; agent04's Kestrel listens on 5032 as HTTP/2-only (`ConfigureKestrel` in `Program.cs`). Breaking this yields `HTTP_1_1_REQUIRED` errors.
+**gRPC over plain HTTP (h2c).** No TLS anywhere locally. agent05's client sets `Http2UnencryptedSupport`; agent04's Kestrel listens on 5032 as HTTP/2-only (`ConfigureKestrel` in `Program.cs`). agent06 does the same on 5033 (gRPC) and serves REST/health on 5034. Breaking this yields `HTTP_1_1_REQUIRED` errors.
 
 ## agent04 internals (where most work happens)
 

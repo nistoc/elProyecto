@@ -51,7 +51,7 @@ dotnet build
 dotnet run
 ```
 
-By default the API listens on **http://localhost:5033** (see `API/Properties/launchSettings.json`). Ensure `WorkspaceRoot` and (for refinement) `OPENAI_API_KEY` are set in `.env`, appsettings, or environment before starting.
+By default the service listens on **http://localhost:5033** for gRPC (HTTP/2 only, h2c — what agent05 calls) and **http://localhost:5034** for REST / health (HTTP/1.1); both are fixed in `API/Program.cs` (`ConfigureKestrel`). Ensure `WorkspaceRoot` and (for refinement) `OPENAI_API_KEY` are set in `.env`, appsettings, or environment before starting.
 
 ## API overview
 

@@ -7,7 +7,7 @@
 ```
 elProyecto/
 ├── agent04/                  # Транскрайбер (.NET 9, gRPC :5032) — OpenAI diarize, чанки, кэш
-├── agent06-improver-dot-net/ # Рефайнер (.NET 9, REST+gRPC :5033) — TranslationImprover
+├── agent06-improver-dot-net/ # Рефайнер (.NET 9, gRPC :5033, REST :5034) — TranslationImprover
 └── agent05-ui-control/       # Оркестратор + UI (XtractManager): API .NET :5010, React UI :5173
 ```
 

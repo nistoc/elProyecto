@@ -27,6 +27,16 @@ builder.Logging.AddSimpleConsole(options =>
     options.UseUtcTimestamp = true;
 });
 
+// gRPC over http:// (h2c) needs an HTTP/2-only endpoint: cleartext Kestrel cannot negotiate HTTP/2
+// next to HTTP/1.1 on one port, so agent05's gRPC calls failed with HTTP_1_1_REQUIRED.
+// 5033 = gRPC (h2c, what agent05 dials), 5034 = REST / health / OpenAPI (HTTP/1.1).
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.AllowAlternateSchemes = true;
+    serverOptions.ListenLocalhost(5033, listenOptions => listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http2);
+    serverOptions.ListenLocalhost(5034, listenOptions => listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1);
+});
+
 // Graceful shutdown: при остановке (Ctrl+C) хост завершится за ShutdownTimeout и процесс освободит порт
 builder.Host.ConfigureHostOptions(o => o.ShutdownTimeout = TimeSpan.FromSeconds(5));
 
