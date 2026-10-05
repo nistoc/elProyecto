@@ -115,6 +115,8 @@ export function useJob(): {
     useState<ConnectionState>('connected');
   /** Bumps on each SSE snapshot so project files + chunk-artifact-groups refetch (disk artifacts). */
   const [jobSnapshotRevision, setJobSnapshotRevision] = useState(0);
+  // Bumped to reopen the SSE stream after it closed on a terminal snapshot (e.g. re-running the refiner on a completed job).
+  const [streamEpoch, setStreamEpoch] = useState(0);
   const [refineProgress, setRefineProgress] = useState<RefineProgressState | null>(
     null
   );
@@ -315,7 +317,7 @@ export function useJob(): {
       ac.abort();
       close();
     };
-  }, [jobId, refreshList]);
+  }, [jobId, refreshList, streamEpoch]);
 
   const handleSelectJob = useCallback(
     (id: string) => {
@@ -398,6 +400,8 @@ export function useJob(): {
       if (!skip) setRefineProgress(null); // fresh run → drop the previous before/after table
       try {
         await startRefine(jobId, skip, inputFile);
+        // The stream may already be closed (job was completed): reopen it to get live progress and the final snapshot.
+        setStreamEpoch((n) => n + 1);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to start refiner');
       }

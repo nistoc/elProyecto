@@ -209,7 +209,10 @@ function AppContent() {
               <div className="step-panel">
                 {job && jobId ? (
                   <>
-                    <RefinerSettingsPanel t={t} disabled={job.phase === 'refiner'} />
+                    <RefinerSettingsPanel
+                      t={t}
+                      disabled={job.phase === 'refiner'}
+                    />
                     <div className="refiner-panel">
                       <div className="refiner-panel__head">
                         <span className="refiner-panel__title">
@@ -237,12 +240,18 @@ function AppContent() {
                       ) : (
                         <ul className="refiner-files">
                           {refinerInputs.map((f) => (
-                            <li key={f.relativePath} className="refiner-files__row">
+                            <li
+                              key={f.relativePath}
+                              className="refiner-files__row"
+                            >
                               <div className="refiner-files__meta">
-                                <code className="refiner-panel__file">{f.name}</code>
+                                <code className="refiner-panel__file">
+                                  {f.name}
+                                </code>
                                 <span className="refiner-panel__arrow">→</span>
                                 <code className="refiner-panel__file refiner-panel__file--out">
-                                  transcript_fixed_&lt;{t('refinerOutputTime')}&gt;.md
+                                  transcript_fixed_&lt;{t('refinerOutputTime')}
+                                  &gt;.md
                                 </code>
                               </div>
                               <button
@@ -272,6 +281,7 @@ function AppContent() {
                     </div>
                     <RefinerProgress progress={refineProgress} t={t} />
                     <ResultSection
+                      filesRefreshKey={debouncedRevision}
                       jobId={jobId}
                       job={job}
                       t={t}
@@ -288,6 +298,7 @@ function AppContent() {
             {activeStep === 'result' && jobId && (
               <div className="step-panel">
                 <ResultSection
+                  filesRefreshKey={debouncedRevision}
                   jobId={jobId}
                   job={job}
                   t={t}
@@ -303,7 +314,11 @@ function AppContent() {
         </main>
       </div>
 
-      <footer className="status-bar" role="status" aria-label={t('statusBarAriaLabel')}>
+      <footer
+        className="status-bar"
+        role="status"
+        aria-label={t('statusBarAriaLabel')}
+      >
         <span
           className={
             job?.transcriptionFooterHint?.trim()
@@ -315,10 +330,7 @@ function AppContent() {
           {job?.transcriptionFooterHint?.trim() || t('statusBarDefaultMessage')}
         </span>
         {job?.transcriptionSyncDebug?.trim() ? (
-          <span
-            className="status-bar__debug"
-            title={t('statusBarDebugTitle')}
-          >
+          <span className="status-bar__debug" title={t('statusBarDebugTitle')}>
             {job.transcriptionSyncDebug.trim()}
           </span>
         ) : null}

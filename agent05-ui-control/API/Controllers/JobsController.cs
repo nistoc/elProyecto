@@ -622,6 +622,10 @@ public class JobsController : ControllerBase
             chosen = name;
         }
 
+        // Flip to refiner/running BEFORE queueing so a client that reopens its stream right after this
+        // response sees a non-terminal snapshot (a stale 'completed' would make it close the stream again).
+        await _store.UpdateAsync(id, s => { s.Phase = "refiner"; s.Status = "running"; });
+        await PublishEnrichedSnapshotAsync(id, ct);
         _pipelineQueue.EnqueueRefiner(id, chosen);
         return Accepted(new { ok = true, message = "refiner_started", inputFile = chosen });
     }

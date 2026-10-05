@@ -14,6 +14,8 @@ interface ResultSectionProps {
   variant?: ResultSectionVariant;
   /** From `useJobChunkArtifactGroups` in App; omits split transcripts already under chunk groups. */
   chunkArtifactGroups?: ChunkArtifactGroup[] | null;
+  /** Changes when the job snapshot changes (debounced); re-reads the file list, e.g. after a refiner run. */
+  filesRefreshKey?: number;
 }
 
 function findByName(files: { name: string; relativePath: string }[], name: string) {
@@ -94,6 +96,7 @@ export function ResultSection({
   t,
   variant = 'result',
   chunkArtifactGroups = null,
+  filesRefreshKey = 0,
 }: ResultSectionProps) {
   const copyFilename = () => {
     if (job?.originalFilename) {
@@ -140,7 +143,7 @@ export function ResultSection({
     return () => {
       cancelled = true;
     };
-  }, [jobId, filesReloadKey, t]);
+  }, [jobId, filesReloadKey, filesRefreshKey, t]);
 
   const keyLinks = useMemo(() => {
     if (!projectFiles) return [];
