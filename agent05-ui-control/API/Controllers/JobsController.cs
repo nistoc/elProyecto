@@ -44,10 +44,15 @@ public class JobsController : ControllerBase
     public async Task<ActionResult<CreateJobResponse>> Create(
         [FromForm] IFormFile file,
         [FromForm] string? tags,
+        [FromForm] string? settings = null,
         CancellationToken ct = default)
     {
         if (file == null || file.Length == 0)
             return BadRequest(ToProblemDetails("File is required and must not be empty."));
+
+        // Settings of this one job (pause length, compression, model); checked before anything is stored.
+        if (!JobSettingsDocument.TryBuild(settings, out var settingsFileJson, out var settingsError))
+            return BadRequest(ToProblemDetails(settingsError ?? "settings are not valid."));
 
         var tagsList = ParseTags(tags);
         var originalFilename = file.FileName ?? "audio.bin";
@@ -58,6 +63,15 @@ public class JobsController : ControllerBase
             await _workspace.EnsureJobDirectoryAsync(jobId, ct);
             await using var stream = file.OpenReadStream();
             await _workspace.SaveUploadedFileAsync(jobId, stream, originalFilename, ct);
+            if (settingsFileJson != null)
+            {
+                // The transcriber reads this file from the job folder and puts it on top of its shared config.
+                await System.IO.File.WriteAllTextAsync(
+                    Path.Combine(_workspace.GetJobDirectoryPath(jobId), JobSettingsDocument.FileName),
+                    settingsFileJson,
+                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                    ct);
+            }
         }
         catch (Exception ex)
         {

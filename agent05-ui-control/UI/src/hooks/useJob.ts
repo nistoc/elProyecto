@@ -10,6 +10,7 @@ import type {
   RefineBatch,
 } from '../types';
 import { isTerminalSnapshot } from '../utils/streamReconnect';
+import type { JobSettings } from '../utils/jobSettings';
 import {
   fetchJob,
   fetchJobsList,
@@ -92,7 +93,7 @@ export function useJob(): {
   refreshJobSnapshot: () => Promise<void>;
   refreshList: () => Promise<void>;
   handleSelectJob: (id: string) => void;
-  handleStart: (tags?: string[]) => Promise<void>;
+  handleStart: (tags?: string[], settings?: JobSettings) => Promise<void>;
   handleReset: () => void;
   handleDeleteJob: (id: string) => Promise<void>;
   /** Manually run the refiner (skip=true marks the job completed without refining; inputFile picks a specific combined transcript). */
@@ -331,12 +332,12 @@ export function useJob(): {
   );
 
   const handleStart = useCallback(
-    async (tags?: string[]) => {
+    async (tags?: string[], settings?: JobSettings) => {
       if (!file) return;
       setError(null);
       setIsSubmitting(true);
       try {
-        const { jobId: newId } = await createJob(file, tags);
+        const { jobId: newId } = await createJob(file, tags, settings);
         setJobId(newId);
         setActiveStepState('transcriber');
         localStorage.setItem(ACTIVE_STEP_KEY, 'transcriber');

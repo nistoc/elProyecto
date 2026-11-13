@@ -25,6 +25,21 @@ const messages: Record<Locale, Record<string, string>> = {
     selectFile: 'Select audio file',
     start: 'Start',
     noFileSelected: 'No file selected',
+    jobSettingsTitle: 'Settings of this job',
+    jobSettingsHint:
+      'They apply to this recording only; the shared config stays as it is. An empty field means "as in the shared config".',
+    jobSettingsAsShared: 'as in the shared config',
+    jobSettingsCompress: 'Silence compression',
+    jobSettingsCompressOn: 'on',
+    jobSettingsCompressOff: 'off',
+    jobSettingsKeep: 'Pause kept, seconds',
+    jobSettingsKeepHint:
+      'From {min} to {max}. A pause shorter than this keeps its own length.',
+    jobSettingsKeepInvalid:
+      'The pause must be a number from 0.05 to 5 seconds.',
+    jobSettingsModel: 'Model',
+    jobSettingsModelHint:
+      'whisper-1 gives lines with times and does not tell speakers apart.',
     status: 'Status',
     phase: 'Phase',
     filename: 'Filename',
@@ -210,6 +225,20 @@ const messages: Record<Locale, Record<string, string>> = {
     selectFile: 'Выберите аудиофайл',
     start: 'Запустить',
     noFileSelected: 'Файл не выбран',
+    jobSettingsTitle: 'Настройки этого задания',
+    jobSettingsHint:
+      'Действуют только на эту запись; общий config не меняется. Пустое поле — «как в общем config».',
+    jobSettingsAsShared: 'как в общем config',
+    jobSettingsCompress: 'Сжатие тишины',
+    jobSettingsCompressOn: 'включить',
+    jobSettingsCompressOff: 'выключить',
+    jobSettingsKeep: 'Оставлять от паузы, секунд',
+    jobSettingsKeepHint:
+      'От {min} до {max}. Пауза короче этого остаётся своей длины.',
+    jobSettingsKeepInvalid: 'Пауза — число от 0,05 до 5 секунд.',
+    jobSettingsModel: 'Модель',
+    jobSettingsModelHint:
+      'whisper-1 даёт строки со временем и не различает говорящих.',
     status: 'Статус',
     phase: 'Фаза',
     filename: 'Имя файла',
@@ -397,6 +426,20 @@ const messages: Record<Locale, Record<string, string>> = {
     selectFile: 'Seleccione archivo de audio',
     start: 'Iniciar',
     noFileSelected: 'Ningún archivo seleccionado',
+    jobSettingsTitle: 'Ajustes de este trabajo',
+    jobSettingsHint:
+      'Valen solo para esta grabación; el config común no cambia. Un campo vacío significa «como en el config común».',
+    jobSettingsAsShared: 'como en el config común',
+    jobSettingsCompress: 'Compresión de silencios',
+    jobSettingsCompressOn: 'activar',
+    jobSettingsCompressOff: 'desactivar',
+    jobSettingsKeep: 'Pausa que se conserva, segundos',
+    jobSettingsKeepHint:
+      'De {min} a {max}. Una pausa más corta conserva su duración.',
+    jobSettingsKeepInvalid: 'La pausa es un número de 0,05 a 5 segundos.',
+    jobSettingsModel: 'Modelo',
+    jobSettingsModelHint:
+      'whisper-1 da líneas con tiempo y no distingue a los hablantes.',
     status: 'Estado',
     phase: 'Fase',
     filename: 'Nombre de archivo',

@@ -10,6 +10,7 @@ import type {
   RefineBatch,
 } from './types';
 import type { ChunkArtifactGroup } from './utils/chunkArtifactGroups';
+import type { JobSettings } from './utils/jobSettings';
 import {
   computeReconnectDelay,
   isTerminalSnapshot,
@@ -186,11 +187,15 @@ export async function deleteJobSubChunk(
 
 export async function createJob(
   file: File,
-  tags?: string[]
+  tags?: string[],
+  settings?: JobSettings
 ): Promise<CreateJobResponse> {
   const form = new FormData();
   form.append('file', file);
   if (tags?.length) form.append('tags', tags.join(','));
+  // Settings of this one job (pause, compression, model); the API writes them to job_settings.json.
+  if (settings && Object.keys(settings).length > 0)
+    form.append('settings', JSON.stringify(settings));
   const r = await fetch(`${API_BASE}/api/jobs`, {
     method: 'POST',
     body: form,
