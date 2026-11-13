@@ -37,7 +37,8 @@ public static class SplitChunkMergeIntegrator
         int parentChunkIndex,
         ITranscriptionMerger merger,
         ILogger? logger,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<string, double>? probeAudioDurationSec = null)
     {
         var splitRoot = Path.Combine(artifactRoot, config.SplitChunksDir);
         var chunkFolder = Path.Combine(splitRoot, $"chunk_{parentChunkIndex}");
@@ -65,6 +66,12 @@ public static class SplitChunkMergeIntegrator
                     return (false, "split_merge_invalid_sub_result");
                 pairs.Add((i, tr));
             }
+
+            var placed = await ApplySubChunkTimelineAsync(
+                    config, artifactRoot, chunkFolder, subChunksDir, parentChunkIndex, pairs, probeAudioDurationSec, logger, ct)
+                .ConfigureAwait(false);
+            if (!placed)
+                return (false, "split_merge_sub_offsets_unknown");
 
             double parentOffset;
             try
@@ -122,7 +129,8 @@ public static class SplitChunkMergeIntegrator
         int totalChunks,
         ITranscriptionMerger merger,
         ILogger? logger,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<string, double>? probeAudioDurationSec = null)
     {
         _ = totalChunks;
         await TryRebuildSplitMergedForChunkAsync(
@@ -132,8 +140,101 @@ public static class SplitChunkMergeIntegrator
                 parentChunkIndex,
                 merger,
                 logger,
-                ct)
+                ct,
+                probeAudioDurationSec)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Puts every sub-chunk result at its place inside the parent chunk. A sub-chunk result counts seconds
+    /// from the start of its own audio; where each part starts is kept in <see cref="SubChunkTimelineFile"/>.
+    /// A split made before that file existed is measured from its audio (and the file is written then);
+    /// results that already carry an offset of their own are taken as they are.
+    /// Returns false when the places cannot be established: merging would stack all parts at the start of
+    /// the parent and interleave their lines.
+    /// </summary>
+    private static async Task<bool> ApplySubChunkTimelineAsync(
+        TranscriptionConfig config,
+        string artifactRoot,
+        string chunkFolder,
+        string subChunksDir,
+        int parentChunkIndex,
+        List<(int SubIdx, TranscriptionResult Result)> pairs,
+        Func<string, double>? probeAudioDurationSec,
+        ILogger? logger,
+        CancellationToken ct)
+    {
+        var timeline = await SubChunkTimelineFile.TryLoadAsync(chunkFolder, ct).ConfigureAwait(false);
+        if (timeline != null && pairs.Any(p => SubChunkTimelineFile.Find(timeline, p.SubIdx) == null))
+            timeline = null;
+
+        if (timeline == null)
+        {
+            if (pairs.Any(p => p.Result.Offset > 0))
+                return true;
+
+            timeline = TryDeriveSubChunkTimeline(
+                config, artifactRoot, subChunksDir, parentChunkIndex, pairs.Count, probeAudioDurationSec, logger);
+            if (timeline == null)
+                return pairs.Count <= 1;
+
+            await SubChunkTimelineFile.SaveAsync(chunkFolder, timeline, ct).ConfigureAwait(false);
+            logger?.LogInformation(
+                "Split merge: chunk {Chunk} had no sub-chunk timeline; measured it from the audio ({Count} parts) and saved it",
+                parentChunkIndex,
+                pairs.Count);
+        }
+
+        for (var i = 0; i < pairs.Count; i++)
+        {
+            var entry = SubChunkTimelineFile.Find(timeline, pairs[i].SubIdx)!;
+            pairs[i] = (pairs[i].SubIdx, pairs[i].Result with { Offset = entry.OffsetSec, EmitGuard = entry.EmitGuardSec });
+        }
+
+        return true;
+    }
+
+    private static SubChunkTimelineDocument? TryDeriveSubChunkTimeline(
+        TranscriptionConfig config,
+        string artifactRoot,
+        string subChunksDir,
+        int parentChunkIndex,
+        int subChunkCount,
+        Func<string, double>? probeAudioDurationSec,
+        ILogger? logger)
+    {
+        if (probeAudioDurationSec == null)
+            return null;
+        try
+        {
+            var parentAudio = FindParentChunkAudio(artifactRoot, config, parentChunkIndex);
+            var firstSub = SplitChunkPaths.FindSubChunkAudioFile(subChunksDir, 0);
+            if (parentAudio == null || firstSub == null)
+                return null;
+            return SubChunkTimelineFile.Derive(
+                parentChunkIndex,
+                probeAudioDurationSec(parentAudio),
+                probeAudioDurationSec(firstSub),
+                subChunkCount);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "Split merge: could not measure sub-chunk places for chunk {Chunk}", parentChunkIndex);
+            return null;
+        }
+    }
+
+    /// <summary>The audio file the operator split was cut from: the chunk files in name order, as the split itself picks it.</summary>
+    private static string? FindParentChunkAudio(string artifactRoot, TranscriptionConfig config, int parentChunkIndex)
+    {
+        var chunksDir = Path.Combine(artifactRoot, config.SplitWorkdir);
+        if (parentChunkIndex < 0 || !Directory.Exists(chunksDir))
+            return null;
+        var files = Directory.EnumerateFiles(chunksDir)
+            .Where(p => Regex.IsMatch(Path.GetExtension(p), @"^\.(m4a|wav|mp3|flac|ogg)$", RegexOptions.IgnoreCase))
+            .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return parentChunkIndex < files.Count ? files[parentChunkIndex] : null;
     }
 
     private static int CountExpectedSubChunks(string subChunksDir)

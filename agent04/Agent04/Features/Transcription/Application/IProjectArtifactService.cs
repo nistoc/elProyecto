@@ -88,6 +88,9 @@ public interface IProjectArtifactService
     void WriteSubChunkTranscriptionResult(string resultsDir, int subChunkIndex, TranscriptionResult result);
 
     /// <summary>Operator split: writes <c>split_chunks/chunk_N/sub_chunks/*_sub_XX.*</c> from main chunk audio.</summary>
+    /// <summary>Duration of an audio file by ffprobe; 0 when it cannot be read.</summary>
+    double GetAudioDurationSeconds(string audioPath);
+
     Task<(bool Ok, string Message)> TryOperatorSplitAsync(
         string artifactRoot,
         int chunkIndex,

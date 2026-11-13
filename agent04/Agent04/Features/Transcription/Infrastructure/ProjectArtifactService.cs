@@ -252,6 +252,13 @@ public sealed class ProjectArtifactService : IProjectArtifactService
         SubChunkResultWriter.Save(resultsDir, subChunkIndex, result);
 
     /// <inheritdoc />
+    public double GetAudioDurationSeconds(string audioPath)
+    {
+        var ffprobe = _audioUtils.WhichOr(_configuration["Agent04:FfprobePath"], "ffprobe") ?? "ffprobe";
+        return _audioUtils.GetDurationAndSize(ffprobe, audioPath).DurationSeconds;
+    }
+
+    /// <inheritdoc />
     public async Task<(bool Ok, string Message)> TryOperatorSplitAsync(
         string artifactRoot,
         int chunkIndex,
@@ -342,6 +349,20 @@ public sealed class ProjectArtifactService : IProjectArtifactService
         {
             _logger.LogWarning(ex, "Operator split failed for chunk {Chunk}", chunkIndex);
             return (false, ex.Message);
+        }
+
+        try
+        {
+            var chunkFolder = Path.Combine(artifactRoot, splitChunksDir, $"chunk_{chunkIndex}");
+            var subNames = Enumerable.Range(0, plan.Count).Select(k => $"{baseName}_sub_{k:D2}{ext}").ToList();
+            await SubChunkTimelineFile
+                .SaveAsync(chunkFolder, SubChunkTimelineFile.FromPlan(chunkIndex, durSec, plan, subNames), ct)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The merge can still measure the places from the audio; the split itself is done.
+            _logger.LogWarning(ex, "Operator split: could not save the sub-chunk timeline for chunk {Chunk}", chunkIndex);
         }
 
         _logger.LogInformation("Operator split ok: chunk {Chunk} -> {Parts} parts under {Dir}", chunkIndex, splitParts, outRoot);

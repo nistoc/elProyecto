@@ -30,10 +30,19 @@ public sealed class SplitChunkMergeIntegratorRebuildTests
             "clip_sub_01.m4a",
             0,
             0,
-            new[] { new ASRSegment(0.1, 0.5, "dos", "spk_0") },
+            new[] { new ASRSegment(2.0, 2.5, "dos", "spk_0") },
             new Dictionary<string, object?>());
         SubChunkResultWriter.Save(resultsDir, 0, tr0);
         SubChunkResultWriter.Save(resultsDir, 1, tr1);
+        // The split of a 60 s chunk into two parts with 1 s overlap: part 1 starts at 29.5 s.
+        await SubChunkTimelineFile.SaveAsync(
+            chunkFolder,
+            SubChunkTimelineFile.FromPlan(
+                0,
+                60,
+                OperatorChunkSplitPlanner.PlanEqualSegmentsWithOverlap(60, 2, 1.0),
+                new[] { "clip_sub_00.m4a", "clip_sub_01.m4a" }),
+            CancellationToken.None);
 
         var config = new TranscriptionConfig(new Dictionary<string, object?>());
         var merger = new TranscriptionMerger();
@@ -53,6 +62,9 @@ public sealed class SplitChunkMergeIntegratorRebuildTests
             Assert.Equal("rebuild_split_merged_ok", msg);
             Assert.True(File.Exists(Path.Combine(chunkFolder, "chunk_0_merged.json")));
             Assert.True(File.Exists(Path.Combine(chunkFolder, "chunk_0_merged.md")));
+            var md = await File.ReadAllTextAsync(Path.Combine(chunkFolder, "chunk_0_merged.md"));
+            Assert.Contains("- 0.10 ", md);
+            Assert.Contains("- 31.50 ", md);
         }
         finally
         {

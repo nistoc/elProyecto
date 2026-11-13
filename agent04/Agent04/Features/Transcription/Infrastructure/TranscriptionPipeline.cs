@@ -928,10 +928,15 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 parentChunkIndex,
                 subChunkIndex,
                 "Transcribe HTTP OK (sub-chunk)");
+            // Segments count seconds of the sub-chunk; its place inside the parent chunk goes with the result.
+            var chunkFolder = Path.Combine(artifactRoot, config.SplitChunksDir, $"chunk_{parentChunkIndex}");
+            var place = SubChunkTimelineFile.Find(
+                await SubChunkTimelineFile.TryLoadAsync(chunkFolder, ct).ConfigureAwait(false),
+                subChunkIndex);
             var tr = new TranscriptionResult(
                 Path.GetFileName(audioPath),
-                0,
-                0,
+                place?.OffsetSec ?? 0,
+                place?.EmitGuardSec ?? 0,
                 clientResult.Segments,
                 clientResult.RawResponse);
             _artifacts.WriteSubChunkTranscriptionResult(resultsDir, subChunkIndex, tr);
@@ -958,7 +963,9 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                     totalChunks,
                     _merger,
                     _logger,
-                    ct)
+                    ct,
+                    path => _audioUtils.GetDurationAndSize(
+                        _audioUtils.WhichOr(config.FfprobePath, "ffprobe") ?? "ffprobe", path).DurationSeconds)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)

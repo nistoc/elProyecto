@@ -710,7 +710,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                 request.ChunkIndex,
                 _merger,
                 _logger,
-                ct)
+                ct,
+                _projectArtifactService.GetAudioDurationSeconds)
             .ConfigureAwait(false);
 
         if (ok)
