@@ -150,6 +150,46 @@ public sealed class DialogueBuilderTests : IDisposable
     }
 
     [Fact]
+    public async Task Create_does_not_label_a_chunk_whose_parts_were_transcribed_again()
+    {
+        // Chunk 0 fell back to a plain model; then the operator split it and the parts got time marks.
+        // The transcript holds the lines of the parts, and its first line stands at the time of the old block.
+        WriteJobFile(StudentJob, "chunks_json/student_part_000.json", "{\"text\":\"Olha. Hm.\",\"usage\":{}}");
+        WriteJobFile(StudentJob, "chunks_md/student_part_000.md", ">>>>>>>\n- 0.00 speaker_0: \"Olha. Hm.\"\n<<<<<\n");
+        WriteJobFile(StudentJob, "split_chunks/chunk_0/chunk_0_merged.md", ">>>>>>>\n- 0.00 speaker_0: \"Olha.\nHm.\"\n<<<<<\n");
+        WriteJobFile(StudentJob, "split_chunks/chunk_0/results/sub_chunk_00_result.json",
+            "{\"sub_idx\":0,\"segments\":[{\"start\":0.0,\"end\":1.2,\"text\":\"Olha.\"}]," +
+            "\"raw_response\":{\"text\":\"Olha.\",\"segments\":[{\"start\":0.0,\"end\":1.2,\"text\":\"Olha.\"}]}}");
+
+        var result = await _builder.CreateAsync(TwoTracks());
+
+        Assert.Contains("- 0.00 Ученик: \"Olha.\nHm.\"\n", ReadDialogueFile(result));
+        Assert.Equal(0, result.Tracks.Single(t => t.JobId == StudentJob).UntimedEntries);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public async Task Create_warns_when_a_part_of_a_split_chunk_has_no_time_marks()
+    {
+        WriteJobFile(StudentJob, "chunks_json/student_part_000.json", "{\"text\":\"Olha. Hm.\",\"usage\":{}}");
+        WriteJobFile(StudentJob, "chunks_md/student_part_000.md", ">>>>>>>\n- 0.00 speaker_0: \"Olha. Hm.\"\n<<<<<\n");
+        WriteJobFile(StudentJob, "split_chunks/chunk_0/chunk_0_merged.md", ">>>>>>>\n- 0.00 speaker_0: \"Olha.\nHm.\"\n<<<<<\n");
+        WriteJobFile(StudentJob, "split_chunks/chunk_0/results/sub_chunk_00_result.json",
+            "{\"sub_idx\":0,\"segments\":[{\"start\":0.0,\"end\":1.2,\"text\":\"Olha.\"}]," +
+            "\"raw_response\":{\"text\":\"Olha.\",\"segments\":[{\"start\":0.0,\"end\":1.2,\"text\":\"Olha.\"}]}}");
+        // Part 1 fell back to a plain model as well: text only.
+        WriteJobFile(StudentJob, "split_chunks/chunk_0/results/sub_chunk_01_result.json",
+            "{\"sub_idx\":1,\"segments\":[{\"start\":0.0,\"end\":0.0,\"text\":\"Hm.\"}],\"raw_response\":{\"text\":\"Hm.\"}}");
+
+        var result = await _builder.CreateAsync(TwoTracks());
+
+        Assert.Equal(0, result.Tracks.Single(t => t.JobId == StudentJob).UntimedEntries);
+        var warning = Assert.Single(result.Warnings);
+        Assert.Contains("1 part(s) of the split chunk 'student_part_000'", warning);
+        Assert.Contains("Ученик", warning);
+    }
+
+    [Fact]
     public async Task Create_warns_about_a_track_whose_times_count_the_compressed_file()
     {
         // The teacher job was sent with silence cut out and has no speech map: its times are compressed.

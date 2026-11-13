@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using XtractManager.Features.Jobs.Application;
 
 namespace XtractManager.Features.Jobs.Infrastructure;
@@ -214,6 +215,14 @@ public sealed class DialogueBuilder : IDialogueBuilder
                 continue;
 
             var chunkName = Path.GetFileNameWithoutExtension(jsonPath);
+            // The operator split this chunk and its parts were transcribed again: the transcript holds the
+            // lines of the parts, and the plain-model text of the whole chunk is no longer in it.
+            if (TryFindSplitMergeFolder(jobDir, chunkName) is { } splitFolder)
+            {
+                WarnAboutPartsWithoutTimeMarks(splitFolder, chunkName, track, warnings);
+                continue;
+            }
+
             var mdPath = Path.Combine(jobDir, "chunks_md", chunkName + ".md");
             var matched = 0;
             if (File.Exists(mdPath))
@@ -278,20 +287,76 @@ public sealed class DialogueBuilder : IDialogueBuilder
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(jsonPath, Encoding.UTF8));
-            var root = doc.RootElement;
-            if (root.ValueKind != JsonValueKind.Object)
-                return false;
-            if (root.TryGetProperty("segments", out var segments)
-                && segments.ValueKind == JsonValueKind.Array
-                && segments.GetArrayLength() > 0)
-                return false;
-            return root.TryGetProperty("text", out var text)
-                && text.ValueKind == JsonValueKind.String
-                && !string.IsNullOrWhiteSpace(text.GetString());
+            return HasTextButNoSegments(doc.RootElement);
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
             return false;
+        }
+    }
+
+    /// <summary>A model answer that carries text and no timed segments.</summary>
+    private static bool HasTextButNoSegments(JsonElement response)
+    {
+        if (response.ValueKind != JsonValueKind.Object)
+            return false;
+        if (response.TryGetProperty("segments", out var segments)
+            && segments.ValueKind == JsonValueKind.Array
+            && segments.GetArrayLength() > 0)
+            return false;
+        return response.TryGetProperty("text", out var text)
+            && text.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(text.GetString());
+    }
+
+    private static readonly Regex ChunkIndexInName = new(@"_part_(\d+)$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Folder <c>split_chunks/chunk_N</c> of a chunk whose operator split has been merged: it holds
+    /// <c>chunk_N_merged.md</c>, the file agent04 puts into the transcript instead of the chunk's own lines.
+    /// </summary>
+    private static string? TryFindSplitMergeFolder(string jobDir, string chunkName)
+    {
+        var m = ChunkIndexInName.Match(chunkName);
+        if (!m.Success || !int.TryParse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var index))
+            return null;
+        var folder = Path.Combine(jobDir, "split_chunks", "chunk_" + index.ToString(CultureInfo.InvariantCulture));
+        var merged = Path.Combine(folder, "chunk_" + index.ToString(CultureInfo.InvariantCulture) + "_merged.md");
+        return File.Exists(merged) ? folder : null;
+    }
+
+    /// <summary>
+    /// A part of a split chunk can fall back to a plain model too. Its line stands at the start of the part;
+    /// it is not labelled (the transcript does not say which line came from which part), so the reader is told.
+    /// </summary>
+    private static void WarnAboutPartsWithoutTimeMarks(string splitFolder, string chunkName, DialogueTrackRequest track, List<string> warnings)
+    {
+        var resultsDir = Path.Combine(splitFolder, "results");
+        if (!Directory.Exists(resultsDir))
+            return;
+
+        var untimedParts = 0;
+        foreach (var path in Directory.EnumerateFiles(resultsDir, "sub_chunk_*_result.json"))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(path, Encoding.UTF8));
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("raw_response", out var raw)
+                    && HasTextButNoSegments(raw))
+                    untimedParts++;
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+            {
+                // an unreadable part result says nothing about time marks
+            }
+        }
+
+        if (untimedParts > 0)
+        {
+            warnings.Add(
+                $"{track.Speaker} (job {track.JobId}): {untimedParts} part(s) of the split chunk '{chunkName}' were transcribed " +
+                "without time marks; their lines stand at the start of the part and are not labelled");
         }
     }
 
