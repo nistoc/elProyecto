@@ -102,6 +102,7 @@ export function JobsList({
         .jobs-list__li { display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.25rem; }
         .jobs-list__item {
           flex: 1;
+          min-width: 0; /* let a long name shrink to an ellipsis instead of pushing × out of the pane */
           text-align: left;
           padding: 0.5rem;
           border: 1px solid var(--color-border);
@@ -116,7 +117,7 @@ export function JobsList({
         .jobs-list__meta { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: var(--color-text-secondary); margin-top: 0.125rem; }
         .jobs-list__status { }
         .jobs-list__date { }
-        .jobs-list__del { width: 28px; height: 28px; padding: 0; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-surface); color: var(--color-text); cursor: pointer; }
+        .jobs-list__del { flex-shrink: 0; width: 28px; height: 28px; padding: 0; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-surface); color: var(--color-text); cursor: pointer; }
         .jobs-list__confirm { font-size: 0.75rem; display: flex; gap: 0.25rem; align-items: center; }
         .jobs-list__confirm button { padding: 0.125rem 0.25rem; }
         .jobs-list__loading, .jobs-list__empty { color: var(--color-text-muted); font-size: 0.875rem; margin: 0.5rem 0; }
