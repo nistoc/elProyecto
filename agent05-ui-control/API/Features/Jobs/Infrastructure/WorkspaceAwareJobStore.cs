@@ -146,7 +146,10 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
         return removedFromMemory || removedFromDisk;
     }
 
-    /// <summary>Find first audio file in job dir and return its name for display (e.g. "audio.mp3" or original name from agent-browser).</summary>
+    /// <summary>
+    /// Find first audio file in job dir and return its name for display (e.g. "audio.mp3" or original name from agent-browser).
+    /// A dialogue job has no audio: its name is the title from <c>dialogue.json</c>.
+    /// </summary>
     private static string? GetOriginalFilenameFromDir(string dirPath)
     {
         try
@@ -155,7 +158,7 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
             var audioExtensions = new[] { ".m4a", ".mp3", ".wav", ".ogg", ".flac", ".bin" };
             var firstAudio = dir.EnumerateFiles()
                 .FirstOrDefault(f => audioExtensions.Contains(f.Extension, StringComparer.OrdinalIgnoreCase));
-            return firstAudio?.Name;
+            return firstAudio?.Name ?? DialogueManifestFile.TryReadTitle(dirPath);
         }
         catch
         {

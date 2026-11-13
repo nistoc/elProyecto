@@ -48,6 +48,8 @@ Startup order for the full pipeline: agent04 and agent06 first, then agent05 API
 
 **Job artifact layout** (inside `{workspace}/{jobId}/`): source audio, `transcript.md`, `transcript_fixed*.md` (refiner output), `response.json`, `chunks/`, `chunks_json/`, `converted_wav/`, `intermediate_results/`, `split_chunks/chunk_N/` (operator splits), `transcription_work_state.json` (chunk progress on disk), `timeline/chunks.json` (each chunk's offset and overlap guard on the recording's timeline; rebuild and retranscribe read it), `pending_chunks.json` (indices for next run, written by `EnqueueTranscriptionWork` gRPC).
 
+**Dialogue jobs.** agent05 `POST /api/jobs/dialogue` merges the combined transcripts of participant-track jobs (one job per Zoom participant file) into a job folder of its own: `transcript_dialogue_<stamp>.md` (speaker labels replaced by participant names, lines in time order) plus `dialogue.json` (tracks and merge log). No audio, no agent04 call; the source jobs are only read, and the job waits in `awaiting_refiner` like any other. `POST /api/jobs/{id}/dialogue/rebuild` writes a new merge next to the old ones.
+
 **Job config contract.** agent04 job configs (`agent04/Agent04/config/default.json`) use the legacy agent01 JSON schema: `file`, `model`, `openai_api_key: "env:OPENAI_API_KEY"`, `pre_split`, `target_chunk_mb`, `parallel_transcription_workers`, `md_output_path`, etc.
 
 **gRPC over plain HTTP (h2c).** No TLS anywhere locally. agent05's client sets `Http2UnencryptedSupport`; agent04's Kestrel listens on 5032 as HTTP/2-only (`ConfigureKestrel` in `Program.cs`). agent06 does the same on 5033 (gRPC) and serves REST/health on 5034. Breaking this yields `HTTP_1_1_REQUIRED` errors.
