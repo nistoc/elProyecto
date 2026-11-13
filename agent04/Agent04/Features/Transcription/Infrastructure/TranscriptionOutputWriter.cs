@@ -25,7 +25,7 @@ public sealed class TranscriptionOutputWriter : ITranscriptionOutputWriter
         File.WriteAllText(mdPath, ">>>>>>>\n");
     }
 
-    public void AppendSegmentsToMarkdown(string mdPath, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard)
+    public void AppendSegmentsToMarkdown(string mdPath, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, SpeechTimeMap? timeMap = null)
     {
         using var fs = new FileStream(mdPath, FileMode.Append, FileAccess.Write, FileShare.Read);
         using var w = new StreamWriter(fs);
@@ -35,10 +35,22 @@ public sealed class TranscriptionOutputWriter : ITranscriptionOutputWriter
             if (!isFallback && (seg.Start + Eps) < emitGuard)
                 continue;
             var speaker = NormalizeSpeaker(seg.Speaker);
-            var timestamp = (seg.Start + offset).ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+            var timestamp = FormatTimestamp(seg, offset, isFallback, timeMap);
             var text = (seg.Text ?? "").Replace("\"", "\\\"");
             w.WriteLine($"- {timestamp} {speaker}: \"{text}\"");
         }
+    }
+
+    /// <summary>
+    /// Time of a line on the recording timeline. A fallback segment has no time of its own and stands at the
+    /// start of its chunk; with a <paramref name="timeMap"/> both kinds are translated from the compressed file.
+    /// </summary>
+    internal static string FormatTimestamp(ASRSegment seg, double offset, bool isFallback, SpeechTimeMap? timeMap)
+    {
+        var time = seg.Start + offset;
+        if (timeMap != null)
+            time = isFallback ? timeMap.ToSourceTime(time) : timeMap.ToSourceSegmentStart(time, seg.End + offset);
+        return time.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public void FinalizeMarkdown(string mdPath)
@@ -47,7 +59,7 @@ public sealed class TranscriptionOutputWriter : ITranscriptionOutputWriter
         _logger?.LogInformation("Finalized Markdown: {Path}", mdPath);
     }
 
-    public void WritePerChunkMarkdown(string chunkBasename, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, string outputDir)
+    public void WritePerChunkMarkdown(string chunkBasename, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, string outputDir, SpeechTimeMap? timeMap = null)
     {
         Directory.CreateDirectory(outputDir);
         var safeBase = Path.GetFileNameWithoutExtension(chunkBasename);
@@ -63,7 +75,7 @@ public sealed class TranscriptionOutputWriter : ITranscriptionOutputWriter
             if (!isFallback && (seg.Start + Eps) < emitGuard)
                 continue;
             var speaker = NormalizeSpeakerInto(localMap, seg.Speaker);
-            var timestamp = (seg.Start + offset).ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+            var timestamp = FormatTimestamp(seg, offset, isFallback, timeMap);
             var text = (seg.Text ?? "").Replace("\"", "\\\"");
             w.Write($"- {timestamp} {speaker}: \"{text}\"\n");
         }

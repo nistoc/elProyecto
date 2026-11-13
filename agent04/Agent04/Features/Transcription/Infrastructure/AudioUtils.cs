@@ -306,7 +306,8 @@ public sealed class AudioUtils : IAudioUtils
                 intervals,
                 durationSeconds,
                 keepSilenceSec,
-                cancellationToken);
+                cancellationToken,
+                out var speechPieces);
             if (concatLines.Count == 0)
                 throw new InvalidOperationException("Silence compression produced no audio segments.");
 
@@ -344,7 +345,8 @@ public sealed class AudioUtils : IAudioUtils
                 SilenceRegions = intervals,
                 TotalSilenceDurationSec = totalSilence,
                 EstimatedShortenedSec = shortened,
-                AppliedCompression = true
+                AppliedCompression = true,
+                SpeechPieces = speechPieces
             };
         }
         finally
@@ -394,6 +396,10 @@ public sealed class AudioUtils : IAudioUtils
         };
     }
 
+    /// <summary>
+    /// Cuts the kept pieces out of the input and lists them with the gaps in file order. The layout comes
+    /// from <see cref="SpeechTimeMap.Plan"/>, so the pieces returned here are exactly what stands in the file.
+    /// </summary>
     private static List<string> CollectSpeechAndGapConcatLines(
         string ffmpegPath,
         string inputPath,
@@ -401,43 +407,32 @@ public sealed class AudioUtils : IAudioUtils
         List<SilenceInterval> intervals,
         double durationSeconds,
         double keepSilenceSec,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        out IReadOnlyList<SpeechPiece> speechPieces)
     {
         var concatLines = new List<string>();
+        var pieces = new List<SpeechPiece>();
         var gapPath = Path.Combine(tempRoot, "gap.wav");
         if (keepSilenceSec > 1e-6)
             WriteGapSilenceWav(ffmpegPath, gapPath, keepSilenceSec);
 
         var segIndex = 0;
-        var cursor = 0.0;
-        foreach (var iv in intervals)
+        foreach (var step in SpeechTimeMap.Plan(intervals, durationSeconds, keepSilenceSec, MinSpeechSegmentSec))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (iv.StartSec > cursor + 1e-9)
+            if (step.Piece is not { } piece)
             {
-                var speechDur = iv.StartSec - cursor;
-                if (speechDur >= MinSpeechSegmentSec)
-                {
-                    var seg = Path.Combine(tempRoot, $"seg_{segIndex++:D5}.wav");
-                    ExtractPcm16kMonoWavSegment(ffmpegPath, inputPath, cursor, speechDur, seg);
-                    concatLines.Add(FormatConcatDemuxerLine(seg));
-                }
+                concatLines.Add(FormatConcatDemuxerLine(gapPath));
+                continue;
             }
 
-            if (keepSilenceSec > 1e-6)
-                concatLines.Add(FormatConcatDemuxerLine(gapPath));
-
-            cursor = iv.EndSec;
-        }
-
-        var tailDur = durationSeconds - cursor;
-        if (tailDur >= MinSpeechSegmentSec)
-        {
             var seg = Path.Combine(tempRoot, $"seg_{segIndex++:D5}.wav");
-            ExtractPcm16kMonoWavSegment(ffmpegPath, inputPath, cursor, tailDur, seg);
+            ExtractPcm16kMonoWavSegment(ffmpegPath, inputPath, piece.SourceStartSec, piece.DurationSec, seg);
             concatLines.Add(FormatConcatDemuxerLine(seg));
+            pieces.Add(piece);
         }
 
+        speechPieces = pieces;
         return concatLines;
     }
 

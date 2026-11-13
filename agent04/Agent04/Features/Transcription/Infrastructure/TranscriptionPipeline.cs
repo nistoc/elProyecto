@@ -156,7 +156,9 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         try
         {
         var workingPath = await ConvertToWavIfNeededAsync(config, inputFilePath, artifactRoot, cancellationToken);
-        workingPath = await MaybeApplySilenceProcessingAsync(config, workingPath, artifactRoot, cancellationToken);
+        var silenceOutcome = await MaybeApplySilenceProcessingAsync(config, workingPath, artifactRoot, cancellationToken);
+        workingPath = silenceOutcome.Path;
+        var speechTimeMap = await SyncSpeechTimeMapAsync(artifactRoot, silenceOutcome.Report, cancellationToken).ConfigureAwait(false);
         var baseName = Path.GetFileNameWithoutExtension(Path.GetFileName(inputFilePath));
         var mdRel = ResolveOutputPattern(config.MdOutputPath, baseName, jobId);
         var jsonRel = ResolveOutputPattern(config.RawJsonOutputPath, baseName, jobId);
@@ -353,7 +355,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                     // Per-chunk markdown — the source material the combined transcript is stitched from.
                     // Written before the chunk is marked Completed (crash consistency), same as the JSON above.
                     _artifacts.WriteJobPerChunkMarkdown(
-                        Path.GetFileName(chunkInfos[idx].Path), result.Segments, result.Offset, result.EmitGuard, perChunkMdDirFull);
+                        Path.GetFileName(chunkInfos[idx].Path), result.Segments, result.Offset, result.EmitGuard, perChunkMdDirFull, speechTimeMap);
 
                     var completedAt = DateTimeOffset.UtcNow;
                     await PersistChunkAsync(idx, JobState.Completed, chunkStartedAt, completedAt, null).ConfigureAwait(false);
@@ -470,7 +472,34 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         return await Task.Run(() => _audioUtils.ConvertToWav(ffmpeg, filePath, wavDir), ct);
     }
 
-    private async Task<string> MaybeApplySilenceProcessingAsync(
+    /// <summary>
+    /// Keeps <see cref="SpeechTimeMapFile"/> in step with what this run sends to the model: saved when the
+    /// audio was compressed, removed when it was not (an earlier run may have left one). Returns the map
+    /// for printing times, or null when times need no translation.
+    /// </summary>
+    private async Task<SpeechTimeMap?> SyncSpeechTimeMapAsync(string artifactRoot, SilenceCompressionReport? report, CancellationToken ct)
+    {
+        try
+        {
+            if (report is not { AppliedCompression: true } || report.SpeechPieces.Count == 0)
+            {
+                SpeechTimeMapFile.Delete(artifactRoot);
+                return null;
+            }
+
+            await SpeechTimeMapFile.SaveAsync(artifactRoot, report, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger?.LogWarning(ex, "Could not update the speech map under {Root}; a later rebuild may print times of the compressed file.", artifactRoot);
+            if (report is not { AppliedCompression: true } || report.SpeechPieces.Count == 0)
+                return null;
+        }
+
+        return new SpeechTimeMap(report.SpeechPieces);
+    }
+
+    private async Task<(string Path, SilenceCompressionReport? Report)> MaybeApplySilenceProcessingAsync(
         TranscriptionConfig config,
         string workingPath,
         string artifactRoot,
@@ -480,13 +509,13 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         if (!silence.ShouldRun)
         {
             SilenceProcessingSupport.LogSkipped(_logger);
-            return workingPath;
+            return (workingPath, null);
         }
 
         var ffmpeg = _audioUtils.WhichOr(config.FfmpegPath, "ffmpeg") ?? "ffmpeg";
         var ffprobe = _audioUtils.WhichOr(config.FfprobePath, "ffprobe") ?? "ffprobe";
 
-        return await Task.Run(() =>
+        return await Task.Run<(string Path, SilenceCompressionReport? Report)>(() =>
         {
             IReadOnlyList<SilenceInterval> intervals;
             try
@@ -496,14 +525,14 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             catch (Exception ex)
             {
                 _logger?.LogWarning(ex, "Silence detection failed for {Path}; continuing with original audio.", workingPath);
-                return workingPath;
+                return (workingPath, null);
             }
 
             SilenceProcessingSupport.LogDetectSummary(_logger, workingPath, intervals, silence);
             SilenceProcessingSupport.TryWriteDetectReportJson(_logger, workingPath, artifactRoot, intervals, silence);
 
             if (!silence.CompressOn)
-                return workingPath;
+                return (workingPath, null);
 
             var outPath = SilenceProcessingSupport.ResolveCompressedWavPath(workingPath, artifactRoot, silence);
             try
@@ -519,12 +548,12 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                     ct);
                 SilenceProcessingSupport.LogCompressionResult(_logger, report, silence.KeepSilenceSec);
                 SilenceProcessingSupport.TryWriteCompressionReportJson(_logger, outPath, artifactRoot, report, silence);
-                return outPath;
+                return (outPath, report);
             }
             catch (Exception ex)
             {
                 _logger?.LogWarning(ex, "Silence compression failed for {Path}; continuing with original audio.", workingPath);
-                return workingPath;
+                return (workingPath, null);
             }
         }, ct);
     }
@@ -1253,6 +1282,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         var perChunkMdRel = config.Get<string>("per_chunk_md_dir") ?? "chunks_md";
         var perChunkMdDirFull = Path.Combine(artifactRoot, perChunkMdRel);
+        var speechTimeMap = await SpeechTimeMapFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
         var merged = new List<TranscriptionResult>();
         for (var i = 0; i < total; i++)
         {
@@ -1267,7 +1297,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             var chunkMdPath = Path.Combine(perChunkMdDirFull, Path.GetFileNameWithoutExtension(chunkInfos[i].Path) + ".md");
             if (!File.Exists(chunkMdPath))
                 _artifacts.WriteJobPerChunkMarkdown(
-                    Path.GetFileName(chunkInfos[i].Path), loaded.Segments, loaded.Offset, loaded.EmitGuard, perChunkMdDirFull);
+                    Path.GetFileName(chunkInfos[i].Path), loaded.Segments, loaded.Offset, loaded.EmitGuard, perChunkMdDirFull, speechTimeMap);
         }
 
         var stitchBasenames = chunkInfos.Select(c => Path.GetFileNameWithoutExtension(c.Path)).ToList();

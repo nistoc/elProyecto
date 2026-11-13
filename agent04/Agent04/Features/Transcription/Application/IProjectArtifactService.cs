@@ -71,12 +71,12 @@ public interface IProjectArtifactService
 
     void ResetJobTranscriptionSpeakerMap();
 
-    void AppendJobMarkdownSegments(string mdPath, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard);
+    void AppendJobMarkdownSegments(string mdPath, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, SpeechTimeMap? timeMap = null);
 
     void FinalizeJobMarkdownOutput(string mdPath);
 
     /// <summary>Writes <c>{outputDir}/{chunkBasename}.md</c> for one chunk (the source of the stitched combined transcript).</summary>
-    void WriteJobPerChunkMarkdown(string chunkBasename, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, string outputDir);
+    void WriteJobPerChunkMarkdown(string chunkBasename, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, string outputDir, SpeechTimeMap? timeMap = null);
 
     /// <summary>Rebuilds <paramref name="finalMdPath"/> by concatenating per-chunk <c>chunks_md</c> / split merged md in index order.</summary>
     void StitchJobMarkdownFromChunks(string artifactRoot, IReadOnlyList<string> chunkBasenames, string perChunkMdDir, string splitChunksDir, string finalMdPath);

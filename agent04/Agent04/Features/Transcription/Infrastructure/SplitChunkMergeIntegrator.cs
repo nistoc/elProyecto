@@ -89,7 +89,10 @@ public static class SplitChunkMergeIntegrator
                 return (false, "split_merge_merger_failed");
             }
 
-            await SaveChunkMergedArtifactsAsync(chunkFolder, parentChunkIndex, mergedAbs, logger, ct).ConfigureAwait(false);
+            // Chunks of a silence-compressed job carry times of the compressed file; the map puts lines back
+            // on the recording timeline, the same way the first run printed them.
+            var speechTimeMap = await SpeechTimeMapFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
+            await SaveChunkMergedArtifactsAsync(chunkFolder, parentChunkIndex, mergedAbs, speechTimeMap, logger, ct).ConfigureAwait(false);
 
             await TryRebuildMainJobOutputsAsync(
                     config,
@@ -215,6 +218,7 @@ public static class SplitChunkMergeIntegrator
         string chunkFolder,
         int parentChunkIndex,
         TranscriptionResult mergedAbs,
+        SpeechTimeMap? speechTimeMap,
         ILogger? logger,
         CancellationToken ct)
     {
@@ -241,7 +245,7 @@ public static class SplitChunkMergeIntegrator
 
         var writer = new TranscriptionOutputWriter();
         writer.InitializeMarkdown(mdPath);
-        writer.AppendSegmentsToMarkdown(mdPath, mergedAbs.Segments, 0, 0);
+        writer.AppendSegmentsToMarkdown(mdPath, mergedAbs.Segments, 0, 0, speechTimeMap);
         writer.FinalizeMarkdown(mdPath);
         logger?.LogInformation("Split merge: wrote {Json} and {Md}", jsonPath, mdPath);
     }
@@ -325,10 +329,11 @@ public static class SplitChunkMergeIntegrator
             idx++;
         }
 
+        var speechTimeMap = await SpeechTimeMapFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
         var outWriter = new TranscriptionOutputWriter();
         outWriter.InitializeMarkdown(mdPath);
         foreach (var r in rebuilt)
-            outWriter.AppendSegmentsToMarkdown(mdPath, r.Segments, r.Offset, r.EmitGuard);
+            outWriter.AppendSegmentsToMarkdown(mdPath, r.Segments, r.Offset, r.EmitGuard, speechTimeMap);
         outWriter.FinalizeMarkdown(mdPath);
         outWriter.SaveCombinedJson(combinedJsonPath, rebuilt);
         logger?.LogInformation("Split merge: rebuilt main {Md} and {Json}", mdPath, combinedJsonPath);

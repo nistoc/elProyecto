@@ -227,14 +227,14 @@ public sealed class ProjectArtifactService : IProjectArtifactService
     public void ResetJobTranscriptionSpeakerMap() => _outputWriter.ResetSpeakerMap();
 
     /// <inheritdoc />
-    public void AppendJobMarkdownSegments(string mdPath, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard) =>
-        _outputWriter.AppendSegmentsToMarkdown(mdPath, segments, offset, emitGuard);
+    public void AppendJobMarkdownSegments(string mdPath, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, SpeechTimeMap? timeMap = null) =>
+        _outputWriter.AppendSegmentsToMarkdown(mdPath, segments, offset, emitGuard, timeMap);
 
     /// <inheritdoc />
     public void FinalizeJobMarkdownOutput(string mdPath) => _outputWriter.FinalizeMarkdown(mdPath);
 
-    public void WriteJobPerChunkMarkdown(string chunkBasename, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, string outputDir) =>
-        _outputWriter.WritePerChunkMarkdown(chunkBasename, segments, offset, emitGuard, outputDir);
+    public void WriteJobPerChunkMarkdown(string chunkBasename, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, string outputDir, SpeechTimeMap? timeMap = null) =>
+        _outputWriter.WritePerChunkMarkdown(chunkBasename, segments, offset, emitGuard, outputDir, timeMap);
 
     public void StitchJobMarkdownFromChunks(string artifactRoot, IReadOnlyList<string> chunkBasenames, string perChunkMdDir, string splitChunksDir, string finalMdPath) =>
         ChunkMarkdownStitcher.Stitch(artifactRoot, chunkBasenames, perChunkMdDir, splitChunksDir, finalMdPath, _outputWriter, _logger);

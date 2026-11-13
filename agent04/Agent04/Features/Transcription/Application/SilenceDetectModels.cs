@@ -20,4 +20,10 @@ public sealed class SilenceCompressionReport
     /// <summary>Approximate time cut: sum of silence lengths minus <c>regions × keep</c>.</summary>
     public double EstimatedShortenedSec { get; init; }
     public bool AppliedCompression { get; init; }
+
+    /// <summary>
+    /// The pieces of the input that were kept, with their place in the output (see <see cref="SpeechTimeMap"/>).
+    /// Empty when nothing was cut.
+    /// </summary>
+    public IReadOnlyList<SpeechPiece> SpeechPieces { get; init; } = Array.Empty<SpeechPiece>();
 }

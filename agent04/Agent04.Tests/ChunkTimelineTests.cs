@@ -119,6 +119,46 @@ public class ChunkTimelineTests
     }
 
     [Fact]
+    public async Task Rebuild_translates_times_of_a_silence_compressed_job_to_the_recording()
+    {
+        var root = NewJobDir();
+        try
+        {
+            await SeedThreeChunkJobAsync(root, withTimeline: true);
+            // The chunks were cut from a compressed file: 100 s of speech, then 300 s of silence replaced
+            // by a 0.2 s gap, then speech from 400 s of the recording on.
+            await SpeechTimeMapFile.SaveAsync(root, new SilenceCompressionReport
+            {
+                InputPath = "lesson.wav",
+                OutputPath = "lesson_silc.wav",
+                InputDurationSec = 1000,
+                OutputDurationSec = 700.2,
+                KeepSilenceSec = 0.2,
+                AppliedCompression = true,
+                SpeechPieces = new[]
+                {
+                    new SpeechPiece(0, 100, 0),
+                    new SpeechPiece(400, 1000, 100.2),
+                }
+            });
+
+            await CreatePipeline().RebuildCombinedOutputsFromPerChunkJsonAsync(
+                await LoadDefaultConfigAsync(), root, "job1", null, CancellationToken.None);
+
+            // 162.00 s of the compressed file is 61.8 s into the second piece: 461.80 s of the recording.
+            var chunk1 = await File.ReadAllTextAsync(Path.Combine(root, "chunks_md", "lesson_part_001.md"));
+            Assert.Contains("- 461.80 speaker_0: \"line 1\"", chunk1);
+
+            var combined = Directory.GetFiles(root, "transcript_*.md").Single();
+            Assert.Equal(new[] { 0.40, 5.00, 461.80, 618.80 }, TimestampsOf(combined));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Rebuild_keeps_an_existing_chunk_markdown_untouched()
     {
         var root = NewJobDir();
