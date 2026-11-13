@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Built-in refine prompt:** the line-format instruction no longer names `speaker_N` only — it reads `- TIME SPEAKER: "text"` and says the label may be `speaker_0` or a participant name and must not be changed. Needed for dialogue transcripts merged from participant tracks (agent05 `POST /api/jobs/dialogue`), whose lines carry names. Not yet checked against the live model.
+
 ### Added
 
 - **Per-job artifact root (refine):** **`SubmitRefineJobRequest.job_directory_relative`** — один сегмент под **`workspace_root`**; ввод/вывод и промежуточные файлы разрешаются от **`effectiveArtifactRoot`** = `workspace_root/job_directory_relative` при непустом поле; **`FilePromptLoader`** по-прежнему от глобального **`workspace_root`**. Тесты: **`RefineWorkspacePathsTests`**.

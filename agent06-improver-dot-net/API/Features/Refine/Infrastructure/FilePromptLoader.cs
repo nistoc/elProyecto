@@ -17,7 +17,7 @@ Your task:
 
 IMPORTANT:
 - Only fix Spanish words that are clearly Spanish (not Russian words)
-- Keep the line format: - TIME speaker_N: ""text""
+- Keep the line format: - TIME SPEAKER: ""text"" (SPEAKER is a label such as speaker_0 or a participant's name; never change it)
 - Do NOT translate, only transliterate Cyrillic Spanish back to Latin
 - Return the EXACT same number of lines as input
 
