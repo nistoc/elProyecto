@@ -22,5 +22,7 @@ public sealed class TranscriptionConfigDefaultJsonTests
         Assert.True(config.Get<bool?>("pre_split") == true);
         Assert.Equal(5, config.Get<double?>("target_chunk_mb"));
         Assert.Equal("split_chunks", config.SplitChunksDir);
+        // 1.0 s of every pause is kept: with 0.2 s the model merged phrases that long pauses separated.
+        Assert.Equal(1.0, config.Get<double?>("silence_keep_sec"));
     }
 }
