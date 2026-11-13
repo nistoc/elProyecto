@@ -94,7 +94,8 @@ public sealed class AudioUtils : IAudioUtils
         return outputPath;
     }
 
-    public string FormatMb(long numBytes) => $"{numBytes / (1024.0 * 1024.0):F2} MB";
+    public string FormatMb(long numBytes) =>
+        (numBytes / (1024.0 * 1024.0)).ToString("F2", CultureInfo.InvariantCulture) + " MB";
 
     public string ConvertToWav(string ffmpegPath, string inputPath, string? outputDir = null)
     {

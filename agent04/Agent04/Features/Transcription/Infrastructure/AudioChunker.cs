@@ -20,6 +20,13 @@ public sealed class AudioChunker : IAudioChunker
         _ffprobePath = ffprobePath;
     }
 
+    /// <summary>
+    /// Seconds as an ffmpeg argument. Always a dot as the decimal separator: under a comma
+    /// culture (ru-RU, es-ES ...) a culture-formatted "0,000" makes ffmpeg reject <c>-ss</c>.
+    /// </summary>
+    public static string FfmpegSeconds(double seconds) =>
+        seconds.ToString("F3", System.Globalization.CultureInfo.InvariantCulture);
+
     public IReadOnlyList<ChunkInfo> SliceWithOverlap(
         string sourcePath,
         int segmentTimeSeconds,
@@ -56,7 +63,7 @@ public sealed class AudioChunker : IAudioChunker
             var psi = new ProcessStartInfo
             {
                 FileName = _ffmpegPath,
-                ArgumentList = { "-y", "-loglevel", "error", "-hide_banner", "-i", sourcePath, "-ss", $"{t:F3}", "-t", $"{winDur:F3}", "-c", "copy", outPath },
+                ArgumentList = { "-y", "-loglevel", "error", "-hide_banner", "-i", sourcePath, "-ss", FfmpegSeconds(t), "-t", FfmpegSeconds(winDur), "-c", "copy", outPath },
                 UseShellExecute = false,
                 RedirectStandardError = true
             };
