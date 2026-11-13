@@ -53,6 +53,24 @@ public sealed class TranscriptionConfig
         }
     }
 
+    /// <summary>
+    /// A copy with the given keys replaced. A null value removes the key, so its default applies.
+    /// Used for the settings of one job that go on top of the shared config.
+    /// </summary>
+    public TranscriptionConfig WithOverrides(IReadOnlyDictionary<string, object?> overrides)
+    {
+        var copy = new Dictionary<string, object?>(_config);
+        foreach (var kv in overrides)
+        {
+            if (kv.Value == null)
+                copy.Remove(kv.Key);
+            else
+                copy[kv.Key] = kv.Value;
+        }
+
+        return new TranscriptionConfig(copy);
+    }
+
     public T? Get<T>(string key, T? defaultValue = default)
     {
         if (!_config.TryGetValue(key, out var v) || v == null)

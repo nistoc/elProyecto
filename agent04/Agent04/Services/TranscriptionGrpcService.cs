@@ -120,9 +120,6 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Input file not found"));
         }
 
-        var tags = request.Tags?.Count > 0 ? request.Tags.ToList() : null;
-        var callbackUrl = !string.IsNullOrWhiteSpace(request.CallbackUrl) ? request.CallbackUrl.Trim() : null;
-        var jobId = _store.Create(tags, callbackUrl);
         string artifactRoot;
         try
         {
@@ -134,6 +131,20 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Input path is not under workspace root."));
         }
 
+        // Settings the operator chose for this job (job_settings.json in the job folder) go on top of the shared config.
+        try
+        {
+            config = JobSettingsFile.Apply(config, artifactRoot, _logger);
+        }
+        catch (InvalidDataException ex)
+        {
+            _logger.LogWarning("SubmitJob rejected: {Reason}", ex.Message);
+            throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+        }
+
+        var tags = request.Tags?.Count > 0 ? request.Tags.ToList() : null;
+        var callbackUrl = !string.IsNullOrWhiteSpace(request.CallbackUrl) ? request.CallbackUrl.Trim() : null;
+        var jobId = _store.Create(tags, callbackUrl);
         _artifactRootRegistry.Register(jobId, artifactRoot);
         _logger.LogInformation(
             "SubmitJob accepted: Agent04JobId={Agent04JobId}, config={ConfigPath}, input={InputPath}, artifactRoot={ArtifactRoot}",
@@ -520,6 +531,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         try
         {
             config = await TranscriptionConfig.FromFileAsync(configPathFull, ct).ConfigureAwait(false);
+            config = JobSettingsFile.Apply(config, artifactRoot, _logger);
         }
         catch (Exception ex)
         {
@@ -590,6 +602,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         try
         {
             config = await TranscriptionConfig.FromFileAsync(configPathFull, ct).ConfigureAwait(false);
+            config = JobSettingsFile.Apply(config, artifactRoot, _logger);
         }
         catch (Exception ex)
         {
@@ -646,6 +659,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         try
         {
             config = await TranscriptionConfig.FromFileAsync(configPathFull, ct).ConfigureAwait(false);
+            config = JobSettingsFile.Apply(config, artifactRoot, _logger);
         }
         catch (Exception ex)
         {
@@ -696,6 +710,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         try
         {
             config = await TranscriptionConfig.FromFileAsync(configPathFull, ct).ConfigureAwait(false);
+            config = JobSettingsFile.Apply(config, artifactRoot, _logger);
         }
         catch (Exception ex)
         {

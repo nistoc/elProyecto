@@ -38,9 +38,11 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
 
     public async Task<TranscriptionClientResult> TranscribeAsync(string audioPath, TranscriptionClientOptions options, CancellationToken cancellationToken = default)
     {
-        var modelsToTry = new List<string> { _model };
+        // A job can name its own model (job settings); the model of the service is the default.
+        var primaryModel = string.IsNullOrWhiteSpace(options.Model) ? _model : options.Model.Trim();
+        var modelsToTry = new List<string> { primaryModel };
         foreach (var m in _fallbackModels)
-            if (m != _model) modelsToTry.Add(m);
+            if (m != primaryModel) modelsToTry.Add(m);
 
         Exception? lastErr = null;
         var isServer500 = false;

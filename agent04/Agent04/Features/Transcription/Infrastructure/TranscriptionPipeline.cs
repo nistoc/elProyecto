@@ -690,6 +690,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
             var options = new TranscriptionClientOptions
             {
+                Model = config.Get<string>("model"),
                 Language = config.Language,
                 Prompt = config.Get<string>("prompt"),
                 Temperature = config.Temperature,
@@ -912,6 +913,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         {
             var options = new TranscriptionClientOptions
             {
+                Model = config.Get<string>("model"),
                 Language = config.Language,
                 Prompt = config.Get<string>("prompt"),
                 Temperature = config.Temperature,

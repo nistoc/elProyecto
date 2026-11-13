@@ -293,7 +293,7 @@ public sealed class AudioUtils : IAudioUtils
                 inputPath, outputWavPath, inFull, outFull, durationSeconds, keepSilenceSec, ffprobePath);
 
         var totalSilence = intervals.Sum(x => x.DurationSec);
-        var shortened = totalSilence - intervals.Count * Math.Max(0, keepSilenceSec);
+        var shortened = totalSilence - intervals.Sum(x => SpeechTimeMap.GapFor(x.EndSec - x.StartSec, keepSilenceSec));
 
         var tempRoot = Path.Combine(Path.GetTempPath(), "agent04_silence_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -412,9 +412,8 @@ public sealed class AudioUtils : IAudioUtils
     {
         var concatLines = new List<string>();
         var pieces = new List<SpeechPiece>();
-        var gapPath = Path.Combine(tempRoot, "gap.wav");
-        if (keepSilenceSec > 1e-6)
-            WriteGapSilenceWav(ffmpegPath, gapPath, keepSilenceSec);
+        // One silence file per gap length in milliseconds: a pause shorter than keepSilenceSec keeps its own length.
+        var gapPaths = new Dictionary<int, string>();
 
         var segIndex = 0;
         foreach (var step in SpeechTimeMap.Plan(intervals, durationSeconds, keepSilenceSec, MinSpeechSegmentSec))
@@ -422,6 +421,14 @@ public sealed class AudioUtils : IAudioUtils
             cancellationToken.ThrowIfCancellationRequested();
             if (step.Piece is not { } piece)
             {
+                var gapMs = (int)Math.Round(step.GapSec * 1000.0);
+                if (!gapPaths.TryGetValue(gapMs, out var gapPath))
+                {
+                    gapPath = Path.Combine(tempRoot, $"gap_{gapMs:D5}.wav");
+                    WriteGapSilenceWav(gapPath, gapMs);
+                    gapPaths[gapMs] = gapPath;
+                }
+
                 concatLines.Add(FormatConcatDemuxerLine(gapPath));
                 continue;
             }
@@ -466,17 +473,35 @@ public sealed class AudioUtils : IAudioUtils
         return $"file '{p}'";
     }
 
-    private static void WriteGapSilenceWav(string ffmpegPath, string outputPath, double keepSec)
+    /// <summary>
+    /// A WAV of digital silence in the format of the kept pieces (16 kHz, mono, 16 bit). Written by hand:
+    /// there is one such file per gap length, and starting ffmpeg for each of them took most of the assembly.
+    /// </summary>
+    internal static void WriteGapSilenceWav(string outputPath, int durationMs)
     {
-        var t = keepSec.ToString("G", CultureInfo.InvariantCulture);
-        RunFfmpeg(ffmpegPath, new[]
-        {
-            "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono",
-            "-t", t,
-            "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
-            outputPath
-        });
+        const int sampleRate = 16000;
+        const short channels = 1;
+        const short bitsPerSample = 16;
+        const short blockAlign = channels * bitsPerSample / 8;
+        var samples = (int)((long)Math.Max(0, durationMs) * sampleRate / 1000);
+        var dataBytes = samples * blockAlign;
+
+        using var stream = File.Create(outputPath);
+        using var writer = new BinaryWriter(stream, Encoding.ASCII);
+        writer.Write(Encoding.ASCII.GetBytes("RIFF"));
+        writer.Write(36 + dataBytes);
+        writer.Write(Encoding.ASCII.GetBytes("WAVE"));
+        writer.Write(Encoding.ASCII.GetBytes("fmt "));
+        writer.Write(16);                       // size of the PCM format block
+        writer.Write((short)1);                 // PCM
+        writer.Write(channels);
+        writer.Write(sampleRate);
+        writer.Write(sampleRate * blockAlign);  // bytes per second
+        writer.Write(blockAlign);
+        writer.Write(bitsPerSample);
+        writer.Write(Encoding.ASCII.GetBytes("data"));
+        writer.Write(dataBytes);
+        writer.Write(new byte[dataBytes]);
     }
 
     private static void ExtractPcm16kMonoWavSegment(string ffmpegPath, string inputPath, double startSeconds, double durationSeconds, string outputPath)

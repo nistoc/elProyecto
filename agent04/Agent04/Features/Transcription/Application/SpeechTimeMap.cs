@@ -9,8 +9,11 @@ public sealed record SpeechPiece(double SourceStartSec, double SourceEndSec, dou
     public double OutputEndSec => OutputStartSec + DurationSec;
 }
 
-/// <summary>One step of assembling the compressed file: a kept piece of the source or a short gap of silence.</summary>
-public sealed record SpeechCompressionStep(SpeechPiece? Piece)
+/// <summary>
+/// One step of assembling the compressed file: a kept piece of the source, or a gap of silence
+/// <see cref="GapSec"/> long that stands in place of a pause.
+/// </summary>
+public sealed record SpeechCompressionStep(SpeechPiece? Piece, double GapSec = 0)
 {
     public bool IsGap => Piece is null;
 }
@@ -41,7 +44,7 @@ public sealed class SpeechTimeMap
 
     /// <summary>
     /// The order in which the compressed file is assembled: for every silence region the piece before it
-    /// (when long enough) and then a gap of <paramref name="keepSilenceSec"/>; the tail after the last region.
+    /// (when long enough) and then a gap (see <see cref="GapFor"/>); the tail after the last region.
     /// This is the single description of the layout: the file is built from these steps and the map is
     /// their pieces.
     /// </summary>
@@ -68,10 +71,11 @@ public sealed class SpeechTimeMap
                 }
             }
 
-            if (keep > 0)
+            var gap = GapFor(region.EndSec - region.StartSec, keep);
+            if (gap > 0)
             {
-                steps.Add(new SpeechCompressionStep(null));
-                output += keep;
+                steps.Add(new SpeechCompressionStep(null, gap));
+                output += gap;
             }
 
             cursor = region.EndSec;
@@ -81,6 +85,18 @@ public sealed class SpeechTimeMap
             steps.Add(new SpeechCompressionStep(new SpeechPiece(cursor, sourceDurationSec, output)));
 
         return steps;
+    }
+
+    /// <summary>
+    /// Silence left in place of a pause: <paramref name="keepSilenceSec"/>, but never more than the pause
+    /// itself — a pause shorter than that keeps its own length instead of growing. Whole milliseconds, so
+    /// the silence file is exactly this long at 16 kHz.
+    /// </summary>
+    public static double GapFor(double silenceDurationSec, double keepSilenceSec)
+    {
+        if (keepSilenceSec <= 1e-6 || silenceDurationSec <= 0)
+            return 0.0;
+        return Math.Round(Math.Min(keepSilenceSec, silenceDurationSec), 3, MidpointRounding.AwayFromZero);
     }
 
     /// <summary>

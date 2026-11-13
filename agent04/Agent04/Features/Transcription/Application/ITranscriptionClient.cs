@@ -18,6 +18,8 @@ public interface ITranscriptionClient
 
 public sealed class TranscriptionClientOptions
 {
+    /// <summary>Optional. Model for this call (the job's own setting); without it the client's model is used.</summary>
+    public string? Model { get; set; }
     public string? Language { get; set; }
     public string? Prompt { get; set; }
     public double? Temperature { get; set; }

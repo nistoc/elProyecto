@@ -107,7 +107,7 @@ internal static class SilenceProcessingSupport
                 iv.StartSec,
                 iv.EndSec,
                 iv.DurationSec,
-                keepSilenceSec);
+                SpeechTimeMap.GapFor(iv.EndSec - iv.StartSec, keepSilenceSec));
         }
 
         if (!report.AppliedCompression)
