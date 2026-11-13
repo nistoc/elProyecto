@@ -178,6 +178,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         StepStart(jobId ?? "", "chunking", "phase");
         var splitWorkdirFull = Path.Combine(artifactRoot, config.SplitWorkdir);
         var chunkInfos = await PrepareChunksAsync(config, workingPath, splitWorkdirFull, cancellationToken);
+        await TrySaveChunkTimelineAsync(artifactRoot, chunkInfos, cancellationToken).ConfigureAwait(false);
         StepComplete(jobId ?? "", "chunking", JobState.Completed);
         _logger?.LogInformation("Processing {Count} chunk(s)", chunkInfos.Count);
         UpdateProgress(JobState.Running, 5, "Chunking", chunkInfos.Count, 0, null, null, null);
@@ -547,6 +548,70 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             config.Get<int?>("reencode_bitrate_kbps") ?? 256,
             (float)(config.Get<double?>("max_duration_minutes") ?? 0),
             ct);
+    }
+
+    /// <summary>
+    /// Records where each chunk starts (<see cref="ChunkTimelineFile"/>). Best effort: a job that cannot
+    /// write the file still transcribes; later rebuilds then derive the offsets from the chunk audio.
+    /// </summary>
+    private async Task TrySaveChunkTimelineAsync(string artifactRoot, IReadOnlyList<ChunkInfo> chunkInfos, CancellationToken ct)
+    {
+        try
+        {
+            await ChunkTimelineFile.SaveAsync(artifactRoot, chunkInfos, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger?.LogWarning(ex, "Could not write chunk timeline under {Root}", artifactRoot);
+        }
+    }
+
+    /// <summary>
+    /// Returns a function that turns a main chunk already on disk (index + audio path) into a
+    /// <see cref="ChunkInfo"/> with its real offset and emit guard: from the job's timeline file, or —
+    /// for jobs transcribed before that file existed — derived from the first chunk's duration and the
+    /// configured overlap. Never returns zeros for a later chunk silently: that is what made rebuilt
+    /// transcripts restart from 0 in every chunk.
+    /// </summary>
+    private async Task<Func<int, string, ChunkInfo>> CreateOnDiskChunkResolverAsync(
+        TranscriptionConfig config,
+        string artifactRoot,
+        IReadOnlyDictionary<int, string> indexMap,
+        CancellationToken ct)
+    {
+        var timeline = await ChunkTimelineFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
+        var overlapSec = (double)(float)(config.Get<double?>("chunk_overlap_sec") ?? 1);
+        double? firstChunkDurationSec = null;
+
+        return (index, audioPath) =>
+        {
+            var entry = ChunkTimelineFile.Find(timeline, index, audioPath);
+            if (entry != null)
+                return new ChunkInfo(audioPath, entry.OffsetSec, entry.EmitGuardSec);
+            if (index <= 0)
+                return new ChunkInfo(audioPath, 0, 0);
+
+            if (firstChunkDurationSec == null)
+            {
+                var ffprobe = _audioUtils.WhichOr(config.FfprobePath, "ffprobe") ?? "ffprobe";
+                firstChunkDurationSec = indexMap.TryGetValue(0, out var firstPath) && File.Exists(firstPath)
+                    ? _audioUtils.GetDurationAndSize(ffprobe, firstPath).DurationSeconds
+                    : 0.0;
+                if (firstChunkDurationSec <= 0)
+                    _logger?.LogWarning(
+                        "No chunk timeline under {Root} and the first chunk's duration is unknown; chunk times stay chunk-local.",
+                        artifactRoot);
+                else
+                    _logger?.LogInformation(
+                        "No chunk timeline under {Root}; deriving chunk offsets from the first chunk ({Dur:F2}s) and overlap {Overlap}s.",
+                        artifactRoot,
+                        firstChunkDurationSec,
+                        overlapSec);
+            }
+
+            var (offsetSec, emitGuardSec) = ChunkTimelineFile.Derive(index, firstChunkDurationSec.Value, overlapSec);
+            return new ChunkInfo(audioPath, offsetSec, emitGuardSec);
+        };
     }
 
     private async Task<TranscriptionResult> ProcessChunkAsync(
@@ -956,7 +1021,8 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             if (chunkIndex < 0 || chunkIndex >= total)
                 throw new ArgumentOutOfRangeException(nameof(chunkIndex));
 
-            targetChunk = new ChunkInfo(diskAudioPath, 0, 0);
+            var resolveChunk = await CreateOnDiskChunkResolverAsync(config, artifactRoot, indexMap, ct).ConfigureAwait(false);
+            targetChunk = resolveChunk(chunkIndex, diskAudioPath);
             var chunkFileName = Path.GetFileName(diskAudioPath);
             baseName = TranscriptionChunkOnDiskReader.ManifestStemFromChunkFileName(chunkFileName);
             var preferredManifest = Path.Combine(cacheDirFull, baseName + ".manifest.json");
@@ -1158,12 +1224,13 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             var inferredTotal = indexMap.Keys.Max() + 1;
             var workState = await _artifacts.TryLoadWorkStateAsync(artifactRoot, ct).ConfigureAwait(false);
             total = workState?.TotalChunks is int ws && ws > 0 ? Math.Max(ws, inferredTotal) : inferredTotal;
+            var resolveChunk = await CreateOnDiskChunkResolverAsync(config, artifactRoot, indexMap, ct).ConfigureAwait(false);
             var list = new List<ChunkInfo>(total);
             for (var i = 0; i < total; i++)
             {
                 if (!indexMap.TryGetValue(i, out var p))
                     throw new InvalidOperationException($"rebuild_combined: missing audio under chunks/ for index {i}.");
-                list.Add(new ChunkInfo(p, 0, 0));
+                list.Add(resolveChunk(i, p));
             }
 
             chunkInfos = list;
