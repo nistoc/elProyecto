@@ -36,6 +36,7 @@ builder.Services.AddSingleton<IRefinerServiceClient, RefinerGrpcClient>();
 builder.Services.AddSingleton<XtractManager.Features.Jobs.Application.IJobWorkspace, JobWorkspace>();
 builder.Services.AddSingleton<XtractManager.Features.Jobs.Application.IRefinerSettingsStore, FileRefinerSettingsStore>();
 builder.Services.AddSingleton<IDialogueBuilder, DialogueBuilder>();
+builder.Services.AddSingleton<XtractManager.Features.Sessions.Application.IRecordingsCatalog, XtractManager.Features.Sessions.Infrastructure.RecordingsCatalog>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();

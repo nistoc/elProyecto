@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { I18nProvider, useI18n } from './contexts/I18nContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { useJob, type StepId } from './hooks/useJob';
@@ -7,6 +7,7 @@ import { useJobProjectFiles } from './hooks/useJobProjectFiles';
 import { useDebouncedValue } from './hooks/useDebouncedValue';
 import { StepCard } from './components/StepCard';
 import { UploadCard } from './components/UploadCard';
+import { LessonsPanel } from './components/LessonsPanel';
 import { JobsList } from './components/JobsList';
 import { ResultSection } from './components/ResultSection';
 import { ProjectFilesPanel } from './components/ProjectFilesPanel';
@@ -43,6 +44,18 @@ function AppContent() {
   // SSE snapshots arrive ~every 2s while transcribing; debounce the heavy /files and
   // /chunk-artifact-groups refetches so they hit Agent04 at most once per 3s. Job switches
   // stay instant (both hooks key on jobId) and manual reloads bypass this via .reload().
+  // Lessons of the recordings folder take the place of the job view while they are open.
+  const [showLessons, setShowLessons] = useState(false);
+  const openJob = (id: string) => {
+    setShowLessons(false);
+    handleSelectJob(id);
+  };
+  // A job opened from a lesson is shown itself, not the upload form that may have been open.
+  const openJobFromLessons = (id: string) => {
+    setShowLessons(false);
+    handleSelectJob(id, 'transcriber');
+  };
+
   const debouncedRevision = useDebouncedValue(jobSnapshotRevision, 3000);
   const jobFiles = useJobProjectFiles(jobId, debouncedRevision);
   const jobChunkGroups = useJobChunkArtifactGroups(jobId, debouncedRevision);
@@ -75,9 +88,25 @@ function AppContent() {
           <button
             type="button"
             className="topbar__upload"
-            onClick={() => setActiveStep('upload')}
+            onClick={() => {
+              setShowLessons(false);
+              setActiveStep('upload');
+            }}
           >
             {t('upload')}
+          </button>
+          <button
+            type="button"
+            className={
+              showLessons
+                ? 'topbar__lessons topbar__lessons--on'
+                : 'topbar__lessons'
+            }
+            onClick={() => setShowLessons((v) => !v)}
+            aria-pressed={showLessons}
+            data-testid="topbar-lessons"
+          >
+            {t('lessons')}
           </button>
         </div>
         <div className="topbar__actions">
@@ -111,7 +140,7 @@ function AppContent() {
           <JobsList
             jobs={jobsList}
             currentJobId={jobId}
-            onSelectJob={handleSelectJob}
+            onSelectJob={openJob}
             onRefresh={refreshList}
             onDelete={handleDeleteJob}
             loading={loadingList}
@@ -120,7 +149,17 @@ function AppContent() {
         </aside>
 
         <main className="content">
-          <div className="steps-row">
+          {showLessons && (
+            <LessonsPanel
+              t={t}
+              onOpenJob={openJobFromLessons}
+              onJobsChanged={refreshList}
+            />
+          )}
+          <div
+            className="steps-row"
+            style={showLessons ? { display: 'none' } : undefined}
+          >
             {steps.map(({ id, title }) => (
               <StepCard
                 key={id}
@@ -132,7 +171,10 @@ function AppContent() {
             ))}
           </div>
 
-          <div className="step-content">
+          <div
+            className="step-content"
+            style={showLessons ? { display: 'none' } : undefined}
+          >
             {activeStep === 'upload' && (
               <UploadCard
                 file={file}
@@ -373,6 +415,22 @@ function AppContent() {
           cursor: pointer;
         }
         .topbar__upload:hover { background: var(--color-primary-hover); }
+        .topbar__lessons {
+          flex-shrink: 0;
+          padding: 0.35rem 0.75rem;
+          border-radius: 6px;
+          border: 1px solid var(--color-border-strong);
+          background: var(--color-surface);
+          color: var(--color-text);
+          font-size: 0.875rem;
+          font-weight: 500;
+          cursor: pointer;
+        }
+        .topbar__lessons:hover { background: var(--color-surface-hover); }
+        .topbar__lessons--on {
+          background: var(--color-accent-soft);
+          border-color: var(--color-primary);
+        }
         .topbar__actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
         .topbar__theme,
         .topbar__locale,

@@ -208,6 +208,53 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkSplitPartsInvalid: 'Enter an integer ≥ 2.',
     chunkSplitTitle:
       'Split uses ffmpeg on the selected chunk file; sub-files appear under Split chunks after refresh.',
+    lessons: 'Lessons',
+    lessonsTitle: 'Lessons in the recordings folder',
+    lessonsReadOnlyNote:
+      'The folder is only read. A run works on a copy of the file in a new job folder; a dialogue is merged from transcripts that already exist.',
+    lessonsLoading: 'Reading the recordings folder…',
+    lessonsEmpty: 'No lessons found in the recordings folder.',
+    lessonsDisabled:
+      'The recordings folder is not configured (Recordings:RootPath in the API appsettings.json) or does not exist.',
+    lessonsPeriods: 'periods',
+    lessonsNoPeriods: 'No recordings in this folder.',
+    lessonsRuns: 'runs',
+    lessonsDialogues: 'dialogues',
+    lessonsLoose: 'not in a day folder',
+    lessonsLooseHint:
+      'The period folders lie in the root of the recordings folder, not in a day folder YYYY.MM.DD.',
+    lessonsStateUnconverted: 'not converted by Zoom',
+    lessonsStateUnconvertedHint:
+      'Only raw .zoom files are here: open the recording in Zoom to convert it into audio.',
+    lessonsStateEmpty: 'empty folder',
+    lessonsVideo: 'video',
+    lessonsChat: 'chat',
+    lessonsSubtitles: 'subtitles',
+    lessonsOldTranscript: 'old transcript next to the file',
+    lessonsRawZoom: 'raw .zoom',
+    lessonsRawZoomHint:
+      'Raw Zoom files still lie in the folder; they are not needed once the audio is there.',
+    lessonsTrackMixed: 'everybody (mixed)',
+    lessonsNoRuns: 'not transcribed',
+    lessonsHasTranscript: 'transcript',
+    lessonsHasRefined: 'refined',
+    lessonsOpenJob: 'Open the job',
+    lessonsTranscribe: 'Transcribe',
+    lessonsRunConfirmText:
+      'The file is copied into a new job and sent to the model. This is paid: up to {usd} for {duration} of audio (upper bound at {rate} $/min; silence compression makes it cheaper).',
+    lessonsRunStart: 'Start the paid run',
+    lessonsRunFailed: 'The run was not started',
+    lessonsCancel: 'Cancel',
+    lessonsBuildDialogue: 'Build a dialogue',
+    lessonsDialogueHint:
+      'Free: the transcripts of the participant tracks are merged by time under the names below; no model is called.',
+    lessonsDialogueNeedsRuns:
+      'A dialogue needs transcripts of at least two participant tracks of this period.',
+    lessonsDialogueTitle: 'Title of the dialogue',
+    lessonsDialogueSpeaker: 'Name in the dialogue and the run',
+    lessonsDialogueRun: 'Run whose transcript is taken',
+    lessonsDialogueCreate: 'Build',
+    lessonsDialogueFailed: 'The dialogue was not built',
   },
   ru: {
     appTitle: 'XtractManager',
@@ -409,6 +456,53 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkSplitPartsInvalid: 'Введите целое число ≥ 2.',
     chunkSplitTitle:
       'Разбиение через ffmpeg по выбранному файлу чанка; подфайлы — в «Разбиение чанков» после обновления.',
+    lessons: 'Уроки',
+    lessonsTitle: 'Уроки в папке записей',
+    lessonsReadOnlyNote:
+      'Папка только читается. Запуск работает с копией файла в новой папке задания; диалог собирается из уже готовых расшифровок.',
+    lessonsLoading: 'Читаю папку записей…',
+    lessonsEmpty: 'В папке записей уроков не найдено.',
+    lessonsDisabled:
+      'Папка записей не задана (Recordings:RootPath в appsettings.json у API) или не существует.',
+    lessonsPeriods: 'периодов',
+    lessonsNoPeriods: 'В этой папке записей нет.',
+    lessonsRuns: 'запуски',
+    lessonsDialogues: 'диалоги',
+    lessonsLoose: 'вне папки дня',
+    lessonsLooseHint:
+      'Папки периодов лежат в корне папки записей, а не в папке дня ГГГГ.ММ.ДД.',
+    lessonsStateUnconverted: 'Zoom не сконвертировал',
+    lessonsStateUnconvertedHint:
+      'Здесь только сырые файлы .zoom: откройте запись в Zoom, чтобы получить аудио.',
+    lessonsStateEmpty: 'пустая папка',
+    lessonsVideo: 'видео',
+    lessonsChat: 'чат',
+    lessonsSubtitles: 'субтитры',
+    lessonsOldTranscript: 'рядом лежит старая расшифровка',
+    lessonsRawZoom: 'сырые .zoom',
+    lessonsRawZoomHint:
+      'Сырые файлы Zoom всё ещё лежат в папке; когда аудио уже есть, они не нужны.',
+    lessonsTrackMixed: 'все вместе (общая)',
+    lessonsNoRuns: 'не расшифрована',
+    lessonsHasTranscript: 'расшифровка',
+    lessonsHasRefined: 'после refine',
+    lessonsOpenJob: 'Открыть задание',
+    lessonsTranscribe: 'Расшифровать',
+    lessonsRunConfirmText:
+      'Файл копируется в новое задание и уходит в модель. Это платно: до {usd} за {duration} аудио (верхняя оценка по {rate} $/мин; со сжатием тишины выходит дешевле).',
+    lessonsRunStart: 'Запустить платный прогон',
+    lessonsRunFailed: 'Запуск не начат',
+    lessonsCancel: 'Отмена',
+    lessonsBuildDialogue: 'Собрать диалог',
+    lessonsDialogueHint:
+      'Бесплатно: расшифровки дорожек участников сводятся по времени под именами ниже; модель не вызывается.',
+    lessonsDialogueNeedsRuns:
+      'Для диалога нужны расшифровки хотя бы двух дорожек участников этого периода.',
+    lessonsDialogueTitle: 'Название диалога',
+    lessonsDialogueSpeaker: 'Имя в диалоге и запуск',
+    lessonsDialogueRun: 'Запуск, чья расшифровка берётся',
+    lessonsDialogueCreate: 'Собрать',
+    lessonsDialogueFailed: 'Диалог не собран',
   },
   es: {
     appTitle: 'XtractManager',
@@ -611,6 +705,53 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkSplitPartsInvalid: 'Introduzca un entero ≥ 2.',
     chunkSplitTitle:
       'Divide con ffmpeg el archivo del fragmento; los subarchivos aparecen en Subfragmentos al actualizar.',
+    lessons: 'Clases',
+    lessonsTitle: 'Clases en la carpeta de grabaciones',
+    lessonsReadOnlyNote:
+      'La carpeta solo se lee. Una ejecución trabaja con una copia del archivo en una carpeta de trabajo nueva; el diálogo se une a partir de transcripciones ya hechas.',
+    lessonsLoading: 'Leyendo la carpeta de grabaciones…',
+    lessonsEmpty: 'No hay clases en la carpeta de grabaciones.',
+    lessonsDisabled:
+      'La carpeta de grabaciones no está configurada (Recordings:RootPath en appsettings.json de la API) o no existe.',
+    lessonsPeriods: 'periodos',
+    lessonsNoPeriods: 'No hay grabaciones en esta carpeta.',
+    lessonsRuns: 'ejecuciones',
+    lessonsDialogues: 'diálogos',
+    lessonsLoose: 'fuera de la carpeta del día',
+    lessonsLooseHint:
+      'Las carpetas de los periodos están en la raíz de la carpeta de grabaciones, no en una carpeta del día AAAA.MM.DD.',
+    lessonsStateUnconverted: 'sin convertir por Zoom',
+    lessonsStateUnconvertedHint:
+      'Aquí solo hay archivos .zoom en bruto: abra la grabación en Zoom para convertirla en audio.',
+    lessonsStateEmpty: 'carpeta vacía',
+    lessonsVideo: 'vídeo',
+    lessonsChat: 'chat',
+    lessonsSubtitles: 'subtítulos',
+    lessonsOldTranscript: 'hay una transcripción antigua junto al archivo',
+    lessonsRawZoom: '.zoom en bruto',
+    lessonsRawZoomHint:
+      'Los archivos en bruto de Zoom siguen en la carpeta; no hacen falta cuando ya está el audio.',
+    lessonsTrackMixed: 'todos (mezcla)',
+    lessonsNoRuns: 'sin transcribir',
+    lessonsHasTranscript: 'transcripción',
+    lessonsHasRefined: 'refinada',
+    lessonsOpenJob: 'Abrir el trabajo',
+    lessonsTranscribe: 'Transcribir',
+    lessonsRunConfirmText:
+      'El archivo se copia en un trabajo nuevo y se envía al modelo. Es de pago: hasta {usd} por {duration} de audio (cota superior a {rate} $/min; la compresión de silencios lo abarata).',
+    lessonsRunStart: 'Iniciar la ejecución de pago',
+    lessonsRunFailed: 'La ejecución no se inició',
+    lessonsCancel: 'Cancelar',
+    lessonsBuildDialogue: 'Montar un diálogo',
+    lessonsDialogueHint:
+      'Gratis: las transcripciones de las pistas de los participantes se unen por tiempo con los nombres de abajo; no se llama a ningún modelo.',
+    lessonsDialogueNeedsRuns:
+      'Un diálogo necesita transcripciones de al menos dos pistas de participantes de este periodo.',
+    lessonsDialogueTitle: 'Título del diálogo',
+    lessonsDialogueSpeaker: 'Nombre en el diálogo y ejecución',
+    lessonsDialogueRun: 'Ejecución cuya transcripción se toma',
+    lessonsDialogueCreate: 'Montar',
+    lessonsDialogueFailed: 'El diálogo no se montó',
   },
 };
 

@@ -11,6 +11,7 @@ import type {
 } from './types';
 import type { ChunkArtifactGroup } from './utils/chunkArtifactGroups';
 import type { JobSettings } from './utils/jobSettings';
+import type { LessonsResponse } from './utils/lessons';
 import {
   computeReconnectDelay,
   isTerminalSnapshot,
@@ -487,4 +488,61 @@ export async function fetchRefineBatches(
       endLine: b.endLine,
     })),
   };
+}
+
+/** Reads the `detail` of a problem response; falls back to the raw text or the status. */
+async function problemText(r: Response): Promise<string> {
+  const text = await r.text();
+  try {
+    const detail = (JSON.parse(text) as { detail?: unknown }).detail;
+    if (typeof detail === 'string' && detail.trim() !== '') return detail;
+  } catch {
+    // not JSON: the text itself is the message
+  }
+  return text || `HTTP ${r.status}`;
+}
+
+/** Lessons of the recordings folder with the runs of every track (GET /api/sessions). */
+export async function fetchLessons(): Promise<LessonsResponse> {
+  return get<LessonsResponse>('/api/sessions');
+}
+
+/**
+ * Starts a job for one track of a lesson: the API copies the file into a new job folder and runs
+ * the usual pipeline. The transcription is paid.
+ */
+export async function startTrackRun(
+  track: string,
+  settings?: JobSettings
+): Promise<CreateJobResponse> {
+  const body: { track: string; settings?: JobSettings } = { track };
+  if (settings && Object.keys(settings).length > 0) body.settings = settings;
+  const r = await fetch(`${API_BASE}/api/sessions/runs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await problemText(r));
+  return r.json() as Promise<CreateJobResponse>;
+}
+
+export interface DialogueBuildResponse {
+  jobId: string;
+  file: string;
+  entries: number;
+  warnings: string[];
+}
+
+/** Merges the transcripts of participant-track jobs into a dialogue job. No model is called. */
+export async function createDialogue(
+  title: string,
+  tracks: { jobId: string; speaker: string }[]
+): Promise<DialogueBuildResponse> {
+  const r = await fetch(`${API_BASE}/api/jobs/dialogue`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, tracks }),
+  });
+  if (!r.ok) throw new Error(await problemText(r));
+  return r.json() as Promise<DialogueBuildResponse>;
 }

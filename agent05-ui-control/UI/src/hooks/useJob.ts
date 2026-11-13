@@ -92,7 +92,8 @@ export function useJob(): {
   /** GET /api/jobs/:id (disk-enriched VM); use after chunk-actions so sub-chunk rows refresh without full reload. */
   refreshJobSnapshot: () => Promise<void>;
   refreshList: () => Promise<void>;
-  handleSelectJob: (id: string) => void;
+  /** `whenOnUpload`: the step to show when the upload form would otherwise stay open. */
+  handleSelectJob: (id: string, whenOnUpload?: StepId) => void;
   handleStart: (tags?: string[], settings?: JobSettings) => Promise<void>;
   handleReset: () => void;
   handleDeleteJob: (id: string) => Promise<void>;
@@ -321,11 +322,12 @@ export function useJob(): {
   }, [jobId, refreshList, streamEpoch]);
 
   const handleSelectJob = useCallback(
-    (id: string) => {
+    (id: string, whenOnUpload?: StepId) => {
       setJobId(id);
       setActiveStepState((prev) => {
         const s = localStorage.getItem(`${ACTIVE_STEP_KEY}-${id}`);
-        return (s as StepId) || prev;
+        const step = (s as StepId) || prev;
+        return step === 'upload' && whenOnUpload ? whenOnUpload : step;
       });
     },
     [setJobId]
