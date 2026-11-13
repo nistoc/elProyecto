@@ -711,7 +711,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             TranscriptionClientResult result;
             try
             {
-                result = await _client.TranscribeAsync(chunkInfo.Path, options, transcribeCts.Token);
+                result = await TranscribeChunkOrItsPartsAsync(config, chunkInfo.Path, options, transcribeCts.Token);
             }
             finally
             {
@@ -752,6 +752,83 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             chunkInfo.EmitGuard,
             segments,
             rawDict);
+    }
+
+    /// <summary>
+    /// One chunk through the client. When the server refuses the chunk three times (HTTP 5xx), the chunk is cut
+    /// into parts (<see cref="ServerErrorChunkSplit"/>) and their answers are put back into one answer of the
+    /// chunk, with time marks. With <c>server_error_split_parts</c> below 2 the client's own fallbacks apply,
+    /// as before; they also apply when the chunk is too short to cut or the parts could not be transcribed.
+    /// </summary>
+    internal async Task<TranscriptionClientResult> TranscribeChunkOrItsPartsAsync(
+        TranscriptionConfig config,
+        string chunkPath,
+        TranscriptionClientOptions options,
+        CancellationToken ct)
+    {
+        if (ServerErrorChunkSplit.ConfiguredParts(config) < 2)
+            return await _client.TranscribeAsync(chunkPath, options, ct).ConfigureAwait(false);
+
+        var index = options.ChunkIndex ?? -1;
+        TranscriptionServerErrorException serverError;
+        try
+        {
+            var guarded = options.Clone();
+            guarded.StopAtServerError = true;
+            return await _client.TranscribeAsync(chunkPath, guarded, ct).ConfigureAwait(false);
+        }
+        catch (TranscriptionServerErrorException ex)
+        {
+            serverError = ex;
+        }
+
+        try
+        {
+            var ffprobe = _audioUtils.WhichOr(config.FfprobePath, "ffprobe") ?? "ffprobe";
+            var durationSec = _audioUtils.GetDurationAndSize(ffprobe, chunkPath).DurationSeconds;
+            var parts = ServerErrorChunkSplit.PartsFor(config, durationSec);
+            if (parts >= 2)
+            {
+                _logger?.LogWarning(
+                    "Chunk {ChunkIndex}: server error {Status} on {Attempts} attempts; cutting the chunk ({Duration:F1}s) into {Parts} parts",
+                    index, serverError.StatusCode, serverError.Attempts, durationSec, parts);
+                AppendTranscriptActivityForChunk(options.AgentJobId, index, null,
+                    $"HTTP {serverError.StatusCode} on {serverError.Attempts} attempts: cutting the chunk into {parts} parts");
+
+                var ffmpeg = _audioUtils.WhichOr(config.FfmpegPath, "ffmpeg") ?? "ffmpeg";
+                var split = new ServerErrorChunkSplit(_audioUtils, _client, _merger, _logger);
+                var inParts = await split.TranscribeInPartsAsync(
+                    chunkPath,
+                    durationSec,
+                    parts,
+                    config.ChunkOverlapSec,
+                    ffmpeg,
+                    options,
+                    serverError,
+                    line => AppendTranscriptActivityForChunk(options.AgentJobId, index, null, line),
+                    ct).ConfigureAwait(false);
+                AppendTranscriptActivityForChunk(options.AgentJobId, index, null,
+                    $"Auto split: {parts} parts merged into {inParts.Segments.Count} segments");
+                return inParts;
+            }
+
+            _logger?.LogWarning(
+                "Chunk {ChunkIndex}: server error {Status} on {Attempts} attempts; the chunk ({Duration:F1}s) is too short to cut into parts",
+                index, serverError.StatusCode, serverError.Attempts, durationSec);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            _logger?.LogWarning(ex, "Chunk {ChunkIndex}: transcription in parts failed; asking for the whole chunk without time marks", index);
+            AppendTranscriptActivityForChunk(options.AgentJobId, index, null, "Auto split failed: " + ex.Message);
+        }
+
+        // What the client itself does after three refusals: the same request without response_format
+        // (a diarize model answers text without time marks), then the remaining parameter sets and models.
+        var plain = options.Clone();
+        plain.ResponseFormat = null;
+        plain.StopAtServerError = false;
+        AppendTranscriptActivityForChunk(options.AgentJobId, index, null, "Asking for the chunk without time marks");
+        return await _client.TranscribeAsync(chunkPath, plain, ct).ConfigureAwait(false);
     }
 
     private static IReadOnlyDictionary<string, object?> ToDictionary(object? value)

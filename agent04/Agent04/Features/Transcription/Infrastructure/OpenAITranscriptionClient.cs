@@ -20,6 +20,9 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
     private readonly ITranscriptionDiagnosticsSink? _diagnosticsSink;
     private int _transcriptionHttpInFlight;
 
+    /// <summary>Pause before a retry after a server error is 1, 2, 4 of these. Tests set it to zero.</summary>
+    internal TimeSpan RetryDelayUnit { get; set; } = TimeSpan.FromSeconds(1);
+
     public OpenAITranscriptionClient(
         HttpClient httpClient,
         string apiKey,
@@ -47,11 +50,13 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
         Exception? lastErr = null;
         var isServer500 = false;
 
-        foreach (var model in modelsToTry)
+        for (var modelNo = 0; modelNo < modelsToTry.Count; modelNo++)
         {
+            var model = modelsToTry[modelNo];
             var variations = BuildParamVariations(options, model);
-            foreach (var (language, prompt, temperature, responseFormat, chunkingStrategy) in variations)
+            for (var variationNo = 0; variationNo < variations.Count; variationNo++)
             {
+                var (language, prompt, temperature, responseFormat, chunkingStrategy) = variations[variationNo];
                 for (var attempt = 0; attempt < 3; attempt++)
                 {
                     try
@@ -113,10 +118,15 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
                                     codeForUi,
                                     cat,
                                     detail);
-                                var delay = Math.Min(1 << attempt, 4) * 1000;
-                                await Task.Delay(delay, cancellationToken);
+                                await Task.Delay(Math.Min(1 << attempt, 4) * RetryDelayUnit, cancellationToken);
                                 continue;
                             }
+
+                            // Third refusal of the caller's own request (first model, first parameter set). The next
+                            // parameter sets drop response_format, and a diarize model then answers text without
+                            // time marks; a caller that can do better (cut the chunk into parts) asks to be told.
+                            if (options.StopAtServerError && modelNo == 0 && variationNo == 0 && parsed && httpCode >= 500)
+                                throw new TranscriptionServerErrorException(httpCode, attempt + 1, httpBrief, ex);
                         }
 
                         if (!ShouldSuppressNonRetryableWarning(ex))

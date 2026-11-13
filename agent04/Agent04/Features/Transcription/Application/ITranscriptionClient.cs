@@ -33,6 +33,14 @@ public sealed class TranscriptionClientOptions
     public string? AgentJobId { get; set; }
     /// <summary>Optional. Configured <c>parallel_transcription_workers</c> for logs.</summary>
     public int? ParallelWorkersConfigured { get; set; }
+    /// <summary>
+    /// After three server errors (HTTP 5xx) on the first request — the caller's own model and parameters —
+    /// throw <see cref="TranscriptionServerErrorException"/> instead of going down the fallback list
+    /// (whose next request has no <c>response_format</c>: text without time marks from a diarize model).
+    /// </summary>
+    public bool StopAtServerError { get; set; }
+
+    public TranscriptionClientOptions Clone() => (TranscriptionClientOptions)MemberwiseClone();
 }
 
 public sealed class TranscriptionClientResult
