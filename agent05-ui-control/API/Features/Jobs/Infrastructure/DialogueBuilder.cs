@@ -145,6 +145,13 @@ public sealed class DialogueBuilder : IDialogueBuilder
             if (entries.Count == 0)
                 throw new DialogueRequestException($"'{file.Name}' of job '{track.JobId}' has no transcript lines (- TIME SPEAKER: \"text\")");
 
+            if (HasCompressedTimesWithoutMap(jobDir))
+            {
+                warnings.Add(
+                    $"{track.Speaker} (job {track.JobId}): the audio was sent with silence cut out and the job has no speech map " +
+                    "(timeline/speech_map.json), so its times are not on the timeline of the recording and its lines may stand out of order");
+            }
+
             var untimed = FindUntimedEntries(jobDir, entries, track, warnings);
             if (untimed.Count > 0)
             {
@@ -244,6 +251,26 @@ public sealed class DialogueBuilder : IDialogueBuilder
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// True for a job transcribed from silence-compressed audio before agent04 kept a speech map: a
+    /// compression report lies in <c>converted_wav/</c> but <c>timeline/speech_map.json</c> does not exist.
+    /// The times of such a transcript count seconds of the compressed file, not of the recording.
+    /// </summary>
+    private static bool HasCompressedTimesWithoutMap(string jobDir)
+    {
+        try
+        {
+            var converted = Path.Combine(jobDir, "converted_wav");
+            return Directory.Exists(converted)
+                && Directory.EnumerateFiles(converted, "*.silence_report.json").Any()
+                && !File.Exists(Path.Combine(jobDir, "timeline", "speech_map.json"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     private static bool IsChunkWithoutTimeMarks(string jsonPath)

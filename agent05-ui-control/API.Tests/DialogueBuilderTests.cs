@@ -150,6 +150,22 @@ public sealed class DialogueBuilderTests : IDisposable
     }
 
     [Fact]
+    public async Task Create_warns_about_a_track_whose_times_count_the_compressed_file()
+    {
+        // The teacher job was sent with silence cut out and has no speech map: its times are compressed.
+        WriteJobFile(TeacherJob, "converted_wav/teacher_silc.silence_report.json", "{}");
+        // The student job was compressed too, but agent04 kept the map: its times are already translated.
+        WriteJobFile(StudentJob, "converted_wav/student_silc.silence_report.json", "{}");
+        WriteJobFile(StudentJob, "timeline/speech_map.json", "{}");
+
+        var result = await _builder.CreateAsync(TwoTracks());
+
+        var warning = Assert.Single(result.Warnings);
+        Assert.Contains("Преподаватель", warning);
+        Assert.Contains("speech map", warning);
+    }
+
+    [Fact]
     public async Task Create_takes_the_newest_combined_transcript_and_skips_refiner_outputs()
     {
         var older = WriteJobFile(TeacherJob, "transcript_aaa.md", TeacherTranscript);
