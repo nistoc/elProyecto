@@ -59,6 +59,12 @@ internal static class SpeechPieceSecondLook
     /// </summary>
     public const double UnlikeSimilarity = 0.5;
 
+    /// <summary>
+    /// A line is a part of what the piece heard when a run of the piece's words is at least this like it.
+    /// Lower lets a translation pass for a part: «elemental» is 0.67 like «элементарный».
+    /// </summary>
+    public const double PartSimilarity = 0.8;
+
     /// <summary>A piece of fewer letters («Угу.» against «Mhm.») says too little to doubt a line by it.</summary>
     public const int MinLettersToDoubt = 4;
 
@@ -105,7 +111,8 @@ internal static class SpeechPieceSecondLook
     /// <summary>
     /// True when the line the whole text gave to a piece is written in Spanish where the piece asked alone
     /// is Russian, and the two do not sound alike: the line may be a translation of what was said. Two
-    /// spellings of the same speech are not that: «queremos salir» sounds like «керемос салир».
+    /// spellings of the same speech are not that: «queremos salir» sounds like «керемос салир». Nor is a
+    /// line that is word for word a part of what the piece heard: the whole text only left the rest out.
     /// </summary>
     public static bool LooksTranslated(string? line, string? own)
     {
@@ -119,22 +126,34 @@ internal static class SpeechPieceSecondLook
             return false;
         if (LatinShare(lineWords) - LatinShare(ownWords) < OtherLanguageShare)
             return false;
-        return SpeechPieceWordAlignment.Similarity(Letters(lineWords), ownLetters) < UnlikeSimilarity;
+        if (SpeechPieceWordAlignment.Similarity(Letters(lineWords), ownLetters) >= UnlikeSimilarity)
+            return false;
+
+        // The whole text leaves out what a listener leaves out, so a line may be a part of what the piece
+        // heard, word for word («Vale. Y...» of «Угу, угу, vale. И...»): that is not another language.
+        var (_, alikeAsPart) = ClosestRun(lineWords, ownWords, spanishOnly: false);
+        return alikeAsPart < PartSimilarity;
     }
 
     /// <summary>
     /// What a piece with a doubted line says, by the answer for the piece asked again with audio around
     /// it: the run of words of that answer, in any script, that sounds most like what the piece heard
-    /// alone — when the two are at least <see cref="RunSimilarity"/> alike, and more alike than any run of
-    /// the answer is to the line. Else null: the answer stands by the line, or has neither. The run is
-    /// given as it stands in that answer, with the marks inside it; cut out of the middle of a sentence
-    /// it gets the capital letter and the end mark of the piece.
+    /// alone — when the two are at least <see cref="RunSimilarity"/> alike, more alike than any run of
+    /// the answer is to the line, and the run holds a Russian word. Else null: the answer stands by the
+    /// line, has neither, or heard Spanish only. The run is given as it stands in that answer, with the
+    /// marks inside it; cut out of the middle of a sentence it gets the capital letter and the end mark
+    /// of the piece, and a word the piece alone wrote in Latin letters keeps them.
     /// </summary>
     public static string? SaidAsHeardAround(string? own, string? line, string? around)
     {
         var heard = Words(around);
         var (ownRun, ownSimilarity) = ClosestRun(Words(own), heard, spanishOnly: false);
         if (ownRun == null || ownSimilarity < RunSimilarity)
+            return null;
+
+        // The doubt is that Russian speech was written in Spanish. A run without a Russian word does not
+        // confirm it: the piece is Spanish, and for Spanish the whole text has the better wording.
+        if (!ownRun.Any(HasCyrillic))
             return null;
 
         var (_, lineSimilarity) = ClosestRun(Words(line), heard, spanishOnly: false);
@@ -144,7 +163,9 @@ internal static class SpeechPieceSecondLook
     /// <summary>A run of an answer as a line of its own: no comma left hanging at its end, the piece's capital letter and end mark.</summary>
     private static string AsLine(string own, IReadOnlyList<string> run)
     {
-        var sb = new StringBuilder(string.Join(" ", run).TrimEnd(',', ';', ':', '-', '–', '—', ' '));
+        var ownWords = Words(own);
+        var sb = new StringBuilder(string.Join(" ", run.Select(word => InLatinAsHeardAlone(word, ownWords)))
+            .TrimEnd(',', ';', ':', '-', '–', '—', ' '));
         var trimmed = own.Trim();
         var firstLetter = trimmed.FirstOrDefault(char.IsLetter);
         if (firstLetter != default && char.IsUpper(firstLetter))
@@ -167,6 +188,39 @@ internal static class SpeechPieceSecondLook
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// A word the answer with audio around wrote in Cyrillic and the piece alone in Latin letters is one
+    /// word heard twice, and it is Spanish: it keeps the Latin spelling («репартир» is «repartir»).
+    /// The two must sound exactly the same, and the piece alone must not hold that sound in Cyrillic as
+    /// well: a speaker who says a word in both languages («проблема — problema») said two words, and a
+    /// word that only resembles a Spanish one («типа» next to «tipo») is Russian. A word of
+    /// <see cref="ShortWordLetters"/> sound letters or fewer is left as it is. The marks around the word stay.
+    /// </summary>
+    private static string InLatinAsHeardAlone(string word, IReadOnlyList<string> ownWords)
+    {
+        var sound = SpeechPieceWordAlignment.Normalize(word);
+        if (!word.Any(IsCyrillic) || sound.Length <= ShortWordLetters)
+            return word;
+        if (ownWords.Any(w => !IsLatinWord(w) && SpeechPieceWordAlignment.Normalize(w) == sound))
+            return word;
+
+        var same = ownWords.FirstOrDefault(w => IsLatinWord(w) && SpeechPieceWordAlignment.Normalize(w) == sound);
+        if (same == null)
+            return word;
+
+        var bare = Bare(word);
+        var spelled = Bare(same);
+        if (bare.Length == 0 || spelled.Length == 0)
+            return word;
+        if (char.IsUpper(bare[0]))
+            spelled = char.ToUpperInvariant(spelled[0]) + spelled[1..];
+        else if (char.IsLower(bare[0]))
+            spelled = char.ToLowerInvariant(spelled[0]) + spelled[1..];
+
+        var at = word.IndexOf(bare, StringComparison.Ordinal);
+        return word[..at] + spelled + word[(at + bare.Length)..];
     }
 
     /// <summary>

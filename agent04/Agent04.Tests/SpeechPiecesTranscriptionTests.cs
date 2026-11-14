@@ -555,6 +555,8 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
     [InlineData("Mhm.", "Угу.", false)]                                // too little said to doubt a line by it
     [InlineData("Это уже прошлое.", "Esto ya es pasado.", false)]      // only a Spanish line over a Russian piece is doubted
     [InlineData("Bueno, давай дальше.", "Ну, давай дальше.", false)]   // one word differs: the line is as Russian as the piece
+    [InlineData("Claro. Y...", "Ага, ага, ну да, claro. И...", false)]  // the line is a part of what the piece heard, word for word
+    [InlineData("elemental...", "Это элементарный пример.", true)]     // a translation that only resembles a part stays doubted
     [InlineData("Esto ya es pasado.", null, false)]
     [InlineData("", "Это уже прошлое.", false)]
     public void A_Spanish_line_over_a_Russian_piece_that_sounds_unlike_it_may_be_a_translation(string? line, string? own, bool expected) =>
@@ -567,6 +569,9 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
     [InlineData("Это уже прошлое.", "Esto ya es pasado.", "Sí, claro. Esto ya es pasado. Vamos.", null)]               // the answer stands by the line
     [InlineData("Это уже прошлое.", "Esto ya es pasado.", "Sí, claro. Vamos a ver.", null)]                            // the answer has neither
     [InlineData("Омер, комо, коме.", "Comer, como, come.", "El verbo comer, como, come mucho.", null)]                 // sounds like both: nearer to the line
+    [InlineData("О, мато.", "oh, más.", "¿Y después? Oh, mato. No sé.", null)]                                         // a run without a Russian word: the piece is Spanish, the line stays
+    [InlineData("Смотри, repartir — это раздавать.", "mira, repartir es dar", "Смотри, репартир это раздавать. Vale.", "Смотри, repartir это раздавать.")]   // a word the piece alone wrote in Latin keeps it
+    [InlineData("Это проблема, problema.", "Es un problema, problema.", "Да. Это проблема, проблема. Vale.", "Это проблема, проблема.")]                     // said in both languages: two words, nothing respelled
     public void A_doubted_line_is_replaced_by_the_run_of_the_answer_with_audio_around_that_sounds_like_the_piece(
         string own, string line, string around, string? expected) =>
         Assert.Equal(expected, SpeechPieceSecondLook.SaidAsHeardAround(own, line, around));
