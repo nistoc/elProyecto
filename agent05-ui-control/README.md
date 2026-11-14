@@ -107,7 +107,7 @@ npm run build
 |--------|-------------------------|----------|
 | GET    | /health                 | Проверка состояния (JSON: status, service) |
 | GET    | /api/jobs               | Список заданий. Query: semanticKey, status, from, to, limit, offset. Ответ: `{ "jobs": JobListItem[] }`. |
-| GET    | /api/jobs/{id}          | Снепшот задания (JobSnapshot). 404 если нет. Поле `files` в JSON больше не заполняется — список файлов: **GET /api/jobs/{id}/files**. Во время транскрипции могут быть **`agent04JobId`**, **`chunks`** (`total`, `completed`, `active`, …). |
+| GET    | /api/jobs/{id}          | Снепшот задания (JobSnapshot). 404 если нет. Поле `files` в JSON больше не заполняется — список файлов: **GET /api/jobs/{id}/files**. Во время транскрипции могут быть **`agent04JobId`**, **`chunks`** (`total`, `completed`, `active`, …). Поле **`runSettings`** — с какими настройками шёл запуск (см. «Настройки запуска»). |
 | POST   | /api/jobs/{id}/chunk-actions | Операторские действия по чанку → gRPC Agent04 `ChunkCommand`. Тело JSON: **`action`**: `cancel` \| `skip` \| `retranscribe` \| `split`, **`chunkIndex`**: неотрицательный индекс (0-based). Допустимо только при **`phase`** = `transcriber` и **`status`** = `running`. Ответ 200: `{ "ok": bool, "message": string }`. Ошибки gRPC: 400 / 404 / 409 / 502. |
 | POST   | /api/jobs               | Создать задание. Form: file (обязательно), tags (опционально, строка через запятую), **settings** (опционально: JSON-объект настроек этого задания — `silence_compress_enabled`, `silence_keep_sec` 0,05–5, `model`; например `{"silence_keep_sec":1.0}`; пишется в `job_settings.json` в папке задания, agent04 кладёт его поверх общего config; чужой ключ или значение вне границ — 400, задание не создаётся). Ответ: 202, `{ "jobId": string }`. Пайплайн запускается в фоне (agent04 → agent06). Лимит тела запроса 512 MB. |
 | DELETE | /api/jobs/{id}          | Удалить задание. 204 при успехе, 404 если нет. |
@@ -117,7 +117,7 @@ npm run build
 | PUT    | /api/jobs/{id}/files/content | Перезапись **существующего** текстового файла (UTF-8 без BOM). Тот же query **path**. Тело запроса — сырое содержимое (`text/plain` или любой тип). Расширения: `.md`, `.txt`, `.json`, `.log`, `.text`, `.srt`, `.vtt`, `.csv`, `.xml`, `.flag`. Лимит тела 50 MB. Ответ 200: `{ "ok": true, "message": "..." }`. |
 | POST   | /api/jobs/dialogue     | Собрать **диалог из дорожек участников**. Тело JSON: `{ "title"?: string, "tracks": [{ "jobId": string, "speaker": string, "file"?: string }] }` (2–8 дорожек). Модель не вызывается, refiner не запускается. Ответ **201**: `{ "jobId", "file", "entries", "tracks": [...], "warnings": [...] }`. 400 — плохой запрос, 404 — задание дорожки не найдено. См. ниже. |
 | POST   | /api/jobs/{id}/dialogue/rebuild | Собрать диалог заново из тех же дорожек (например, после повторной транскрипции дорожки). Пишет **новый** `transcript_dialogue_<время>.md`, прежние файлы не трогает. Ответ **200** той же формы; 400 — задание не диалог, 404 — нет задания. |
-| GET    | /api/sessions          | **Уроки из папки записей** (`Recordings:RootPath`): урок → период → дорожка, у каждой дорожки — задания, которые её транскрибировали, у периода — собранные из них диалоги. Ответ **200**: `{ "enabled", "rootPath", "estimateUsdPerMinute", "sessions": [...] }`; папка не задана или не существует — `enabled: false` и пустой список. Папка только читается. См. ниже. |
+| GET    | /api/sessions          | **Уроки из папки записей** (`Recordings:RootPath`): урок → период → дорожка, у каждой дорожки — задания, которые её транскрибировали, у периода — собранные из них диалоги. Ответ **200**: `{ "enabled", "rootPath", "estimateUsdPerMinute", "sessions": [...] }`; папка не задана или не существует — `enabled: false` и пустой список. Папка только читается. См. ниже. У каждого запуска дорожки поле **`settings`** — то же, что `runSettings` задания. |
 | POST   | /api/sessions/runs     | Запустить задание по дорожке урока. Тело JSON: `{ "track": string, "settings"?: { ... } }` — `track` это `id` дорожки из `GET /api/sessions`, `settings` — те же ключи, что у поля формы `settings` в `POST /api/jobs`. Файл **копируется** в новую папку задания и идёт обычным pipeline (**транскрипция платная**). Ответ **202**: `{ "jobId" }`. 400 — нет `track` или неверные настройки, 404 — такой дорожки в папке записей нет или папка не задана. |
 
 ### Диалог из дорожек: `POST /api/jobs/dialogue`
@@ -136,6 +136,24 @@ Zoom пишет каждого участника в свой файл. Кажд
 ```bash
 curl -X POST http://localhost:5010/api/jobs/dialogue -H "Content-Type: application/json" --data-binary @dialogue.json
 ```
+
+### Настройки запуска: поле `runSettings`
+
+Снепшот задания (`GET /api/jobs/{id}`, первый кадр и обновления SSE) несёт поле `runSettings`, запуск дорожки в `GET /api/sessions` — такое же поле `settings`:
+
+```json
+{ "source": "run", "model": "gpt-4o-transcribe-diarize", "silenceCompress": true, "silenceKeepSec": 1.0, "fromJobSettings": ["silence_keep_sec"] }
+```
+
+Значения читаются из папки задания при каждом запросе и нигде не хранятся; папка только читается. Чего папка не говорит, приходит как `null` — из сегодняшнего общего config ничего не подставляется, задание прошлого месяца шло с другим.
+
+| `source` | Откуда значения | Что известно |
+|----------|-----------------|--------------|
+| `run` | `run_settings.json` — agent04 пишет его при приёме задания | модель, сжатие, пауза, какие ключи задал оператор — точно |
+| `artifacts` | задание старше этой записи: `timeline/speech_map.json` (`keep_silence_sec`), иначе самый свежий `converted_wav/*.silence_report.json` (`KeepSilenceSec`) — сжатие было; только `converted_wav/*.silence_detect.json` — сжатия не было | сжатие и пауза; модель — только если оператор задал её в `job_settings.json`, иначе `null` |
+| `job_settings` | задание ещё не шло: `job_settings.json` | только то, что задал оператор |
+
+`silenceKeepSec` приходит, только когда сжатие не выключено. Папка без этих файлов (задания первого поколения, задание-диалог) даёт `runSettings: null`, и UI строку не показывает.
 
 ### Уроки из папки записей: `GET /api/sessions`, `POST /api/sessions/runs`
 

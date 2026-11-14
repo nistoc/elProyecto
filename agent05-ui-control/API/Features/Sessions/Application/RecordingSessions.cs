@@ -1,3 +1,5 @@
+using XtractManager.Features.Jobs.Application;
+
 namespace XtractManager.Features.Sessions.Application;
 
 /// <summary>
@@ -62,7 +64,11 @@ public sealed record TrackRun(
     string Phase,
     string? CreatedAt,
     bool HasTranscript,
-    bool HasRefined);
+    bool HasRefined)
+{
+    /// <summary>What the job was transcribed with; null when its folder does not tell.</summary>
+    public JobRunSettings? Settings { get; init; }
+}
 
 /// <summary>A dialogue job built from runs of the tracks of one period.</summary>
 public sealed record PeriodDialogue(

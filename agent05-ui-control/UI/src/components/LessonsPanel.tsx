@@ -22,6 +22,7 @@ import {
   type LessonTrack,
   type LessonsResponse,
 } from '../utils/lessons';
+import { runSettingsLine, runSettingsShort } from '../utils/runSettings';
 import { JobSettingsFields } from './JobSettingsFields';
 
 interface LessonsPanelProps {
@@ -182,11 +183,23 @@ export function LessonsPanel({
                 type="button"
                 className="lessons__chip"
                 onClick={() => onOpenJob(r.jobId)}
-                title={`${t('lessonsOpenJob')} · ${r.createdAt ?? ''}`}
+                title={[
+                  `${t('lessonsOpenJob')} · ${r.createdAt ?? ''}`,
+                  runSettingsLine(r.settings, t),
+                ]
+                  .filter(Boolean)
+                  .join('\n')}
+                data-testid="lesson-run"
               >
                 {r.jobId} · {r.status}
                 {r.hasTranscript ? ` · ${t('lessonsHasTranscript')}` : ''}
                 {r.hasRefined ? ` · ${t('lessonsHasRefined')}` : ''}
+                {runSettingsShort(r.settings, t) && (
+                  <span className="lessons__chip-settings">
+                    {' · '}
+                    {runSettingsShort(r.settings, t)}
+                  </span>
+                )}
               </button>
             ))}
           </span>
@@ -296,6 +309,9 @@ export function LessonsPanel({
               {c.runs.map((r) => (
                 <option key={r.jobId} value={r.jobId}>
                   {r.jobId} · {(r.createdAt ?? '').slice(0, 16)}
+                  {runSettingsShort(r.settings, t)
+                    ? ` · ${runSettingsShort(r.settings, t)}`
+                    : ''}
                 </option>
               ))}
             </select>
@@ -555,6 +571,7 @@ export function LessonsPanel({
         .lessons__track-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
         .lessons__track-name { min-width: 11rem; font-weight: 500; }
         .lessons__runs { flex: 1; display: flex; flex-wrap: wrap; gap: 0.35rem; min-width: 12rem; }
+        .lessons__chip-settings { opacity: 0.75; }
         .lessons__chip {
           padding: 0.1rem 0.5rem;
           border: 1px solid var(--color-border-strong);

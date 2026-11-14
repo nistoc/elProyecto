@@ -77,7 +77,10 @@ public sealed class TrackRunsIndex
             job.Phase,
             job.CreatedAt,
             HasTranscript: transcripts.Any(f => !f.Name.Contains("_fixed", StringComparison.OrdinalIgnoreCase)),
-            HasRefined: transcripts.Any(f => f.Name.Contains("_fixed", StringComparison.OrdinalIgnoreCase)));
+            HasRefined: transcripts.Any(f => f.Name.Contains("_fixed", StringComparison.OrdinalIgnoreCase)))
+        {
+            Settings = JobRunSettingsReader.Read(dir.FullName),
+        };
 
         var source = TrackSourceFile.TryLoad(dir.FullName);
         if (source != null)

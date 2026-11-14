@@ -14,6 +14,7 @@ import { ProjectFilesPanel } from './components/ProjectFilesPanel';
 import { ChunkControlsStats } from './components/ChunkControlsStats';
 import { RefinerProgress } from './components/RefinerProgress';
 import { RefinerSettingsPanel } from './components/RefinerSettingsPanel';
+import { runSettingsLine } from './utils/runSettings';
 
 function AppContent() {
   const { t, locale, setLocale } = useI18n();
@@ -46,12 +47,9 @@ function AppContent() {
   // stay instant (both hooks key on jobId) and manual reloads bypass this via .reload().
   // Lessons of the recordings folder take the place of the job view while they are open.
   const [showLessons, setShowLessons] = useState(false);
+  // A job picked in the sidebar or in a lesson is shown itself, not the upload form that was open
+  // (or that the job remembers as its last step).
   const openJob = (id: string) => {
-    setShowLessons(false);
-    handleSelectJob(id);
-  };
-  // A job opened from a lesson is shown itself, not the upload form that may have been open.
-  const openJobFromLessons = (id: string) => {
     setShowLessons(false);
     handleSelectJob(id, 'transcriber');
   };
@@ -152,7 +150,7 @@ function AppContent() {
           {showLessons && (
             <LessonsPanel
               t={t}
-              onOpenJob={openJobFromLessons}
+              onOpenJob={openJob}
               onJobsChanged={refreshList}
             />
           )}
@@ -170,6 +168,14 @@ function AppContent() {
               />
             ))}
           </div>
+
+          {!showLessons &&
+            activeStep !== 'upload' &&
+            runSettingsLine(job?.runSettings, t) && (
+              <p className="job-run-settings" data-testid="job-run-settings">
+                {runSettingsLine(job?.runSettings, t)}
+              </p>
+            )}
 
           <div
             className="step-content"
@@ -517,6 +523,7 @@ function AppContent() {
         }
         .step-panel { padding: 1rem; }
         .step-panel__meta { margin: 0 0 0.5rem 0; font-size: 0.875rem; color: var(--color-text-secondary); }
+        .job-run-settings { margin: 0 0 0.75rem 0; font-size: 0.875rem; color: var(--color-text-secondary); }
         .step-panel__files-heading { margin: 1rem 0 0.35rem 0; font-size: 0.9rem; color: var(--color-heading); }
         .step-panel__empty { color: var(--color-text-muted); margin: 0; }
         .step-panel__hint { margin: 0 0 0.75rem 0; font-size: 0.875rem; color: var(--color-label); }

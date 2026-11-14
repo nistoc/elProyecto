@@ -2,6 +2,8 @@
  * Lessons as the API reads them from the recordings folder (GET /api/sessions):
  * lesson → period (one Zoom recording) → track (one audio file) → runs (jobs that transcribed it).
  */
+import type { JobRunSettings } from './runSettings';
+
 export interface LessonRun {
   jobId: string;
   status: string;
@@ -9,6 +11,8 @@ export interface LessonRun {
   createdAt?: string | null;
   hasTranscript: boolean;
   hasRefined: boolean;
+  /** What the job was transcribed with; null when its folder does not tell. */
+  settings?: JobRunSettings | null;
 }
 
 export interface LessonDialogue {

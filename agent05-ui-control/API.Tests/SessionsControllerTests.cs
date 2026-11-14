@@ -124,6 +124,15 @@ public sealed class SessionsControllerTests : IDisposable
         // A job started from the lessons list: tied by track_source.json even with no audio left in the folder.
         PutJobFile("jobstudent01", TrackSourceFile.FileName,
             JsonSerializer.Serialize(new { schema_version = 1, track = StudentTrack, file_name = "gone.m4a", size_bytes = 5 }));
+        // ... and the transcriber recorded what it ran with.
+        PutJobFile("jobstudent01", JobRunSettingsReader.RunSettingsFileName, JsonSerializer.Serialize(new
+        {
+            schema_version = 1,
+            model = "gpt-4o-transcribe-diarize",
+            silence_compress_enabled = true,
+            silence_keep_sec = 1.0,
+            from_job_settings = new[] { "silence_keep_sec" },
+        }));
         // A dialogue merged from the two runs.
         PutJobFile("jobdialogue1", DialogueManifestFile.FileName, JsonSerializer.Serialize(new
         {
@@ -165,11 +174,18 @@ public sealed class SessionsControllerTests : IDisposable
         Assert.Equal("completed", teacherRun.Status);
         Assert.True(teacherRun.HasTranscript);
         Assert.True(teacherRun.HasRefined);
+        Assert.Null(teacherRun.Settings); // an upload from before the record: its folder tells nothing
 
         var studentRun = Assert.Single(period.Tracks.Single(t => t.Id == StudentTrack).Runs);
         Assert.Equal("jobstudent01", studentRun.JobId);
         Assert.False(studentRun.HasTranscript);
         Assert.False(studentRun.HasRefined);
+        Assert.NotNull(studentRun.Settings);
+        Assert.Equal(JobRunSettings.SourceRun, studentRun.Settings.Source);
+        Assert.Equal("gpt-4o-transcribe-diarize", studentRun.Settings.Model);
+        Assert.True(studentRun.Settings.SilenceCompress);
+        Assert.Equal(1.0, studentRun.Settings.SilenceKeepSec);
+        Assert.Equal(new[] { "silence_keep_sec" }, studentRun.Settings.FromJobSettings);
 
         var dialogue = Assert.Single(period.Dialogues);
         Assert.Equal("jobdialogue1", dialogue.JobId);

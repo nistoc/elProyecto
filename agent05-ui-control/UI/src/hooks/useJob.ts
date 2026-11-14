@@ -126,13 +126,19 @@ export function useJob(): {
   const prevJobIdsRef = useRef<Set<string>>(new Set());
   const listHydratedRef = useRef(false);
 
-  const setJobId = useCallback((id: string | null) => {
-    persistLastJobId(id);
-    setJobIdState(id);
-    setJob(null);
-    setError(null);
-    setJobSnapshotRevision(0);
-  }, []);
+  const setJobId = useCallback(
+    (id: string | null) => {
+      persistLastJobId(id);
+      setError(null);
+      // The job that is already open (its row in the sidebar, its run in the lessons list) stays as it is:
+      // the effect that loads a job runs only when the id changes, so a dropped snapshot would not come back.
+      if (id === jobId) return;
+      setJobIdState(id);
+      setJob(null);
+      setJobSnapshotRevision(0);
+    },
+    [jobId]
+  );
 
   const setActiveStep = useCallback(
     (step: StepId) => {

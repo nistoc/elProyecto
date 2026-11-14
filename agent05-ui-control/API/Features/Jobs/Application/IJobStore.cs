@@ -58,6 +58,13 @@ public class JobSnapshot
     public string? MdOutputPath { get; set; }
     /// <summary>Full path to the job directory (workspace folder for this job). Used for debugging and UI to show where files are looked for.</summary>
     public string? JobDirectoryPath { get; set; }
+
+    /// <summary>
+    /// What the job was transcribed with, read from its folder on every request (not kept in the store);
+    /// null when the folder does not tell.
+    /// </summary>
+    public JobRunSettings? RunSettings { get; set; }
+
     /// <summary>
     /// Deprecated: no longer populated. Use <c>GET /api/jobs/{id}/files</c> for structured project files. Kept for JSON backward compatibility with older clients.
     /// </summary>
@@ -82,6 +89,7 @@ public class JobSnapshot
         TranscriptionError = TranscriptionError,
         MdOutputPath = MdOutputPath,
         JobDirectoryPath = JobDirectoryPath,
+        RunSettings = RunSettings,
         Files = Files?.Select(f => new JobFileInfo
         {
             Name = f.Name,

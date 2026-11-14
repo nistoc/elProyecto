@@ -33,6 +33,7 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
         {
             snap.JobDirectoryPath ??= dirPath;
             JobSnapshotDiskEnricher.TryEnrichFromDisk(snap, dirPath, _logger);
+            snap.RunSettings = JobRunSettingsReader.Read(dirPath);
         }
 
         return snap;

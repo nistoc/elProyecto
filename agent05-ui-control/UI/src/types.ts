@@ -1,3 +1,5 @@
+import type { JobRunSettings } from './utils/runSettings';
+
 /** Job status: queued | running | done | failed */
 export type JobStatus = string;
 
@@ -74,6 +76,8 @@ export interface JobSnapshot {
   transcriptionFooterHint?: string | null;
   /** Last Agent04 VM merge stats (API only; copy for debugging sync issues). */
   transcriptionSyncDebug?: string | null;
+  /** What the job was transcribed with, read from its folder; null when the folder does not tell. */
+  runSettings?: JobRunSettings | null;
   /** @deprecated Not populated by API. Use GET /api/jobs/:id/files (JobProjectFiles). */
   files?: JobFileInfo[] | null;
 }
