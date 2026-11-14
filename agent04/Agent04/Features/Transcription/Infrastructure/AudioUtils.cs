@@ -11,7 +11,10 @@ namespace Agent04.Features.Transcription.Infrastructure;
 /// </summary>
 public sealed class AudioUtils : IAudioUtils
 {
-    /// <summary>ffmpeg rejects very small <c>-t</c>; float gaps between silence markers can be ~1e-5 s.</summary>
+    /// <summary>
+    /// A stretch between two silence regions shorter than this is not kept: float gaps between silence
+    /// markers can be ~1e-5 s and are not sound.
+    /// </summary>
     private const double MinSpeechSegmentSec = 0.02;
 
     public string? WhichOr(string? pathKey, string defaultName)
@@ -299,20 +302,27 @@ public sealed class AudioUtils : IAudioUtils
         Directory.CreateDirectory(tempRoot);
         try
         {
-            var concatLines = CollectSpeechAndGapConcatLines(
-                ffmpegPath,
-                inputPath,
-                tempRoot,
-                intervals,
-                durationSeconds,
-                keepSilenceSec,
-                cancellationToken,
-                out var speechPieces);
-            if (concatLines.Count == 0)
+            // The layout is the plan of the speech map: the file is built from its steps and the map is their pieces.
+            var steps = SpeechTimeMap.Plan(intervals, durationSeconds, keepSilenceSec, MinSpeechSegmentSec);
+            if (steps.Count == 0)
                 throw new InvalidOperationException("Silence compression produced no audio segments.");
+            var speechPieces = steps.Where(x => x.Piece != null).Select(x => x.Piece!).ToList();
 
-            var listPath = Path.Combine(tempRoot, "concat.txt");
-            File.WriteAllText(listPath, string.Join(Environment.NewLine, concatLines) + Environment.NewLine, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            // One decode of the whole input. The pieces are then copied out of it by sample positions;
+            // a run of ffmpeg per piece decoded the file from its start every time.
+            var pcmPath = Path.Combine(tempRoot, "source_16k_mono.pcm");
+            RunFfmpeg(ffmpegPath, new[]
+            {
+                "-y", "-hide_banner", "-loglevel", "error",
+                "-i", inputPath,
+                "-vn",
+                "-f", "s16le",
+                "-acodec", "pcm_s16le",
+                "-ar", SilenceCompressedWav.SampleRate.ToString(CultureInfo.InvariantCulture),
+                "-ac", "1",
+                pcmPath
+            });
+            cancellationToken.ThrowIfCancellationRequested();
 
             var workOut = string.Equals(inFull, outFull, StringComparison.OrdinalIgnoreCase)
                 ? Path.Combine(tempRoot, "output.wav")
@@ -322,14 +332,11 @@ public sealed class AudioUtils : IAudioUtils
             if (!string.IsNullOrEmpty(dirOut))
                 Directory.CreateDirectory(dirOut);
 
-            RunFfmpeg(ffmpegPath, new[]
+            using (var sourcePcm = File.OpenRead(pcmPath))
+            using (var output = File.Create(workOut))
             {
-                "-y", "-hide_banner", "-loglevel", "error",
-                "-f", "concat", "-safe", "0",
-                "-i", listPath,
-                "-c", "copy",
-                workOut
-            });
+                SilenceCompressedWav.Write(sourcePcm, SilenceCompressedWav.LayoutOf(steps), output, cancellationToken);
+            }
 
             if (!string.Equals(workOut, outFull, StringComparison.OrdinalIgnoreCase))
                 File.Move(workOut, outFull, overwrite: true);
@@ -396,53 +403,6 @@ public sealed class AudioUtils : IAudioUtils
         };
     }
 
-    /// <summary>
-    /// Cuts the kept pieces out of the input and lists them with the gaps in file order. The layout comes
-    /// from <see cref="SpeechTimeMap.Plan"/>, so the pieces returned here are exactly what stands in the file.
-    /// </summary>
-    private static List<string> CollectSpeechAndGapConcatLines(
-        string ffmpegPath,
-        string inputPath,
-        string tempRoot,
-        List<SilenceInterval> intervals,
-        double durationSeconds,
-        double keepSilenceSec,
-        CancellationToken cancellationToken,
-        out IReadOnlyList<SpeechPiece> speechPieces)
-    {
-        var concatLines = new List<string>();
-        var pieces = new List<SpeechPiece>();
-        // One silence file per gap length in milliseconds: a pause shorter than keepSilenceSec keeps its own length.
-        var gapPaths = new Dictionary<int, string>();
-
-        var segIndex = 0;
-        foreach (var step in SpeechTimeMap.Plan(intervals, durationSeconds, keepSilenceSec, MinSpeechSegmentSec))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (step.Piece is not { } piece)
-            {
-                var gapMs = (int)Math.Round(step.GapSec * 1000.0);
-                if (!gapPaths.TryGetValue(gapMs, out var gapPath))
-                {
-                    gapPath = Path.Combine(tempRoot, $"gap_{gapMs:D5}.wav");
-                    WriteGapSilenceWav(gapPath, gapMs);
-                    gapPaths[gapMs] = gapPath;
-                }
-
-                concatLines.Add(FormatConcatDemuxerLine(gapPath));
-                continue;
-            }
-
-            var seg = Path.Combine(tempRoot, $"seg_{segIndex++:D5}.wav");
-            ExtractPcm16kMonoWavSegment(ffmpegPath, inputPath, piece.SourceStartSec, piece.DurationSec, seg);
-            concatLines.Add(FormatConcatDemuxerLine(seg));
-            pieces.Add(piece);
-        }
-
-        speechPieces = pieces;
-        return concatLines;
-    }
-
     private static List<SilenceInterval> NormalizeSilenceIntervals(IReadOnlyList<SilenceInterval> raw)
     {
         if (raw.Count == 0)
@@ -464,63 +424,5 @@ public sealed class AudioUtils : IAudioUtils
         }
 
         return merged;
-    }
-
-    private static string FormatConcatDemuxerLine(string path)
-    {
-        var p = Path.GetFullPath(path).Replace('\\', '/');
-        p = p.Replace("'", "'\\''", StringComparison.Ordinal);
-        return $"file '{p}'";
-    }
-
-    /// <summary>
-    /// A WAV of digital silence in the format of the kept pieces (16 kHz, mono, 16 bit). Written by hand:
-    /// there is one such file per gap length, and starting ffmpeg for each of them took most of the assembly.
-    /// </summary>
-    internal static void WriteGapSilenceWav(string outputPath, int durationMs)
-    {
-        const int sampleRate = 16000;
-        const short channels = 1;
-        const short bitsPerSample = 16;
-        const short blockAlign = channels * bitsPerSample / 8;
-        var samples = (int)((long)Math.Max(0, durationMs) * sampleRate / 1000);
-        var dataBytes = samples * blockAlign;
-
-        using var stream = File.Create(outputPath);
-        using var writer = new BinaryWriter(stream, Encoding.ASCII);
-        writer.Write(Encoding.ASCII.GetBytes("RIFF"));
-        writer.Write(36 + dataBytes);
-        writer.Write(Encoding.ASCII.GetBytes("WAVE"));
-        writer.Write(Encoding.ASCII.GetBytes("fmt "));
-        writer.Write(16);                       // size of the PCM format block
-        writer.Write((short)1);                 // PCM
-        writer.Write(channels);
-        writer.Write(sampleRate);
-        writer.Write(sampleRate * blockAlign);  // bytes per second
-        writer.Write(blockAlign);
-        writer.Write(bitsPerSample);
-        writer.Write(Encoding.ASCII.GetBytes("data"));
-        writer.Write(dataBytes);
-        writer.Write(new byte[dataBytes]);
-    }
-
-    private static void ExtractPcm16kMonoWavSegment(string ffmpegPath, string inputPath, double startSeconds, double durationSeconds, string outputPath)
-    {
-        var dir = Path.GetDirectoryName(outputPath);
-        if (!string.IsNullOrEmpty(dir))
-            Directory.CreateDirectory(dir);
-        var ss = startSeconds.ToString("G", CultureInfo.InvariantCulture);
-        var dur = durationSeconds.ToString("G", CultureInfo.InvariantCulture);
-        RunFfmpeg(ffmpegPath, new[]
-        {
-            "-y", "-hide_banner", "-loglevel", "error",
-            "-i", inputPath,
-            "-ss", ss,
-            "-t", dur,
-            "-acodec", "pcm_s16le",
-            "-ar", "16000",
-            "-ac", "1",
-            outputPath
-        });
     }
 }

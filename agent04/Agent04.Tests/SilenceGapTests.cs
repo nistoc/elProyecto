@@ -52,7 +52,7 @@ public sealed class SilenceGapTests
     }
 
     /// <summary>
-    /// The compressed file itself, built by ffmpeg: its length is the plan's length. No-op without ffmpeg on PATH.
+    /// The compressed file itself, from a source decoded by ffmpeg: its length is the plan's length. No-op without ffmpeg on PATH.
     /// </summary>
     [Fact]
     public void Compressed_file_has_the_length_of_the_plan_when_keep_is_longer_than_a_pause()
@@ -68,9 +68,12 @@ public sealed class SilenceGapTests
         try
         {
             var source = Path.Combine(dir, "source.wav");
+            // Loud until 1.25 s, quiet until 3.5 s, medium after: every kept piece has a loudness of its own,
+            // and the source is 48 kHz stereo so the decode has to bring it to 16 kHz mono.
+            const string tone = "sin(2*PI*440*t)*(0.8*lt(t\\,1.25)+0.1*between(t\\,1.25\\,3.5)+0.4*gt(t\\,3.5))";
             RunFfmpeg(ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-                "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000:duration=6",
-                "-ac", "1", "-acodec", "pcm_s16le", source);
+                "-f", "lavfi", "-i", $"aevalsrc=exprs={tone}|{tone}:s=48000:d=6",
+                "-acodec", "pcm_s16le", source);
             var silence = new[] { new SilenceInterval(1.0, 1.5, 0.5), new SilenceInterval(2.5, 4.5, 2.0) };
 
             var report = audio.WriteWavWithCompressedSilence(
@@ -83,6 +86,18 @@ public sealed class SilenceGapTests
             Assert.Equal(3, report.SpeechPieces.Count);
             Assert.Equal(3.5, report.SpeechPieces[2].OutputStartSec, 6);
             Assert.Equal(report.OutputDurationSec, report.SpeechPieces[2].OutputEndSec, 2);
+
+            // The file itself: sound where the pieces stand, digital silence in place of both pauses.
+            var wav = File.ReadAllBytes(Path.Combine(dir, "source_silc.wav"));
+            Assert.Equal(44 + 80000 * 2, wav.Length);
+            short Peak(double fromSec, double toSec) => Enumerable
+                .Range((int)(fromSec * 16000), (int)((toSec - fromSec) * 16000))
+                .Max(i => Math.Abs(BitConverter.ToInt16(wav, 44 + i * 2)));
+            Assert.InRange(Peak(0.1, 0.9), 24000, 27500);   // source 0–1 s: loud
+            Assert.Equal(0, Peak(1.0, 1.5));
+            Assert.InRange(Peak(1.6, 2.4), 2800, 3700);     // source 1.5–2.5 s: quiet
+            Assert.Equal(0, Peak(2.5, 3.5));
+            Assert.InRange(Peak(3.6, 4.9), 11500, 14500);   // source 4.5–6 s: medium
         }
         finally
         {
@@ -122,33 +137,6 @@ public sealed class SilenceGapTests
         finally
         {
             try { Directory.Delete(dir, true); } catch { /* ignore */ }
-        }
-    }
-
-    [Theory]
-    [InlineData(200, 6400)]
-    [InlineData(537, 17184)]
-    [InlineData(1, 32)]
-    public void Silence_file_is_a_16k_mono_wav_of_exactly_that_length(int durationMs, int dataBytes)
-    {
-        var path = Path.Combine(Path.GetTempPath(), "agent04_gap_" + Guid.NewGuid().ToString("N") + ".wav");
-        try
-        {
-            AudioUtils.WriteGapSilenceWav(path, durationMs);
-
-            var bytes = File.ReadAllBytes(path);
-            Assert.Equal(44 + dataBytes, bytes.Length);
-            Assert.Equal("RIFF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
-            Assert.Equal("WAVE", System.Text.Encoding.ASCII.GetString(bytes, 8, 4));
-            Assert.Equal(16000, BitConverter.ToInt32(bytes, 24));
-            Assert.Equal(1, BitConverter.ToInt16(bytes, 22));
-            Assert.Equal(16, BitConverter.ToInt16(bytes, 34));
-            Assert.Equal(dataBytes, BitConverter.ToInt32(bytes, 40));
-            Assert.All(bytes.Skip(44), b => Assert.Equal(0, b));
-        }
-        finally
-        {
-            try { File.Delete(path); } catch { /* ignore */ }
         }
     }
 
