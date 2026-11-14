@@ -153,6 +153,8 @@ internal static class SpeechPieceSecondLook
 
         // The doubt is that Russian speech was written in Spanish. A run without a Russian word does not
         // confirm it: the piece is Spanish, and for Spanish the whole text has the better wording.
+        // (Tried on stored answers of 30 tracks: letting such a run in when the answer has nothing like
+        // the line took 4 lines, 1 rightly — a loop of one word, which is dropped as a runaway answer now.)
         if (!ownRun.Any(HasCyrillic))
             return null;
 

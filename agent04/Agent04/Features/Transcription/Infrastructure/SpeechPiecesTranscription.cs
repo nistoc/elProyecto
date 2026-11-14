@@ -85,6 +85,14 @@ public sealed class SpeechPiecesTranscription
     public const int RunawaySpareWords = 20;
 
     /// <summary>
+    /// The same loop in a small dose: an ordinary answer but for one word standing this many times in a
+    /// row («no, no, no, …» 131 times inside the text of a chunk, seen live — too few to break the limit
+    /// of words, and laid onto one piece as its line). A learner says a word three, five, eight times;
+    /// nobody says it twenty.
+    /// </summary>
+    public const int RunawayWordInARow = 20;
+
+    /// <summary>
     /// The text of the whole chunk is used when at least this share of the pieces' words found a partner
     /// in it (usually over 0.9). Below it the two are not the same speech, and the pieces are believed:
     /// each of them heard a few seconds and cannot run away far.
@@ -113,13 +121,32 @@ public sealed class SpeechPiecesTranscription
         !string.IsNullOrWhiteSpace(model)
         && model.Trim().StartsWith("gpt-transcribe", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>True when the text has more words than could be said in that much audio.</summary>
+    /// <summary>
+    /// True when the text has more words than could be said in that much audio, or one word standing
+    /// <see cref="RunawayWordInARow"/> times in a row (the same word by its sound, whatever the marks).
+    /// </summary>
     internal static bool LooksRunaway(string? text, double audioSec)
     {
         if (string.IsNullOrEmpty(text))
             return false;
-        var words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
-        return words > Math.Max(0, audioSec) * RunawayWordsPerSec + RunawaySpareWords;
+        var words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length > Math.Max(0, audioSec) * RunawayWordsPerSec + RunawaySpareWords)
+            return true;
+
+        string? previous = null;
+        var inARow = 0;
+        foreach (var word in words)
+        {
+            var sound = SpeechPieceWordAlignment.Normalize(word);
+            if (sound.Length == 0)
+                continue; // a mark standing alone does not break the row
+            inARow = sound == previous ? inARow + 1 : 1;
+            if (inARow >= RunawayWordInARow)
+                return true;
+            previous = sound;
+        }
+
+        return false;
     }
 
     /// <summary>What the way reads from the job config.</summary>

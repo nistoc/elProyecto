@@ -570,6 +570,7 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
     [InlineData("Это уже прошлое.", "Esto ya es pasado.", "Sí, claro. Vamos a ver.", null)]                            // the answer has neither
     [InlineData("Омер, комо, коме.", "Comer, como, come.", "El verbo comer, como, come mucho.", null)]                 // sounds like both: nearer to the line
     [InlineData("О, мато.", "oh, más.", "¿Y después? Oh, mato. No sé.", null)]                                         // a run without a Russian word: the piece is Spanish, the line stays
+    [InlineData("Сьерра, сьерра.", "no, no, no, no, no, no", "Vamos a la montaña. Sierra, sierra. Ajá.", null)]              // nor when the answer has nothing like the line: tried, took more wrong lines than right
     [InlineData("Смотри, repartir — это раздавать.", "mira, repartir es dar", "Смотри, репартир это раздавать. Vale.", "Смотри, repartir это раздавать.")]   // a word the piece alone wrote in Latin keeps it
     [InlineData("Это проблема, problema.", "Es un problema, problema.", "Да. Это проблема, проблема. Vale.", "Это проблема, проблема.")]                     // said in both languages: two words, nothing respelled
     public void A_doubted_line_is_replaced_by_the_run_of_the_answer_with_audio_around_that_sounds_like_the_piece(
@@ -701,7 +702,22 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
     [InlineData(21, 0.0, true)]
     [InlineData(0, 5.0, false)]
     public void An_answer_with_more_words_than_can_be_said_is_a_loop(int words, double audioSec, bool expected) =>
-        Assert.Equal(expected, SpeechPiecesTranscription.LooksRunaway(string.Join(" ", Enumerable.Repeat("¿Pan?", words)), audioSec));
+        Assert.Equal(expected, SpeechPiecesTranscription.LooksRunaway(
+            string.Join(" ", Enumerable.Range(0, words).Select(i => i % 2 == 0 ? "uno" : "dos")), audioSec));
+
+    [Theory]
+    [InlineData(8, false)]    // a learner repeating a word
+    [InlineData(19, false)]
+    [InlineData(20, true)]
+    [InlineData(131, true)]
+    public void An_answer_with_one_word_many_times_in_a_row_is_a_loop(int times, bool expected)
+    {
+        // an ordinary answer but for the row; the marks and the capital letter do not make another word
+        var row = string.Join(" ", Enumerable.Range(0, times).Select(i => i == 0 ? "No," : i % 3 == 0 ? "no..." : "no,"));
+        var text = $"Vamos a la playa. {row} … Mañana por la tarde.";
+
+        Assert.Equal(expected, SpeechPiecesTranscription.LooksRunaway(text, 158.0));
+    }
 
     [Fact]
     public async Task An_answer_of_one_word_repeated_is_dropped_and_the_chunk_is_asked_again()
