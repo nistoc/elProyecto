@@ -26,9 +26,14 @@ export const emptyJobSettingsForm: JobSettingsForm = {
 export const SILENCE_KEEP_MIN_SEC = 0.05;
 export const SILENCE_KEEP_MAX_SEC = 5;
 
-/** Models offered in the form: both answer with time marks, which the dialogue of tracks needs. */
+/**
+ * Models offered in the form: each gives lines with time marks, which the dialogue of tracks needs.
+ * gpt-transcribe answers plain text; the transcriber asks it for a chunk whole and in pieces and
+ * puts the times of the pieces on the text.
+ */
 export const JOB_MODEL_OPTIONS = [
   'gpt-4o-transcribe-diarize',
+  'gpt-transcribe',
   'whisper-1',
 ] as const;
 

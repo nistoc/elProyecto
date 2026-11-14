@@ -39,7 +39,7 @@ const messages: Record<Locale, Record<string, string>> = {
       'The pause must be a number from 0.05 to 5 seconds.',
     jobSettingsModel: 'Model',
     jobSettingsModelHint:
-      'whisper-1 gives lines with times and does not tell speakers apart.',
+      'gpt-transcribe writes Spanish in Spanish and Russian in Russian and does not tell speakers apart: for the track of one participant. whisper-1 gives lines with times and does not tell speakers apart.',
     status: 'Status',
     phase: 'Phase',
     filename: 'Filename',
@@ -303,7 +303,7 @@ const messages: Record<Locale, Record<string, string>> = {
     jobSettingsKeepInvalid: 'Пауза — число от 0,05 до 5 секунд.',
     jobSettingsModel: 'Модель',
     jobSettingsModelHint:
-      'whisper-1 даёт строки со временем и не различает говорящих.',
+      'gpt-transcribe пишет испанское по-испански, русское по-русски и не различает говорящих — для дорожки одного участника. whisper-1 даёт строки со временем и не различает говорящих.',
     status: 'Статус',
     phase: 'Фаза',
     filename: 'Имя файла',
@@ -569,7 +569,7 @@ const messages: Record<Locale, Record<string, string>> = {
     jobSettingsKeepInvalid: 'La pausa es un número de 0,05 a 5 segundos.',
     jobSettingsModel: 'Modelo',
     jobSettingsModelHint:
-      'whisper-1 da líneas con tiempo y no distingue a los hablantes.',
+      'gpt-transcribe escribe el español en español y el ruso en ruso y no distingue a los hablantes: para la pista de un participante. whisper-1 da líneas con tiempo y no distingue a los hablantes.',
     status: 'Estado',
     phase: 'Fase',
     filename: 'Nombre de archivo',
