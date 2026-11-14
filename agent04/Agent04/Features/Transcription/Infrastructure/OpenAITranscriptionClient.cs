@@ -44,8 +44,11 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
         // A job can name its own model (job settings); the model of the service is the default.
         var primaryModel = string.IsNullOrWhiteSpace(options.Model) ? _model : options.Model.Trim();
         var modelsToTry = new List<string> { primaryModel };
-        foreach (var m in _fallbackModels)
-            if (m != primaryModel) modelsToTry.Add(m);
+        if (!options.ExactRequest)
+        {
+            foreach (var m in _fallbackModels)
+                if (m != primaryModel) modelsToTry.Add(m);
+        }
 
         Exception? lastErr = null;
         var isServer500 = false;
@@ -165,7 +168,17 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
         content.Add(fileContent, "file", fileName);
 
         content.Add(new StringContent(model), "model");
-        if (!string.IsNullOrEmpty(language)) content.Add(new StringContent(language), "language");
+        // Several languages go as languages[]; the server refuses "language" next to them.
+        var languages = logContext.Languages?.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim()).ToList();
+        if (languages is { Count: > 0 })
+        {
+            foreach (var l in languages)
+                content.Add(new StringContent(l), "languages[]");
+        }
+        else if (!string.IsNullOrEmpty(language))
+        {
+            content.Add(new StringContent(language), "language");
+        }
         if (!string.IsNullOrEmpty(prompt)) content.Add(new StringContent(prompt), "prompt");
         if (temperature.HasValue) content.Add(new StringContent(temperature.Value.ToString("G", System.Globalization.CultureInfo.InvariantCulture)), "temperature");
         if (!string.IsNullOrEmpty(responseFormat)) content.Add(new StringContent(responseFormat), "response_format");
@@ -338,6 +351,8 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
             prompt = null;
 
         list.Add((lang, prompt, temp, fmt, chunk));
+        if (options.ExactRequest)
+            return list;
         if (!string.IsNullOrEmpty(fmt))
             list.Add((lang, prompt, temp, null, chunk));
         if (model.Contains("diarize", StringComparison.OrdinalIgnoreCase))

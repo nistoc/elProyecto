@@ -711,7 +711,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
             TranscriptionClientResult result;
             try
             {
-                result = await TranscribeChunkOrItsPartsAsync(config, chunkInfo.Path, options, transcribeCts.Token);
+                result = await TranscribeChunkOrItsPartsAsync(config, chunkInfo.Path, options, transcribeCts.Token, chunkInfo.EmitGuard);
             }
             finally
             {
@@ -759,13 +759,22 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
     /// into parts (<see cref="ServerErrorChunkSplit"/>) and their answers are put back into one answer of the
     /// chunk, with time marks. With <c>server_error_split_parts</c> below 2 the client's own fallbacks apply,
     /// as before; they also apply when the chunk is too short to cut or the parts could not be transcribed.
+    /// <para>
+    /// A model that answers plain text goes its own way (<see cref="SpeechPiecesTranscription"/>): the chunk
+    /// is asked whole and in pieces, and the answer is assembled with time marks from the two.
+    /// </para>
     /// </summary>
+    /// <param name="emitGuardSec">Seconds at the start of the chunk that repeat the end of the previous one.</param>
     internal async Task<TranscriptionClientResult> TranscribeChunkOrItsPartsAsync(
         TranscriptionConfig config,
         string chunkPath,
         TranscriptionClientOptions options,
-        CancellationToken ct)
+        CancellationToken ct,
+        double emitGuardSec = 0)
     {
+        if (SpeechPiecesTranscription.AppliesTo(options.Model ?? config.Model))
+            return await TranscribeInSpeechPiecesAsync(config, chunkPath, options, emitGuardSec, ct).ConfigureAwait(false);
+
         if (ServerErrorChunkSplit.ConfiguredParts(config) < 2)
             return await _client.TranscribeAsync(chunkPath, options, ct).ConfigureAwait(false);
 
@@ -829,6 +838,27 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         plain.StopAtServerError = false;
         AppendTranscriptActivityForChunk(options.AgentJobId, index, null, "Asking for the chunk without time marks");
         return await _client.TranscribeAsync(chunkPath, plain, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>A chunk, or a part of a chunk, by the way of a plain-text model; see <see cref="SpeechPiecesTranscription"/>.</summary>
+    private async Task<TranscriptionClientResult> TranscribeInSpeechPiecesAsync(
+        TranscriptionConfig config,
+        string audioPath,
+        TranscriptionClientOptions options,
+        double emitGuardSec,
+        CancellationToken ct)
+    {
+        var index = options.ChunkIndex ?? -1;
+        var way = new SpeechPiecesTranscription(_audioUtils, _client, _logger);
+        var answer = await way.TranscribeAsync(
+            audioPath,
+            emitGuardSec,
+            config,
+            options,
+            line => AppendTranscriptActivityForChunk(options.AgentJobId, index, options.SubChunkIndex, line),
+            ct).ConfigureAwait(false);
+        AppendTranscriptActivityForChunk(options.AgentJobId, index, options.SubChunkIndex, SpeechPiecesTranscription.Describe(answer.RawResponse));
+        return answer;
     }
 
     private static IReadOnlyDictionary<string, object?> ToDictionary(object? value)
@@ -1001,17 +1031,19 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 AgentJobId = agentJobId,
                 ParallelWorkersConfigured = parallelConfigured
             };
-            var clientResult = await _client.TranscribeAsync(audioPath, options, transcribeCts.Token).ConfigureAwait(false);
-            AppendTranscriptActivityForChunk(
-                agentJobId,
-                parentChunkIndex,
-                subChunkIndex,
-                "Transcribe HTTP OK (sub-chunk)");
             // Segments count seconds of the sub-chunk; its place inside the parent chunk goes with the result.
             var chunkFolder = Path.Combine(artifactRoot, config.SplitChunksDir, $"chunk_{parentChunkIndex}");
             var place = SubChunkTimelineFile.Find(
                 await SubChunkTimelineFile.TryLoadAsync(chunkFolder, ct).ConfigureAwait(false),
                 subChunkIndex);
+            var clientResult = SpeechPiecesTranscription.AppliesTo(options.Model ?? config.Model)
+                ? await TranscribeInSpeechPiecesAsync(config, audioPath, options, place?.EmitGuardSec ?? 0, transcribeCts.Token).ConfigureAwait(false)
+                : await _client.TranscribeAsync(audioPath, options, transcribeCts.Token).ConfigureAwait(false);
+            AppendTranscriptActivityForChunk(
+                agentJobId,
+                parentChunkIndex,
+                subChunkIndex,
+                "Transcribe HTTP OK (sub-chunk)");
             var tr = new TranscriptionResult(
                 Path.GetFileName(audioPath),
                 place?.OffsetSec ?? 0,

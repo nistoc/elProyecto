@@ -40,6 +40,19 @@ public sealed class TranscriptionClientOptions
     /// </summary>
     public bool StopAtServerError { get; set; }
 
+    /// <summary>
+    /// Languages spoken in the audio, for a model that takes several (<c>languages[]</c> of the request).
+    /// When set, <see cref="Language"/> is not sent: the server refuses both in one request.
+    /// </summary>
+    public IReadOnlyList<string>? Languages { get; set; }
+
+    /// <summary>
+    /// Send the request as it is named here and nothing else: the named model only, no second try without
+    /// <see cref="ResponseFormat"/>, no other models. For a caller that puts several answers together and
+    /// must not get one of them from another model.
+    /// </summary>
+    public bool ExactRequest { get; set; }
+
     public TranscriptionClientOptions Clone() => (TranscriptionClientOptions)MemberwiseClone();
 }
 
