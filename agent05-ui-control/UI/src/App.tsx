@@ -4,6 +4,7 @@ import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { useJob, type StepId } from './hooks/useJob';
 import { useJobChunkArtifactGroups } from './hooks/useJobChunkArtifactGroups';
 import { useJobProjectFiles } from './hooks/useJobProjectFiles';
+import { useJobLanguageShare } from './hooks/useJobLanguageShare';
 import { useDebouncedValue } from './hooks/useDebouncedValue';
 import { StepCard } from './components/StepCard';
 import { UploadCard } from './components/UploadCard';
@@ -15,6 +16,7 @@ import { ChunkControlsStats } from './components/ChunkControlsStats';
 import { RefinerProgress } from './components/RefinerProgress';
 import { RefinerSettingsPanel } from './components/RefinerSettingsPanel';
 import { runSettingsLine } from './utils/runSettings';
+import { languageShareLines } from './utils/languageShare';
 
 function AppContent() {
   const { t, locale, setLocale } = useI18n();
@@ -57,6 +59,11 @@ function AppContent() {
   const debouncedRevision = useDebouncedValue(jobSnapshotRevision, 3000);
   const jobFiles = useJobProjectFiles(jobId, debouncedRevision);
   const jobChunkGroups = useJobChunkArtifactGroups(jobId, debouncedRevision);
+  const languageShare = useJobLanguageShare(jobId, debouncedRevision);
+  const languageLines = useMemo(
+    () => languageShareLines(languageShare, t),
+    [languageShare, t]
+  );
 
   // Combined transcripts the refiner can consume: every transcript*.md that is NOT a _fixed
   // output. Newest first — timestamped names (transcript_YYYYMMDD_HHmmss_fff.md) sort by time.
@@ -175,6 +182,19 @@ function AppContent() {
               <p className="job-run-settings" data-testid="job-run-settings">
                 {runSettingsLine(job?.runSettings, t)}
               </p>
+            )}
+
+          {!showLessons &&
+            activeStep !== 'upload' &&
+            languageLines.length > 0 && (
+              <div
+                className="job-language-share"
+                data-testid="job-language-share"
+              >
+                {languageLines.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
             )}
 
           <div

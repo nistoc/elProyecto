@@ -12,6 +12,7 @@ import type {
 import type { ChunkArtifactGroup } from './utils/chunkArtifactGroups';
 import type { JobSettings } from './utils/jobSettings';
 import type { LessonsResponse } from './utils/lessons';
+import type { JobLanguageShareReport } from './utils/languageShare';
 import {
   computeReconnectDelay,
   isTerminalSnapshot,
@@ -68,6 +69,18 @@ export async function fetchJobFiles(
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`HTTP ${r.status}: /api/jobs/.../files`);
   return r.json() as Promise<JobFilesApiResponse>;
+}
+
+/** Share of Spanish and Russian speech of a job (per track for a dialogue); null when the job folder is gone. */
+export async function fetchJobLanguageShare(
+  id: string
+): Promise<JobLanguageShareReport | null> {
+  const r = await fetch(
+    `${API_BASE}/api/jobs/${encodeURIComponent(id)}/language-share`
+  );
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`HTTP ${r.status}: /api/jobs/.../language-share`);
+  return r.json() as Promise<JobLanguageShareReport>;
 }
 
 /** Chunk/split groups from Agent04 via API proxy (VM merged client-side). */

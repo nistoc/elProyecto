@@ -580,6 +580,20 @@ public class JobsController : ControllerBase
         return Ok(job);
     }
 
+    /// <summary>
+    /// How much of the job's speech is Spanish and how much Russian, counted from the chunk answers in the job
+    /// folder (<see cref="JobLanguageShareReader"/>). A dialogue job gets one entry per track and their sum.
+    /// Read on request, not with every snapshot: it opens every chunk answer of the job.
+    /// </summary>
+    [HttpGet("{id}/language-share")]
+    public ActionResult<JobLanguageShareReport> GetLanguageShare(string id)
+    {
+        var jobDir = _workspace.GetJobDirectoryPath(id);
+        if (!Directory.Exists(jobDir))
+            return NotFound();
+        return Ok(JobLanguageShareReader.ReadReport(jobDir, _workspace.GetJobDirectoryPath));
+    }
+
     [HttpDelete("{id}")]
     public async Task<ActionResult> Delete(string id, CancellationToken ct = default)
     {
