@@ -149,6 +149,8 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         _logger.LogInformation(
             "SubmitJob accepted: Agent04JobId={Agent04JobId}, config={ConfigPath}, input={InputPath}, artifactRoot={ArtifactRoot}",
             jobId, configPathFull, inputPathFull, artifactRoot);
+        // What this job starts with (shared config + its own settings), for whoever reads the job folder later.
+        RunSettingsFile.TrySave(artifactRoot, config, _logger);
         _ = RunJobAsync(jobId, config, inputPathFull, root, context.CancellationToken);
         return new SubmitJobResponse { JobId = jobId };
     }

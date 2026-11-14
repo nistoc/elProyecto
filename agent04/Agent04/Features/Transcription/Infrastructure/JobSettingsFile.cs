@@ -66,6 +66,16 @@ public static class JobSettingsFile
         return shared.WithOverrides(applied);
     }
 
+    /// <summary>Keys the job's own settings file sets; empty when there is no file.</summary>
+    /// <exception cref="InvalidDataException">The file exists and is not a valid settings file.</exception>
+    public static IReadOnlyList<string> ReadKeys(string artifactRoot)
+    {
+        var path = ResolvePath(artifactRoot);
+        if (!File.Exists(path))
+            return Array.Empty<string>();
+        return ParseOverrides(File.ReadAllText(path, Encoding.UTF8)).Keys.ToList();
+    }
+
     /// <summary>
     /// Reads the <c>transcription</c> object of a settings file into config keys.
     /// </summary>
