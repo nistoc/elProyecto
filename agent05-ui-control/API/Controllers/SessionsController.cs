@@ -21,6 +21,24 @@ public class SessionsController : ControllerBase
 
     public const string EstimateKey = "Recordings:EstimateUsdPerMinute";
 
+    /// <summary>
+    /// The model a participant track goes to when the run names none. A participant track is one voice, so
+    /// it needs no speakers; this model writes each language in its own script (the transcriber asks it for
+    /// a chunk whole and in pieces). The mixed track and a plain upload keep the transcriber's shared model.
+    /// </summary>
+    public const string DefaultParticipantTrackModel = "gpt-transcribe";
+
+    /// <summary>Config key of that model; an empty value leaves participant tracks on the shared model.</summary>
+    public const string ParticipantTrackModelKey = "Recordings:ParticipantTrackModel";
+
+    /// <summary>
+    /// Upper bound of the price of that model per minute of a track: the audio is asked twice at $0.0045 a
+    /// minute, and a few pieces once more. The runs of 2026-11-14 cost about $0.006 a minute.
+    /// </summary>
+    public const double DefaultParticipantTrackEstimateUsdPerMinute = 0.01;
+
+    public const string ParticipantTrackEstimateKey = "Recordings:ParticipantTrackEstimateUsdPerMinute";
+
     private readonly IRecordingsCatalog _catalog;
     private readonly IJobStore _store;
     private readonly IJobWorkspace _workspace;
@@ -52,8 +70,16 @@ public class SessionsController : ControllerBase
     public async Task<ActionResult<SessionsResponse>> List(CancellationToken ct = default)
     {
         var estimate = EstimateUsdPerMinute();
+        var participantModel = ParticipantTrackModel();
+        var participantEstimate = Price(ParticipantTrackEstimateKey, DefaultParticipantTrackEstimateUsdPerMinute);
         if (!_catalog.Enabled)
-            return Ok(new SessionsResponse(false, null, estimate, Array.Empty<RecordingSession>()));
+        {
+            return Ok(new SessionsResponse(false, null, estimate, Array.Empty<RecordingSession>())
+            {
+                ParticipantTrackModel = participantModel,
+                ParticipantTrackEstimateUsdPerMinute = participantEstimate,
+            });
+        }
 
         var sessions = _catalog.Scan();
         var jobs = await _store.ListAsync(new JobListFilter(Limit: int.MaxValue), ct);
@@ -61,13 +87,18 @@ public class SessionsController : ControllerBase
         var withRuns = sessions
             .Select(s => s with { Periods = s.Periods.Select(index.Attach).ToList() })
             .ToList();
-        return Ok(new SessionsResponse(true, _catalog.RootPath, estimate, withRuns));
+        return Ok(new SessionsResponse(true, _catalog.RootPath, estimate, withRuns)
+        {
+            ParticipantTrackModel = participantModel,
+            ParticipantTrackEstimateUsdPerMinute = participantEstimate,
+        });
     }
 
     /// <summary>
     /// Starts a job for one track: the file is copied into a new job folder and goes through the usual
     /// pipeline (the transcription is paid). Body:
     /// <c>{ "track": string, "settings"?: { "silence_keep_sec"?, "silence_compress_enabled"?, "model"? } }</c>.
+    /// A participant track whose settings name no model gets <see cref="ParticipantTrackModelKey"/>.
     /// </summary>
     [HttpPost("api/sessions/runs")]
     public async Task<ActionResult<CreateJobResponse>> StartRun([FromBody] StartTrackRunBody? body, CancellationToken ct = default)
@@ -88,6 +119,15 @@ public class SessionsController : ControllerBase
         var found = _catalog.FindTrack(trackId);
         if (found == null)
             return NotFound(ProblemOf(404, $"Track '{trackId}' is not in the recordings folder."));
+
+        // One voice needs no speakers: a participant track goes to the model that writes each language in
+        // its own script, unless the run names a model itself.
+        if (found.Track.Kind == RecordingsScanner.KindParticipant && ParticipantTrackModel() is { } trackModel)
+        {
+            var withModel = JobSettingsDocument.WithModelWhenNoneIsNamed(settingsText, trackModel);
+            if (!JobSettingsDocument.TryBuild(withModel, out settingsFileJson, out settingsError))
+                return BadRequest(ProblemOf(400, settingsError ?? "settings are not valid."));
+        }
 
         var tags = new List<string> { "lesson:" + found.Session.Date, "track:" + found.Track.Kind };
         var jobId = await _store.CreateAsync(new JobCreateInput(found.Track.FileName, tags), ct);
@@ -136,12 +176,32 @@ public class SessionsController : ControllerBase
         return Accepted(new CreateJobResponse(jobId));
     }
 
-    private double EstimateUsdPerMinute()
+    private double EstimateUsdPerMinute() => Price(EstimateKey, DefaultEstimateUsdPerMinute);
+
+    private double Price(string key, double fallback)
     {
-        var raw = _configuration[EstimateKey];
+        var raw = _configuration[key];
         return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && value > 0
             ? value
-            : DefaultEstimateUsdPerMinute;
+            : fallback;
+    }
+
+    /// <summary>
+    /// The model of a participant track that names none: the default when the key is absent, null when the
+    /// key is empty (participant tracks then stay on the shared model) or is not a model id.
+    /// </summary>
+    private string? ParticipantTrackModel()
+    {
+        var raw = _configuration[ParticipantTrackModelKey];
+        if (raw == null)
+            return DefaultParticipantTrackModel;
+        var model = raw.Trim();
+        if (model.Length == 0)
+            return null;
+        if (JobSettingsDocument.IsModelId(model))
+            return model;
+        _logger.LogWarning("{Key} is not a model id; participant tracks stay on the shared model", ParticipantTrackModelKey);
+        return null;
     }
 
     private static ProblemDetails ProblemOf(int status, string detail) => new()
@@ -158,7 +218,14 @@ public sealed record SessionsResponse(
     bool Enabled,
     string? RootPath,
     double EstimateUsdPerMinute,
-    IReadOnlyList<RecordingSession> Sessions);
+    IReadOnlyList<RecordingSession> Sessions)
+{
+    /// <summary>The model a participant track goes to when the run names none; null when it is the shared one.</summary>
+    public string? ParticipantTrackModel { get; init; }
+
+    /// <summary>Upper bound of the price of a minute of a track with <see cref="ParticipantTrackModel"/>.</summary>
+    public double ParticipantTrackEstimateUsdPerMinute { get; init; }
+}
 
 public sealed class StartTrackRunBody
 {

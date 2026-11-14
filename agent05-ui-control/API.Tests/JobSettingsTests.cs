@@ -69,6 +69,27 @@ public sealed class JobSettingsTests : IDisposable
         Assert.Contains(expectedReason, error);
     }
 
+    [Theory]
+    [InlineData(null, """{"model":"gpt-transcribe"}""")]
+    [InlineData("  ", """{"model":"gpt-transcribe"}""")]
+    [InlineData("""{"silence_keep_sec":1}""", """{"silence_keep_sec":1,"model":"gpt-transcribe"}""")]
+    [InlineData("""{"model":"whisper-1"}""", """{"model":"whisper-1"}""")]
+    public void A_model_is_added_only_to_settings_that_name_none(string? formValue, string expected)
+    {
+        Assert.Equal(expected, JobSettingsDocument.WithModelWhenNoneIsNamed(formValue, "gpt-transcribe"));
+    }
+
+    [Theory]
+    [InlineData("gpt-transcribe", true)]
+    [InlineData("gpt-4o-transcribe-diarize", true)]
+    [InlineData("", false)]
+    [InlineData("a b", false)]
+    [InlineData(null, false)]
+    public void A_model_id_is_letters_digits_and_a_few_marks(string? model, bool expected)
+    {
+        Assert.Equal(expected, JobSettingsDocument.IsModelId(model));
+    }
+
     private (JobsController Controller, InMemoryJobStore Store, JobWorkspace Workspace, RecordingQueue Queue) CreateController()
     {
         var config = new ConfigurationBuilder()

@@ -15,8 +15,10 @@ import {
   formatUsd,
   periodDurationSec,
   periodTimeLabel,
+  runUsdPerMinute,
   sessionCounts,
   sessionDurationSec,
+  trackDefaultModel,
   type LessonPeriod,
   type LessonSession,
   type LessonTrack,
@@ -157,11 +159,16 @@ export function LessonsPanel({
     }
   };
 
-  const rate = data?.estimateUsdPerMinute ?? 0;
-
   const renderTrack = (track: LessonTrack) => {
-    const estimate = estimateRunUsd(track.durationSec, rate);
     const confirming = confirmTrack === track.id;
+    // The price follows the model the run will go to: the one chosen in the open form, else the track's own.
+    const defaultModel = trackDefaultModel(track, data);
+    const rate = runUsdPerMinute(
+      track,
+      confirming ? settingsForm.model : '',
+      data
+    );
+    const estimate = estimateRunUsd(track.durationSec, rate);
     return (
       <li key={track.id} className="lessons__track" data-testid="lesson-track">
         <div className="lessons__track-row">
@@ -222,10 +229,19 @@ export function LessonsPanel({
                 rate: String(rate),
               })}
             </p>
+            {defaultModel && !settingsForm.model.trim() && (
+              <p
+                className="lessons__confirm-text"
+                data-testid="lesson-track-model-note"
+              >
+                {fill(t('lessonsRunTrackModelNote'), { model: defaultModel })}
+              </p>
+            )}
             <JobSettingsFields
               form={settingsForm}
               onChange={(p) => setSettingsForm((prev) => ({ ...prev, ...p }))}
               t={t}
+              defaultModel={defaultModel}
             />
             {actionError && <p className="lessons__error">{actionError}</p>}
             <div className="lessons__confirm-actions">

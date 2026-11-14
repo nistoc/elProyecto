@@ -21,6 +21,23 @@ public static class JobSettingsDocument
 
     private static readonly Regex ModelId = new(@"^[A-Za-z0-9][A-Za-z0-9._:\-]{0,79}$", RegexOptions.CultureInvariant);
 
+    /// <summary>True for a text that may stand as <c>settings.model</c>.</summary>
+    public static bool IsModelId(string? model) => model != null && ModelId.IsMatch(model);
+
+    /// <summary>
+    /// The same settings with <paramref name="model"/> added when they name no model of their own.
+    /// </summary>
+    /// <param name="formValue">Settings that <see cref="TryBuild"/> accepts; empty means no settings.</param>
+    public static string WithModelWhenNoneIsNamed(string? formValue, string model)
+    {
+        var settings = string.IsNullOrWhiteSpace(formValue)
+            ? new JsonObject()
+            : JsonNode.Parse(formValue) as JsonObject ?? new JsonObject();
+        if (!settings.ContainsKey("model"))
+            settings["model"] = model;
+        return settings.ToJsonString();
+    }
+
     /// <summary>
     /// Turns the <c>settings</c> form field (a JSON object of transcription keys) into the text of the file.
     /// </summary>

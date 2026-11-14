@@ -9,12 +9,15 @@ import {
   formatUsd,
   periodDurationSec,
   periodTimeLabel,
+  runUsdPerMinute,
   sessionCounts,
   sessionDurationSec,
+  trackDefaultModel,
   type LessonPeriod,
   type LessonRun,
   type LessonSession,
   type LessonTrack,
+  type RunPricing,
 } from './lessons';
 
 // All names here are made up.
@@ -109,6 +112,59 @@ describe('estimateRunUsd', () => {
     expect(formatUsd(null)).toBe('—');
     expect(formatUsd(0.69)).toBe('$0.69');
     expect(formatUsd(1.2)).toBe('$1.20');
+  });
+});
+
+describe('model and price of a run', () => {
+  const pricing: RunPricing = {
+    estimateUsdPerMinute: 0.017,
+    participantTrackModel: 'gpt-transcribe',
+    participantTrackEstimateUsdPerMinute: 0.01,
+  };
+  const participant = track('participant', 'Maria Lopez', 600);
+  const mixed = track('mixed', null, 600);
+
+  it('gives a participant track the model of participant tracks, the mixed track none', () => {
+    expect(trackDefaultModel(participant, pricing)).toBe('gpt-transcribe');
+    expect(trackDefaultModel(mixed, pricing)).toBeNull();
+    expect(
+      trackDefaultModel(participant, {
+        ...pricing,
+        participantTrackModel: null,
+      })
+    ).toBeNull();
+    expect(trackDefaultModel(participant, null)).toBeNull();
+  });
+
+  it('counts by the price of the model the run will go to', () => {
+    // No model chosen: the track decides.
+    expect(runUsdPerMinute(participant, '', pricing)).toBe(0.01);
+    expect(runUsdPerMinute(mixed, '', pricing)).toBe(0.017);
+    // The operator chose a model: it decides for any track.
+    expect(
+      runUsdPerMinute(participant, 'gpt-4o-transcribe-diarize', pricing)
+    ).toBe(0.017);
+    expect(runUsdPerMinute(mixed, 'gpt-transcribe', pricing)).toBe(0.01);
+    expect(runUsdPerMinute(participant, 'whisper-1', pricing)).toBe(0.017);
+  });
+
+  it('falls back to the common price when participant tracks have no model or price of their own', () => {
+    expect(
+      runUsdPerMinute(participant, '', {
+        ...pricing,
+        participantTrackModel: null,
+      })
+    ).toBe(0.017);
+    expect(
+      runUsdPerMinute(participant, '', {
+        ...pricing,
+        participantTrackEstimateUsdPerMinute: null,
+      })
+    ).toBe(0.017);
+    expect(
+      runUsdPerMinute(participant, '', { estimateUsdPerMinute: 0.02 })
+    ).toBe(0.02);
+    expect(runUsdPerMinute(participant, '', null)).toBe(0);
   });
 });
 

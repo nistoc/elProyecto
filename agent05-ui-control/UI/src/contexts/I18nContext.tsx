@@ -29,6 +29,7 @@ const messages: Record<Locale, Record<string, string>> = {
     jobSettingsHint:
       'They apply to this recording only; the shared config stays as it is. An empty field means "as in the shared config".',
     jobSettingsAsShared: 'as in the shared config',
+    jobSettingsModelOfTrack: 'as set for participant tracks: {model}',
     jobSettingsCompress: 'Silence compression',
     jobSettingsCompressOn: 'on',
     jobSettingsCompressOff: 'off',
@@ -242,6 +243,8 @@ const messages: Record<Locale, Record<string, string>> = {
     lessonsTranscribe: 'Transcribe',
     lessonsRunConfirmText:
       'The file is copied into a new job and sent to the model. This is paid: up to {usd} for {duration} of audio (upper bound at {rate} $/min; silence compression makes it cheaper).',
+    lessonsRunTrackModelNote:
+      'The track of one participant goes to {model} unless another model is chosen in the settings below.',
     lessonsRunStart: 'Start the paid run',
     lessonsRunFailed: 'The run was not started',
     lessonsCancel: 'Cancel',
@@ -294,6 +297,7 @@ const messages: Record<Locale, Record<string, string>> = {
     jobSettingsHint:
       'Действуют только на эту запись; общий config не меняется. Пустое поле — «как в общем config».',
     jobSettingsAsShared: 'как в общем config',
+    jobSettingsModelOfTrack: 'как задано для дорожек участников: {model}',
     jobSettingsCompress: 'Сжатие тишины',
     jobSettingsCompressOn: 'включить',
     jobSettingsCompressOff: 'выключить',
@@ -508,6 +512,8 @@ const messages: Record<Locale, Record<string, string>> = {
     lessonsTranscribe: 'Расшифровать',
     lessonsRunConfirmText:
       'Файл копируется в новое задание и уходит в модель. Это платно: до {usd} за {duration} аудио (верхняя оценка по {rate} $/мин; со сжатием тишины выходит дешевле).',
+    lessonsRunTrackModelNote:
+      'Дорожка одного участника уходит в {model}, если в настройках ниже не выбрана другая модель.',
     lessonsRunStart: 'Запустить платный прогон',
     lessonsRunFailed: 'Запуск не начат',
     lessonsCancel: 'Отмена',
@@ -560,6 +566,8 @@ const messages: Record<Locale, Record<string, string>> = {
     jobSettingsHint:
       'Valen solo para esta grabación; el config común no cambia. Un campo vacío significa «como en el config común».',
     jobSettingsAsShared: 'como en el config común',
+    jobSettingsModelOfTrack:
+      'como está puesto para las pistas de participantes: {model}',
     jobSettingsCompress: 'Compresión de silencios',
     jobSettingsCompressOn: 'activar',
     jobSettingsCompressOff: 'desactivar',
@@ -775,6 +783,8 @@ const messages: Record<Locale, Record<string, string>> = {
     lessonsTranscribe: 'Transcribir',
     lessonsRunConfirmText:
       'El archivo se copia en un trabajo nuevo y se envía al modelo. Es de pago: hasta {usd} por {duration} de audio (cota superior a {rate} $/min; la compresión de silencios lo abarata).',
+    lessonsRunTrackModelNote:
+      'La pista de un participante va a {model}, salvo que en los ajustes de abajo se elija otro modelo.',
     lessonsRunStart: 'Iniciar la ejecución de pago',
     lessonsRunFailed: 'La ejecución no se inició',
     lessonsCancel: 'Cancelar',

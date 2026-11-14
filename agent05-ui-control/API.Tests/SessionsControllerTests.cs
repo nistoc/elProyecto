@@ -62,13 +62,19 @@ public sealed class SessionsControllerTests : IDisposable
 
     private (SessionsController Controller, InMemoryJobStore Memory, QueueSpy Queue) Create(
         bool recordingsConfigured = true,
-        string? estimate = null)
+        string? estimate = null,
+        string? participantModel = null,
+        string? participantEstimate = null)
     {
         var settings = new Dictionary<string, string?> { ["Jobs:WorkspacePath"] = _workspace };
         if (recordingsConfigured)
             settings[RecordingsCatalog.RootPathKey] = _recordings;
         if (estimate != null)
             settings[SessionsController.EstimateKey] = estimate;
+        if (participantModel != null)
+            settings[SessionsController.ParticipantTrackModelKey] = participantModel;
+        if (participantEstimate != null)
+            settings[SessionsController.ParticipantTrackEstimateKey] = participantEstimate;
         var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var env = new FakeHostEnvironment();
         var workspace = new JobWorkspace(config, env, NullLogger<JobWorkspace>.Instance);
@@ -109,6 +115,32 @@ public sealed class SessionsControllerTests : IDisposable
         Assert.Null(response.RootPath);
         Assert.Empty(response.Sessions);
         Assert.Equal(SessionsController.DefaultEstimateUsdPerMinute, response.EstimateUsdPerMinute);
+    }
+
+    [Fact]
+    public async Task List_tells_the_model_participant_tracks_go_to_and_its_price()
+    {
+        var (byDefault, _, _) = Create();
+        var (configured, _, _) = Create(participantModel: " whisper-1 ", participantEstimate: "0.02");
+
+        var defaults = Listed(await byDefault.List());
+        var own = Listed(await configured.List());
+
+        Assert.Equal("gpt-transcribe", defaults.ParticipantTrackModel);
+        Assert.Equal(SessionsController.DefaultParticipantTrackEstimateUsdPerMinute, defaults.ParticipantTrackEstimateUsdPerMinute);
+        Assert.Equal("whisper-1", own.ParticipantTrackModel);
+        Assert.Equal(0.02, own.ParticipantTrackEstimateUsdPerMinute);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("not a model")]
+    public async Task List_names_no_model_of_participant_tracks_when_the_key_is_empty_or_not_a_model(string configured)
+    {
+        var (controller, _, _) = Create(participantModel: configured);
+
+        Assert.Null(Listed(await controller.List()).ParticipantTrackModel);
     }
 
     [Fact]
@@ -262,7 +294,11 @@ public sealed class SessionsControllerTests : IDisposable
         Assert.Contains("\"schema_version\": 1", File.ReadAllText(Path.Combine(jobDir, TrackSourceFile.FileName)));
 
         using var settings = JsonDocument.Parse(File.ReadAllText(Path.Combine(jobDir, JobSettingsDocument.FileName)));
-        Assert.Equal(1.0, settings.RootElement.GetProperty("transcription").GetProperty("silence_keep_sec").GetDouble());
+        var transcription = settings.RootElement.GetProperty("transcription");
+        Assert.Equal(1.0, transcription.GetProperty("silence_keep_sec").GetDouble());
+        Assert.True(transcription.GetProperty("silence_compress_enabled").GetBoolean());
+        // The run named no model: a participant track gets the one of participant tracks.
+        Assert.Equal("gpt-transcribe", transcription.GetProperty("model").GetString());
 
         var snapshot = await memory.GetAsync(jobId);
         Assert.Equal("audioОльгаИва21844996676.m4a", snapshot!.OriginalFilename);
@@ -279,7 +315,7 @@ public sealed class SessionsControllerTests : IDisposable
     }
 
     [Fact]
-    public async Task StartRun_without_settings_writes_no_settings_file()
+    public async Task StartRun_of_the_mixed_track_without_settings_writes_no_settings_file()
     {
         var (controller, _, queue) = Create();
 
@@ -289,6 +325,74 @@ public sealed class SessionsControllerTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_workspace, jobId, JobSettingsDocument.FileName)));
         Assert.Equal("mixed audio bytes", File.ReadAllText(Path.Combine(_workspace, jobId, "audio1844996676.m4a")));
         Assert.Single(queue.Jobs);
+    }
+
+    private async Task<JsonElement?> SettingsOfStartedRunAsync(SessionsController controller, string track, string? settingsJson = null)
+    {
+        var result = await controller.StartRun(Body(track, settingsJson));
+        var jobId = Assert.IsType<CreateJobResponse>(Assert.IsType<AcceptedResult>(result.Result).Value).JobId;
+        var path = Path.Combine(_workspace, jobId, JobSettingsDocument.FileName);
+        if (!File.Exists(path))
+            return null;
+        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+        return doc.RootElement.GetProperty("transcription").Clone();
+    }
+
+    [Fact]
+    public async Task A_participant_track_started_without_a_model_goes_to_the_model_of_participant_tracks()
+    {
+        var (controller, _, _) = Create();
+
+        var transcription = await SettingsOfStartedRunAsync(controller, TeacherTrack);
+
+        Assert.NotNull(transcription);
+        Assert.Equal("gpt-transcribe", transcription.Value.GetProperty("model").GetString());
+        Assert.Single(transcription.Value.EnumerateObject());
+    }
+
+    [Fact]
+    public async Task A_participant_track_keeps_the_model_its_run_names()
+    {
+        var (controller, _, _) = Create();
+
+        var transcription = await SettingsOfStartedRunAsync(
+            controller, TeacherTrack, """{"model":"gpt-4o-transcribe-diarize","silence_keep_sec":0.5}""");
+
+        Assert.NotNull(transcription);
+        Assert.Equal("gpt-4o-transcribe-diarize", transcription.Value.GetProperty("model").GetString());
+        Assert.Equal(0.5, transcription.Value.GetProperty("silence_keep_sec").GetDouble());
+    }
+
+    [Fact]
+    public async Task The_mixed_track_keeps_the_shared_model_whatever_its_settings()
+    {
+        var (controller, _, _) = Create();
+
+        var transcription = await SettingsOfStartedRunAsync(controller, MixedTrack, """{"silence_keep_sec":0.5}""");
+
+        Assert.NotNull(transcription);
+        Assert.False(transcription.Value.TryGetProperty("model", out _));
+    }
+
+    [Fact]
+    public async Task The_model_of_participant_tracks_is_the_one_the_config_names()
+    {
+        var (controller, _, _) = Create(participantModel: "whisper-1");
+
+        var transcription = await SettingsOfStartedRunAsync(controller, StudentTrack);
+
+        Assert.NotNull(transcription);
+        Assert.Equal("whisper-1", transcription.Value.GetProperty("model").GetString());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not a model")]
+    public async Task With_no_model_of_participant_tracks_a_participant_track_stays_on_the_shared_model(string configured)
+    {
+        var (controller, _, _) = Create(participantModel: configured);
+
+        Assert.Null(await SettingsOfStartedRunAsync(controller, StudentTrack));
     }
 
     [Theory]

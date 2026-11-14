@@ -10,6 +10,11 @@ interface JobSettingsFieldsProps {
   form: JobSettingsForm;
   onChange: (patch: Partial<JobSettingsForm>) => void;
   t: (key: string) => string;
+  /**
+   * The model the server gives this run when none is chosen here (a participant track of a lesson);
+   * the empty option of the model then names it instead of the shared config.
+   */
+  defaultModel?: string | null;
 }
 
 /**
@@ -20,6 +25,7 @@ export function JobSettingsFields({
   form,
   onChange,
   t,
+  defaultModel,
 }: JobSettingsFieldsProps) {
   const built = buildJobSettings(form);
 
@@ -68,7 +74,11 @@ export function JobSettingsFields({
           onChange={(e) => onChange({ model: e.target.value })}
           data-testid="job-settings-model"
         >
-          <option value="">{t('jobSettingsAsShared')}</option>
+          <option value="">
+            {defaultModel
+              ? t('jobSettingsModelOfTrack').replace('{model}', defaultModel)
+              : t('jobSettingsAsShared')}
+          </option>
           {JOB_MODEL_OPTIONS.map((m) => (
             <option key={m} value={m}>
               {m}

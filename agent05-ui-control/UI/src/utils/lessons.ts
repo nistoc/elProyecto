@@ -65,7 +65,50 @@ export interface LessonsResponse {
   enabled: boolean;
   rootPath?: string | null;
   estimateUsdPerMinute: number;
+  /** The model a participant track goes to when its run names none; null when it is the shared one. */
+  participantTrackModel?: string | null;
+  /** Upper bound of the price of a minute of a track with that model. */
+  participantTrackEstimateUsdPerMinute?: number | null;
   sessions: LessonSession[];
+}
+
+/** What the lessons list tells about models and prices; the part of the response a run estimate needs. */
+export type RunPricing = Pick<
+  LessonsResponse,
+  | 'estimateUsdPerMinute'
+  | 'participantTrackModel'
+  | 'participantTrackEstimateUsdPerMinute'
+>;
+
+/**
+ * The model the server gives a run of this track when the operator names none:
+ * a participant track has one of its own, the mixed track stays on the shared config (null).
+ */
+export function trackDefaultModel(
+  track: Pick<LessonTrack, 'kind'>,
+  pricing: RunPricing | null | undefined
+): string | null {
+  if (track.kind !== 'participant') return null;
+  return pricing?.participantTrackModel?.trim() || null;
+}
+
+/**
+ * Price of a minute for a run of this track: the model the operator chose, else the one of the track.
+ * Only the model of participant tracks has a price of its own; every other model is counted by the
+ * common upper bound.
+ */
+export function runUsdPerMinute(
+  track: Pick<LessonTrack, 'kind'>,
+  chosenModel: string,
+  pricing: RunPricing | null | undefined
+): number {
+  if (!pricing) return 0;
+  const model = chosenModel.trim() || trackDefaultModel(track, pricing);
+  const own = pricing.participantTrackEstimateUsdPerMinute;
+  const participantModel = pricing.participantTrackModel?.trim();
+  if (model && participantModel && model === participantModel && own && own > 0)
+    return own;
+  return pricing.estimateUsdPerMinute;
 }
 
 /** 2404 → "40:04", 6372 → "1:46:12"; "—" when the length is unknown. */
