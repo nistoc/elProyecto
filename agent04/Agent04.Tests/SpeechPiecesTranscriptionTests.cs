@@ -854,6 +854,78 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
             () => CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config)));
     }
 
+    // ---- the account is refused ----
+
+    private const string NoCredits = """{ "error": { "message": "You have no credits remaining. Add credits to continue.", "type": "insufficient_quota", "param": null, "code": "insufficient_quota" } }""";
+
+    [Fact]
+    public async Task A_chunk_refused_for_want_of_credits_fails_at_once_and_asks_nothing_more()
+    {
+        var server = new ScriptedServer(_ => (HttpStatusCode.TooManyRequests, NoCredits));
+        var config = await LoadConfigAsync();
+
+        var refused = await Assert.ThrowsAsync<TranscriptionAccountRefusedException>(
+            () => CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config)));
+
+        Assert.Equal("insufficient_quota", refused.Reason);
+        Assert.Contains("no credits left", refused.Message);
+        // four files to ask, three at a time: none is tried again, and the fourth is never sent
+        Assert.InRange(server.Requests.Count, 1, 3);
+    }
+
+    [Fact]
+    public async Task A_piece_refused_for_want_of_credits_does_not_pass_for_a_piece_without_an_answer()
+    {
+        // the credits ran out in the middle of the chunk: the whole chunk and piece 0 were answered
+        var server = new ScriptedServer(seen => seen.Whole
+            ? (HttpStatusCode.OK, Answer("uno dos tres cuatro cinco seis", 60))
+            : seen.Piece == 0
+                ? (HttpStatusCode.OK, Answer("uno dos", 5))
+                : (HttpStatusCode.TooManyRequests, NoCredits));
+        var config = await LoadConfigAsync();
+
+        var refused = await Assert.ThrowsAsync<TranscriptionAccountRefusedException>(
+            () => CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config)));
+
+        Assert.Equal("insufficient_quota", refused.Reason);
+        Assert.InRange(server.Requests.Count(r => !r.Whole && r.Piece > 0), 1, 2);
+    }
+
+    [Fact]
+    public async Task A_job_refused_for_want_of_credits_stops_with_that_reason_and_leaves_no_finished_chunk()
+    {
+        var jobDir = Path.Combine(_root, "job1");
+        Directory.CreateDirectory(jobDir);
+        var input = Path.Combine(jobDir, "lesson.wav");
+        File.WriteAllText(input, "chunk:0");
+        var server = new ScriptedServer(_ => (HttpStatusCode.TooManyRequests, NoCredits));
+        var config = await LoadConfigAsync(new Dictionary<string, object?>
+        {
+            ["pre_split"] = false,
+            ["convert_to_wav"] = false,
+            ["silence_detect_enabled"] = false,
+            ["silence_compress_enabled"] = false,
+        });
+        var store = new InMemoryJobStatusStore();
+        var jobId = store.Create();
+
+        var refused = await Assert.ThrowsAsync<TranscriptionAccountRefusedException>(
+            () => CreatePipeline(ThreePieces(), server).ProcessFileAsync(config, input, _root, jobId, store));
+
+        // the job says why it stopped, in words for the person who reads it
+        var job = store.Get(jobId)!;
+        Assert.Equal(JobState.Failed, job.State);
+        Assert.Equal(refused.Message, job.ErrorMessage);
+        Assert.Contains("no credits left", job.ErrorMessage);
+        Assert.InRange(server.Requests.Count, 1, 3);
+        // nothing of the chunk is written as an answer, and its state on disk is failed with the reason
+        Assert.False(Directory.Exists(Path.Combine(jobDir, "chunks_json")) && Directory.EnumerateFiles(Path.Combine(jobDir, "chunks_json")).Any());
+        var state = await File.ReadAllTextAsync(Path.Combine(jobDir, "transcription_work_state.json"));
+        Assert.Contains("insufficient_quota", state);
+        Assert.Contains("\"Failed\"", state);
+        Assert.DoesNotContain("\"Completed\"", state);
+    }
+
     [Fact]
     public async Task A_chunk_of_one_piece_is_asked_once()
     {

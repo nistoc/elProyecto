@@ -94,8 +94,21 @@ public sealed class OpenAITranscriptionClient : ITranscriptionClient
                     catch (Exception ex)
                     {
                         lastErr = ex;
-                        var msg = ex.ToString();
                         var parsed = TryParseHttpStatusFromException(ex, out var httpCode, out var httpBrief);
+
+                        // The account is refused (no credits, the key): the same request in another form or
+                        // with another model meets the same refusal. One request is enough to know. A bare 403
+                        // may concern one model only, so there the other models are still tried.
+                        var refusal = TranscriptionWorkflowAbort.RefusalReason(ex);
+                        if (refusal != null && refusal != "403")
+                        {
+                            _logger?.LogError(
+                                "OpenAI refused the account ({Reason}); the request is not tried again. chunkIndex={ChunkIndex}, agentJobId={AgentJobId}",
+                                refusal, options.ChunkIndex, options.AgentJobId ?? "");
+                            throw new TranscriptionAccountRefusedException(refusal, parsed ? httpBrief : TruncateForLog(ex.Message, 120), ex);
+                        }
+
+                        var msg = ex.ToString();
                         var looksServer500 = (parsed && httpCode >= 500)
                             || msg.Contains("500", StringComparison.Ordinal)
                             || msg.Contains("InternalServerError", StringComparison.Ordinal);

@@ -106,6 +106,13 @@ public sealed class SpeechPiecesTranscription
     private readonly ITranscriptionClient _client;
     private readonly ILogger? _logger;
 
+    /// <summary>
+    /// Set by the first request of the chunk the server refused because of the account (no credits, the
+    /// key, access). The requests still waiting for their turn are then not sent: each would be refused the
+    /// same way and paid for with time only.
+    /// </summary>
+    private volatile TranscriptionAccountRefusedException? _accountRefused;
+
     /// <summary>Pause before the second and the third try of one request is 1 and 2 of these. Tests set it to zero.</summary>
     internal TimeSpan RetryDelayUnit { get; set; } = TimeSpan.FromSeconds(2);
 
@@ -280,8 +287,11 @@ public sealed class SpeechPiecesTranscription
                 }
             }
 
-            var whole = await wholeTask.ConfigureAwait(false);
-            var pieceAnswers = await Task.WhenAll(pieceTasks).ConfigureAwait(false);
+            // Every request ends before anything is read: when one is refused because of the account, the
+            // others must not go on over the gate and the piece files that are removed below.
+            var answers = await Task.WhenAll(pieceTasks.Prepend(wholeTask)).ConfigureAwait(false);
+            var whole = answers[0];
+            var pieceAnswers = answers[1..];
             ct.ThrowIfCancellationRequested();
 
             var usages = new List<IReadOnlyDictionary<string, object?>>();
@@ -566,6 +576,9 @@ public sealed class SpeechPiecesTranscription
     /// One request, tried up to three times. A piece is cut right before its request, inside the gate,
     /// so that no more files are cut than are asked. An answer that <see cref="LooksRunaway"/> counts as
     /// a failed try and goes to <paramref name="dropped"/>. Null when no try gave a usable answer.
+    /// A refusal that concerns the account (<see cref="TranscriptionWorkflowAbort.RefusalReason"/>) is
+    /// not tried again and is not turned into null: it is thrown, and the requests of the chunk that
+    /// have not been sent yet are thrown the same way without being sent.
     /// </summary>
     private async Task<TranscriptionClientResult?> AskAsync(
         string audioPath,
@@ -579,6 +592,10 @@ public sealed class SpeechPiecesTranscription
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            // The account was refused on another request of this chunk: this one is not sent.
+            if (_accountRefused is { } earlier)
+                throw new TranscriptionAccountRefusedException(earlier.Reason, earlier.Detail, earlier);
+
             cut?.Invoke();
             for (var attempt = 1; ; attempt++)
             {
@@ -594,6 +611,14 @@ public sealed class SpeechPiecesTranscription
                     _logger?.LogWarning(
                         "Speech pieces: the answer for {File} ({Seconds:F1}s of audio) is one word repeated, not speech; try {Attempt} of {Attempts}",
                         Path.GetFileName(audioPath), audioSec, attempt, Attempts);
+                }
+                catch (Exception ex) when (TranscriptionWorkflowAbort.RefusalReason(ex) is { } reason)
+                {
+                    // No credits, the key, access: a piece left without an answer for that reason must not
+                    // pass for silence, and no try of any request of the chunk can end otherwise.
+                    var refused = ex as TranscriptionAccountRefusedException ?? new TranscriptionAccountRefusedException(reason, ex.Message, ex);
+                    _accountRefused ??= refused;
+                    throw refused;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
                 {

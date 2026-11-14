@@ -290,6 +290,13 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
 
         using var globalCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
+        // The failure of a chunk that stopped the whole job (the account was refused). The loop below is
+        // cancelled through its own token then and ends as "a task was canceled", which says nothing to
+        // the person who reads the job's error: the cause is thrown in its place.
+        Exception? stoppedBy = null;
+
+        try
+        {
         await Parallel.ForEachAsync(
             workIndices,
             new ParallelOptions { MaxDegreeOfParallelism = parallel, CancellationToken = globalCts.Token },
@@ -382,6 +389,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 {
                     if (TranscriptionWorkflowAbort.ShouldAbortWholeJob(ex))
                     {
+                        Interlocked.CompareExchange(ref stoppedBy, ex, null);
                         globalCts.Cancel();
                         lock (stepLock)
                         {
@@ -407,6 +415,12 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                     MarkChunkResolved(idx, null, false);
                 }
             }).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (stoppedBy != null && !cancellationToken.IsCancellationRequested)
+        {
+            _logger?.LogError(stoppedBy, "The job is stopped, the other chunks are not asked: {Reason}", stoppedBy.Message);
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(stoppedBy).Throw();
+        }
 
         if (failedLocalCount > 0)
             throw new InvalidOperationException($"{failedLocalCount} chunk(s) failed (see per-chunk status / logs).");

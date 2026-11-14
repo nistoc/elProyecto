@@ -33,4 +33,31 @@ public sealed class TranscriptionWorkflowAbortTests
         var ex = new HttpRequestException("500: server error");
         Assert.False(TranscriptionWorkflowAbort.ShouldAbortWholeJob(ex));
     }
+
+    [Theory]
+    [InlineData("429: {\"error\":{\"type\":\"insufficient_quota\",\"code\":\"insufficient_quota\"}}", "insufficient_quota")]
+    [InlineData("401: {\"error\":{\"code\":\"invalid_api_key\"}}", "invalid_api_key")]
+    [InlineData("401: {\"error\":{\"message\":\"no\"}}", "401")]
+    [InlineData("403: forbidden", "403")]
+    [InlineData("429: {\"error\":{\"type\":\"rate_limit_exceeded\"}}", null)]
+    [InlineData("500: server error", null)]
+    public void The_reason_of_a_refusal_is_the_servers_word_for_it(string message, string? expected)
+    {
+        // as the client wraps it: the HTTP failure inside "failed for all models"
+        var ex = new InvalidOperationException("Transcription failed for all models", new HttpRequestException(message));
+
+        Assert.Equal(expected, TranscriptionWorkflowAbort.RefusalReason(ex));
+    }
+
+    [Fact]
+    public void An_account_refusal_stops_the_whole_job_and_says_what_to_do()
+    {
+        var refused = new TranscriptionAccountRefusedException("insufficient_quota", "You have no credits remaining.");
+
+        Assert.True(TranscriptionWorkflowAbort.ShouldAbortWholeJob(new InvalidOperationException("chunk failed", refused)));
+        Assert.Equal("insufficient_quota", TranscriptionWorkflowAbort.RefusalReason(refused));
+        Assert.Contains("no credits left", refused.Message);
+        Assert.Contains("insufficient_quota", refused.Message);
+        Assert.Contains("API key", new TranscriptionAccountRefusedException("invalid_api_key", "").Message);
+    }
 }
