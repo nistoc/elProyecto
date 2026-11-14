@@ -199,7 +199,7 @@ public sealed class SpeechPiecesTranscription
             return Answer(model, settings, durationSec, "", Array.Empty<object?>(), Array.Empty<object?>(),
                 new List<IReadOnlyDictionary<string, object?>>(), requests: 0, words: 0, matched: 0,
                 wholeTextMissing: false, wholeTextRejected: false, runawayAnswers: 0, withoutAnswer: 0, keptOwnText: 0,
-                spelledByNeighbour: 0, askedWithContext: 0, spelledByContext: 0);
+                spelledByNeighbour: 0, askedWithContext: 0, spelledByContext: 0, linesAskedWithContext: 0, linesTakenFromContext: 0);
         }
 
         var request = options.Clone();
@@ -328,68 +328,95 @@ public sealed class SpeechPiecesTranscription
             // surroundings say how it is spelled: the line next to it, or the piece asked again with audio around it.
             var secondLook = new string?[pieces.Count];
             var contextText = new string?[pieces.Count];
-            var askedWithContext = 0;
-            if (lone.Count > 0)
+            var wholeTextLine = new string?[pieces.Count];
+            var asPlaced = (string[])lines.Clone();
+            var askAgain = new List<int>();
+            foreach (var k in lone.Where(k => SpeechPieceSecondLook.HasCyrillic(asPlaced[k])))
             {
-                var first = (string[])lines.Clone();
-                var askAgain = new List<int>();
-                foreach (var k in lone.Where(k => SpeechPieceSecondLook.HasCyrillic(first[k])))
+                var asNeighbour = SpeechPieceSecondLook.SpelledAsNeighbour(asPlaced[k], LineNextTo(asPlaced, k, -1), LineNextTo(asPlaced, k, +1));
+                if (asNeighbour != null)
                 {
-                    var asNeighbour = SpeechPieceSecondLook.SpelledAsNeighbour(first[k], LineNextTo(first, k, -1), LineNextTo(first, k, +1));
-                    if (asNeighbour != null)
-                    {
-                        lines[k] = asNeighbour;
-                        secondLook[k] = "neighbour";
-                    }
-                    else if (settings.ContextSec > 0 && SpeechPieceSecondLook.SoundLetters(first[k]) >= MinLettersToAskAgain)
-                    {
-                        askAgain.Add(k);
-                    }
+                    lines[k] = asNeighbour;
+                    secondLook[k] = "neighbour";
+                }
+                else if (settings.ContextSec > 0 && SpeechPieceSecondLook.SoundLetters(asPlaced[k]) >= MinLettersToAskAgain)
+                {
+                    askAgain.Add(k);
+                }
+            }
+
+            // A line of the whole text that is Spanish where its piece alone is Russian, and does not sound
+            // like it, may be a translation of what was said. The piece asked with audio around it tells.
+            var doubted = new List<int>();
+            if (placed != null && settings.ContextSec > 0)
+            {
+                for (var k = 0; k < pieces.Count; k++)
+                {
+                    if (!lone.Contains(k) && SpeechPieceSecondLook.LooksTranslated(asPlaced[k], own[k]))
+                        doubted.Add(k);
+                }
+            }
+
+            var askedWithContext = askAgain.Count;
+            var linesAskedWithContext = doubted.Count;
+            var again = askAgain.Concat(doubted).OrderBy(k => k).ToList();
+            if (again.Count > 0)
+            {
+                if (askAgain.Count > 0)
+                    activity?.Invoke($"Speech pieces: asking {askAgain.Count} lone pieces again with the audio around them");
+                if (doubted.Count > 0)
+                    activity?.Invoke($"Speech pieces: asking {doubted.Count} pieces whose line may be a translation again with the audio around them");
+
+                var extension = Path.GetExtension(chunkPath);
+                var contextTasks = new List<Task<TranscriptionClientResult?>>();
+                foreach (var k in again)
+                {
+                    var from = Math.Max(0, pieces[k].StartSec - settings.ContextSec);
+                    var to = Math.Min(durationSec, pieces[k].EndSec + settings.ContextSec);
+                    var contextPath = Path.Combine(workDir, $"context_{k:D3}{extension}");
+                    contextTasks.Add(AskAsync(
+                        contextPath,
+                        to - from,
+                        request,
+                        gate,
+                        () => _audioUtils.ExtractAudioSegmentCopyOrReencode(ffmpeg, chunkPath, from, to - from, contextPath),
+                        dropped,
+                        ct));
                 }
 
-                if (askAgain.Count > 0)
+                var contextAnswers = await Task.WhenAll(contextTasks).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+
+                for (var n = 0; n < again.Count; n++)
                 {
-                    activity?.Invoke($"Speech pieces: asking {askAgain.Count} lone pieces again with the audio around them");
-                    var extension = Path.GetExtension(chunkPath);
-                    var windows = askAgain
-                        .Select(k => (From: Math.Max(0, pieces[k].StartSec - settings.ContextSec), To: Math.Min(durationSec, pieces[k].EndSec + settings.ContextSec)))
-                        .ToList();
-                    var contextTasks = new List<Task<TranscriptionClientResult?>>();
-                    for (var n = 0; n < askAgain.Count; n++)
+                    AddUsage(usages, contextAnswers[n]);
+                    if (contextAnswers[n] == null)
+                        continue;
+
+                    var k = again[n];
+                    contextText[k] = TextOf(contextAnswers[n]!);
+                    if (doubted.Contains(k))
                     {
-                        var (from, to) = windows[n];
-                        var contextPath = Path.Combine(workDir, $"context_{askAgain[n]:D3}{extension}");
-                        contextTasks.Add(AskAsync(
-                            contextPath,
-                            to - from,
-                            request,
-                            gate,
-                            () => _audioUtils.ExtractAudioSegmentCopyOrReencode(ffmpeg, chunkPath, from, to - from, contextPath),
-                            dropped,
-                            ct));
+                        // The line is replaced only when that answer has what the piece heard alone and
+                        // has nothing closer to the line.
+                        var said = SpeechPieceSecondLook.SaidAsHeardAround(own[k], asPlaced[k], contextText[k]);
+                        if (said != null)
+                        {
+                            wholeTextLine[k] = asPlaced[k];
+                            lines[k] = said;
+                            secondLook[k] = "line";
+                        }
+
+                        continue;
                     }
 
-                    var contextAnswers = await Task.WhenAll(contextTasks).ConfigureAwait(false);
-                    ct.ThrowIfCancellationRequested();
-                    askedWithContext = contextTasks.Count;
-
-                    for (var n = 0; n < askAgain.Count; n++)
+                    // The answer covers the lines around the piece too; the piece is the run of its
+                    // Spanish words that sounds like what the piece heard alone.
+                    var heardAround = SpeechPieceSecondLook.SpelledAsHeardAround(asPlaced[k], contextText[k]);
+                    if (heardAround != null)
                     {
-                        AddUsage(usages, contextAnswers[n]);
-                        if (contextAnswers[n] == null)
-                            continue;
-
-                        var k = askAgain[n];
-                        contextText[k] = TextOf(contextAnswers[n]!);
-
-                        // The answer covers the lines around the piece too; the piece is the run of its
-                        // Spanish words that sounds like what the piece heard alone.
-                        var heardAround = SpeechPieceSecondLook.SpelledAsHeardAround(first[k], contextText[k]);
-                        if (heardAround != null)
-                        {
-                            lines[k] = heardAround;
-                            secondLook[k] = "context";
-                        }
+                        lines[k] = heardAround;
+                        secondLook[k] = "context";
                     }
                 }
             }
@@ -410,6 +437,8 @@ public sealed class SpeechPiecesTranscription
                 };
                 if (contextText[k] != null)
                     item["context_text"] = contextText[k];
+                if (wholeTextLine[k] != null)
+                    item["whole_text_line"] = wholeTextLine[k];
                 if (secondLook[k] != null)
                     item["second_look"] = secondLook[k];
                 items.Add(item);
@@ -430,17 +459,18 @@ public sealed class SpeechPiecesTranscription
 
             var spelledByNeighbour = secondLook.Count(s => s == "neighbour");
             var spelledByContext = secondLook.Count(s => s == "context");
+            var linesTakenFromContext = secondLook.Count(s => s == "line");
             _logger?.LogInformation(
-                "Chunk {ChunkIndex}: speech pieces {Pieces}, lines {Lines}, words {Matched}/{Words} placed by a partner, pieces without answer {Missing}, whole text missing {WholeMissing}; lone pieces {Lone}, spelled as the neighbour line {ByNeighbour}, asked with audio around {Asked}, spelled by that answer {ByContext}",
+                "Chunk {ChunkIndex}: speech pieces {Pieces}, lines {Lines}, words {Matched}/{Words} placed by a partner, pieces without answer {Missing}, whole text missing {WholeMissing}; lone pieces {Lone}, spelled as the neighbour line {ByNeighbour}, asked with audio around {Asked}, spelled by that answer {ByContext}; lines that may be a translation {Doubted}, taken from the piece asked with audio around {Taken}",
                 options.ChunkIndex, pieces.Count, segments.Count, matched, words, withoutAnswer, wholeText == null,
-                lone.Count, spelledByNeighbour, askedWithContext, spelledByContext);
+                lone.Count, spelledByNeighbour, askedWithContext, spelledByContext, linesAskedWithContext, linesTakenFromContext);
 
             return Answer(model, settings, durationSec,
                 wholeText ?? string.Join(" ", lines.Where(l => l.Length > 0)),
                 segments.ToArray(), items.ToArray(), usages,
-                requests: 1 + pieceTasks.Count + askedWithContext + dropped.Count, words, matched,
+                requests: 1 + pieceTasks.Count + askedWithContext + linesAskedWithContext + dropped.Count, words, matched,
                 wholeTextMissing: wholeText == null, wholeTextRejected, runawayAnswers: dropped.Count, withoutAnswer, keptOwnText,
-                spelledByNeighbour, askedWithContext, spelledByContext);
+                spelledByNeighbour, askedWithContext, spelledByContext, linesAskedWithContext, linesTakenFromContext);
         }
         finally
         {
@@ -475,6 +505,8 @@ public sealed class SpeechPiecesTranscription
                         + (block.GetValueOrDefault("pieces_spelled_by_context") as int? ?? 0);
         if (respelled > 0)
             text += $"; {respelled} lone pieces spelled by what stands around them";
+        if (block.GetValueOrDefault("lines_taken_from_context") is int taken and > 0)
+            text += $"; {taken} lines the whole text gave in the other language taken from the piece asked again";
         return text;
     }
 
@@ -557,7 +589,9 @@ public sealed class SpeechPiecesTranscription
         int keptOwnText,
         int spelledByNeighbour,
         int askedWithContext,
-        int spelledByContext) => new()
+        int spelledByContext,
+        int linesAskedWithContext,
+        int linesTakenFromContext) => new()
     {
         ["model"] = model,
         ["languages"] = settings.Languages.Cast<object?>().ToArray(),
@@ -577,6 +611,8 @@ public sealed class SpeechPiecesTranscription
         ["pieces_spelled_by_neighbour"] = spelledByNeighbour,
         ["pieces_asked_with_context"] = askedWithContext,
         ["pieces_spelled_by_context"] = spelledByContext,
+        ["lines_asked_with_context"] = linesAskedWithContext,
+        ["lines_taken_from_context"] = linesTakenFromContext,
         ["items"] = items,
     };
 
@@ -598,7 +634,9 @@ public sealed class SpeechPiecesTranscription
         int keptOwnText,
         int spelledByNeighbour,
         int askedWithContext,
-        int spelledByContext)
+        int spelledByContext,
+        int linesAskedWithContext,
+        int linesTakenFromContext)
     {
         var raw = new Dictionary<string, object?>
         {
@@ -610,7 +648,7 @@ public sealed class SpeechPiecesTranscription
         if (usages.Count > 0)
             raw["usage"] = ServerErrorChunkSplit.SumUsage(usages);
         raw[RawBlockKey] = AnswerBlock(model, settings, items, requests, words, matched, wholeTextMissing, wholeTextRejected, runawayAnswers, withoutAnswer, keptOwnText,
-            spelledByNeighbour, askedWithContext, spelledByContext);
+            spelledByNeighbour, askedWithContext, spelledByContext, linesAskedWithContext, linesTakenFromContext);
 
         return new TranscriptionClientResult
         {

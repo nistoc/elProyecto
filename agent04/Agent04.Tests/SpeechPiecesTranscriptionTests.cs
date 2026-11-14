@@ -547,6 +547,111 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
         Assert.Equal(4, server.Requests.Count);
     }
 
+    // ---- a line the whole text gave in Spanish where the piece alone is Russian ----
+
+    [Theory]
+    [InlineData("Esto ya es pasado.", "Это уже прошлое.", true)]
+    [InlineData("Queremos salir.", "Керемос салир.", false)]           // the same speech in two spellings sounds alike
+    [InlineData("Mhm.", "Угу.", false)]                                // too little said to doubt a line by it
+    [InlineData("Это уже прошлое.", "Esto ya es pasado.", false)]      // only a Spanish line over a Russian piece is doubted
+    [InlineData("Bueno, давай дальше.", "Ну, давай дальше.", false)]   // one word differs: the line is as Russian as the piece
+    [InlineData("Esto ya es pasado.", null, false)]
+    [InlineData("", "Это уже прошлое.", false)]
+    public void A_Spanish_line_over_a_Russian_piece_that_sounds_unlike_it_may_be_a_translation(string? line, string? own, bool expected) =>
+        Assert.Equal(expected, SpeechPieceSecondLook.LooksTranslated(line, own));
+
+    [Theory]
+    [InlineData("Это уже прошлое.", "Esto ya es pasado.", "Sí, claro. Это уже прошлое. Vamos.", "Это уже прошлое.")]
+    [InlineData("Это уже прошлое.", "Esto ya es pasado.", "Sí, claro, это уже прошлое, vamos.", "Это уже прошлое.")]   // cut out of the middle of a sentence
+    [InlineData("Не помню, но знаю", "No recuerdo pero sé", "Bueno. Не помню, но знаю, да.", "Не помню, но знаю")]      // the marks inside the run stay
+    [InlineData("Это уже прошлое.", "Esto ya es pasado.", "Sí, claro. Esto ya es pasado. Vamos.", null)]               // the answer stands by the line
+    [InlineData("Это уже прошлое.", "Esto ya es pasado.", "Sí, claro. Vamos a ver.", null)]                            // the answer has neither
+    [InlineData("Омер, комо, коме.", "Comer, como, come.", "El verbo comer, como, come mucho.", null)]                 // sounds like both: nearer to the line
+    public void A_doubted_line_is_replaced_by_the_run_of_the_answer_with_audio_around_that_sounds_like_the_piece(
+        string own, string line, string around, string? expected) =>
+        Assert.Equal(expected, SpeechPieceSecondLook.SaidAsHeardAround(own, line, around));
+
+    [Fact]
+    public async Task A_line_that_may_be_a_translation_is_taken_from_the_piece_asked_again_with_the_audio_around_it()
+    {
+        // the whole text gives the Russian phrase of the middle piece in Spanish; alone and with its surroundings it is Russian
+        const string withSurroundings = "Buenos días. Это уже прошлое. Hasta";
+        var audio = ThreePieces();
+        var server = new ScriptedServer(seen => (HttpStatusCode.OK,
+            seen.Whole ? Answer("Buenos días. Esto ya es pasado. Hasta luego.", 60)
+            : seen.Context ? Answer(withSurroundings, 21)
+            : Answer(new[] { "Buenos dias", "Это уже прошлое", "Hasta luego" }[seen.Piece], 5)));
+        var config = await LoadConfigAsync();
+        var activity = new List<string>();
+
+        var answer = await CreateWay(audio, server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config), activity.Add);
+
+        Assert.Equal(new[] { "Buenos días.", "Это уже прошлое.", "Hasta luego." }, answer.Segments.Select(s => s.Text));
+
+        // asked as a lone piece is: the piece 9–20 s with five seconds on each side, Spanish named first
+        Assert.Equal(new[] { (1, 4.0, 21.0) }, audio.ContextCuts);
+        var again = Assert.Single(server.Requests, r => r.Context);
+        Assert.Equal(1, again.Piece);
+        Assert.Equal(new[] { "es", "ru" }, again.Values("languages[]"));
+        Assert.Contains("Speech pieces: asking 1 pieces whose line may be a translation again with the audio around them", activity);
+
+        var block = Block(answer.RawResponse);
+        Assert.Equal(5, block["requests"]);
+        Assert.Equal(1, block["lines_asked_with_context"]);
+        Assert.Equal(1, block["lines_taken_from_context"]);
+        Assert.Equal(0, block["pieces_asked_with_context"]);
+        Assert.Equal(0, block["pieces_kept_own_text"]);
+        var item = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(((object?[])block["items"]!)[1]);
+        Assert.Equal("Это уже прошлое", item["own_text"]);
+        Assert.Equal(withSurroundings, item["context_text"]);
+        Assert.Equal("Esto ya es pasado.", item["whole_text_line"]);
+        Assert.Equal("line", item["second_look"]);
+        Assert.EndsWith("; 1 lines the whole text gave in the other language taken from the piece asked again",
+            SpeechPiecesTranscription.Describe(answer.RawResponse));
+
+        var usage = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(answer.RawResponse["usage"]);
+        Assert.Equal(96.0, usage["seconds"]); // 60 whole + 3 × 5 pieces + 21 with the audio around
+    }
+
+    [Fact]
+    public async Task A_doubted_line_stays_when_the_piece_asked_again_with_the_audio_around_it_says_the_same()
+    {
+        // the piece alone misheard: with its surroundings it is the Spanish phrase of the whole text
+        var server = new ScriptedServer(seen => (HttpStatusCode.OK,
+            seen.Whole ? Answer("Buenos días. Esto ya es pasado. Hasta luego.", 60)
+            : seen.Context ? Answer("Buenos días. Esto ya es pasado. Hasta", 21)
+            : Answer(new[] { "Buenos dias", "Это уже прошлое", "Hasta luego" }[seen.Piece], 5)));
+        var config = await LoadConfigAsync();
+
+        var answer = await CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config));
+
+        Assert.Equal(new[] { "Buenos días.", "Esto ya es pasado.", "Hasta luego." }, answer.Segments.Select(s => s.Text));
+        var block = Block(answer.RawResponse);
+        Assert.Equal(5, block["requests"]);
+        Assert.Equal(1, block["lines_asked_with_context"]);
+        Assert.Equal(0, block["lines_taken_from_context"]);
+        var item = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(((object?[])block["items"]!)[1]);
+        Assert.Equal("Buenos días. Esto ya es pasado. Hasta", item["context_text"]);
+        Assert.False(item.ContainsKey("whole_text_line"));
+        Assert.False(item.ContainsKey("second_look"));
+        Assert.DoesNotContain("taken from the piece asked again", SpeechPiecesTranscription.Describe(answer.RawResponse));
+    }
+
+    [Fact]
+    public async Task With_no_seconds_of_audio_around_set_a_doubted_line_is_not_asked_again()
+    {
+        var server = new ScriptedServer(seen => (HttpStatusCode.OK, seen.Whole
+            ? Answer("Buenos días. Esto ya es pasado. Hasta luego.", 60)
+            : Answer(new[] { "Buenos dias", "Это уже прошлое", "Hasta luego" }[seen.Piece], 5)));
+        var config = await LoadConfigAsync(new Dictionary<string, object?> { [SpeechPiecesTranscription.ContextConfigKey] = 0 });
+
+        var answer = await CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config));
+
+        Assert.Equal(new[] { "Buenos días.", "Esto ya es pasado.", "Hasta luego." }, answer.Segments.Select(s => s.Text));
+        Assert.Equal(4, server.Requests.Count);
+        Assert.Equal(0, Block(answer.RawResponse)["lines_asked_with_context"]);
+    }
+
     [Fact]
     public async Task Without_an_answer_for_the_whole_chunk_the_pieces_give_their_own_text()
     {

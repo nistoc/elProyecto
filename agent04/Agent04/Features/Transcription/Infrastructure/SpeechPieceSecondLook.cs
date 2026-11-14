@@ -19,6 +19,15 @@ namespace Agent04.Features.Transcription.Infrastructure;
 /// found by sound, not by its place among the lines: that answer too drops repetitions, so its
 /// «queremos, queremos» may stand for three pieces.
 /// </para>
+/// <para>
+/// The same answer settles a doubt about a line that is not lone. The text of a whole chunk now and then
+/// gives Russian speech in Spanish — translated («Это уже прошлое» as «Esto ya es pasado»), or turned into Spanish-looking
+/// sounds. Such a line is seen by setting it against the piece asked alone: the line is Spanish, the piece
+/// is Russian, and they do not sound alike (<see cref="LooksTranslated"/>). Neither is believed as it is —
+/// a piece alone mishears too. The piece is asked again with audio around it, and the line is replaced
+/// only when that answer has a run that sounds like what the piece heard alone, and sounds more like it
+/// than anything in the answer sounds like the line (<see cref="SaidAsHeardAround"/>).
+/// </para>
 /// </summary>
 internal static class SpeechPieceSecondLook
 {
@@ -40,6 +49,18 @@ internal static class SpeechPieceSecondLook
 
     /// <summary>A piece glues words together («Номеакуэрдо»), so its run may hold this many words more than the piece.</summary>
     public const int ExtraRunWords = 2;
+
+    /// <summary>A line is in another language than its piece when its share of Latin words is this much higher.</summary>
+    public const double OtherLanguageShare = 0.4;
+
+    /// <summary>
+    /// The same speech in two spellings («керемос» and «queremos») is at least this alike by its letters;
+    /// a translation is not. On the lesson of 2026-11-13 translated lines stood at 0.07–0.47.
+    /// </summary>
+    public const double UnlikeSimilarity = 0.5;
+
+    /// <summary>A piece of fewer letters («Угу.» against «Mhm.») says too little to doubt a line by it.</summary>
+    public const int MinLettersToDoubt = 4;
 
     public static bool HasCyrillic(string? text) => (text ?? "").Any(IsCyrillic);
 
@@ -77,12 +98,88 @@ internal static class SpeechPieceSecondLook
     /// </summary>
     public static string? SpelledAsHeardAround(string? own, string? around)
     {
-        var words = Words(own);
-        var letters = Letters(words);
-        if (letters.Length == 0)
+        var (run, similarity) = ClosestRun(Words(own), Words(around), spanishOnly: true);
+        return run != null && similarity >= RunSimilarity ? Respell(own!, run) : null;
+    }
+
+    /// <summary>
+    /// True when the line the whole text gave to a piece is written in Spanish where the piece asked alone
+    /// is Russian, and the two do not sound alike: the line may be a translation of what was said. Two
+    /// spellings of the same speech are not that: «queremos salir» sounds like «керемос салир».
+    /// </summary>
+    public static bool LooksTranslated(string? line, string? own)
+    {
+        var lineWords = Words(line);
+        var ownWords = Words(own);
+        if (lineWords.Count == 0 || ownWords.Count == 0)
+            return false;
+
+        var ownLetters = Letters(ownWords);
+        if (ownLetters.Length < MinLettersToDoubt)
+            return false;
+        if (LatinShare(lineWords) - LatinShare(ownWords) < OtherLanguageShare)
+            return false;
+        return SpeechPieceWordAlignment.Similarity(Letters(lineWords), ownLetters) < UnlikeSimilarity;
+    }
+
+    /// <summary>
+    /// What a piece with a doubted line says, by the answer for the piece asked again with audio around
+    /// it: the run of words of that answer, in any script, that sounds most like what the piece heard
+    /// alone — when the two are at least <see cref="RunSimilarity"/> alike, and more alike than any run of
+    /// the answer is to the line. Else null: the answer stands by the line, or has neither. The run is
+    /// given as it stands in that answer, with the marks inside it; cut out of the middle of a sentence
+    /// it gets the capital letter and the end mark of the piece.
+    /// </summary>
+    public static string? SaidAsHeardAround(string? own, string? line, string? around)
+    {
+        var heard = Words(around);
+        var (ownRun, ownSimilarity) = ClosestRun(Words(own), heard, spanishOnly: false);
+        if (ownRun == null || ownSimilarity < RunSimilarity)
             return null;
 
-        var heard = Words(around);
+        var (_, lineSimilarity) = ClosestRun(Words(line), heard, spanishOnly: false);
+        return ownSimilarity > lineSimilarity ? AsLine(own!, ownRun) : null;
+    }
+
+    /// <summary>A run of an answer as a line of its own: no comma left hanging at its end, the piece's capital letter and end mark.</summary>
+    private static string AsLine(string own, IReadOnlyList<string> run)
+    {
+        var sb = new StringBuilder(string.Join(" ", run).TrimEnd(',', ';', ':', '-', '–', '—', ' '));
+        var trimmed = own.Trim();
+        var firstLetter = trimmed.FirstOrDefault(char.IsLetter);
+        if (firstLetter != default && char.IsUpper(firstLetter))
+        {
+            for (var i = 0; i < sb.Length; i++)
+            {
+                if (!char.IsLetter(sb[i]))
+                    continue;
+                sb[i] = char.ToUpperInvariant(sb[i]);
+                break;
+            }
+        }
+
+        if (sb.Length > 0 && char.IsLetterOrDigit(sb[^1]))
+        {
+            var end = trimmed.Length;
+            while (end > 0 && !char.IsLetterOrDigit(trimmed[end - 1]))
+                end--;
+            sb.Append(trimmed, end, trimmed.Length - end);
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The run of <paramref name="heard"/> whose letters, read as one string, sound most like the letters
+    /// of <paramref name="words"/>, and how alike they are. A run of Spanish words only holds no Cyrillic
+    /// word and does not go over the end of a sentence.
+    /// </summary>
+    private static (List<string>? Run, double Similarity) ClosestRun(List<string> words, List<string> heard, bool spanishOnly)
+    {
+        var letters = Letters(words);
+        if (letters.Length == 0)
+            return (null, 0.0);
+
         List<string>? best = null;
         var bestSimilarity = 0.0;
         for (var from = 0; from < heard.Count; from++)
@@ -90,7 +187,7 @@ internal static class SpeechPieceSecondLook
             for (var count = 1; count <= words.Count + ExtraRunWords && from + count <= heard.Count; count++)
             {
                 var last = heard[from + count - 1];
-                if (!IsLatinWord(last))
+                if (spanishOnly && !IsLatinWord(last))
                     break;
 
                 var run = heard.GetRange(from, count);
@@ -101,13 +198,16 @@ internal static class SpeechPieceSecondLook
                     bestSimilarity = similarity;
                 }
 
-                if (EndsSentence(last))
+                if (spanishOnly && EndsSentence(last))
                     break;
             }
         }
 
-        return best != null && bestSimilarity >= RunSimilarity ? Respell(own!, best) : null;
+        return (best, bestSimilarity);
     }
+
+    private static double LatinShare(IReadOnlyCollection<string> words) =>
+        words.Count == 0 ? 0.0 : (double)words.Count(IsLatinWord) / words.Count;
 
     private static string Letters(IEnumerable<string> words) =>
         string.Concat(words.Select(SpeechPieceWordAlignment.Normalize));
