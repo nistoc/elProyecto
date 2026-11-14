@@ -329,14 +329,15 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
         // a piece is cut with a little audio around it
         Assert.Equal(new[] { (0, 1.8, 6.45), (1, 8.8, 11.45), (2, 21.3, 8.95) }, audio.Cuts);
 
-        // every request names the job's model, both languages and the prompt of this way, and nothing of the diarize model
+        // every request names the job's model, both languages and the prompt of this way, and nothing of the diarize model;
+        // the whole chunk names the languages in its own order: Russian first keeps Russian phrases Russian
         var requests = server.Requests;
         Assert.Equal(4, requests.Count);
         Assert.Single(requests, r => r.Whole);
         Assert.All(requests, r =>
         {
             Assert.Equal(new[] { Model }, r.Values("model"));
-            Assert.Equal(new[] { "es", "ru" }, r.Values("languages[]"));
+            Assert.Equal(r.Whole ? new[] { "ru", "es" } : new[] { "es", "ru" }, r.Values("languages[]"));
             Assert.Equal(new[] { "json" }, r.Values("response_format"));
             Assert.Contains("латиницей", Assert.Single(r.Values("prompt")));
             Assert.Empty(r.Values("language"));
@@ -354,10 +355,43 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
         Assert.Equal(18, block["words"]);
         Assert.Equal(18, block["words_matched"]);
         Assert.Equal(false, block["whole_text_missing"]);
+        Assert.Equal(new object?[] { "es", "ru" }, (object?[])block["languages"]!);
+        Assert.Equal(new object?[] { "ru", "es" }, (object?[])block["whole_languages"]!);
         Assert.Equal(
             "Speech pieces: 3 lines from 3 pieces, 18 of 18 words placed by a partner",
             SpeechPiecesTranscription.Describe(answer.RawResponse));
         Assert.Equal("Speech pieces: asking the whole chunk and its 3 pieces", Assert.Single(activity));
+    }
+
+    [Fact]
+    public async Task Without_an_order_of_its_own_the_whole_chunk_names_the_languages_as_the_pieces_do()
+    {
+        var server = new ScriptedServer(seen => (HttpStatusCode.OK, seen.Whole
+            ? Answer("Buenos días. Вот так. Hasta luego.", 60)
+            : Answer(new[] { "Buenos dias", "Вот так", "Hasta luego" }[seen.Piece], 5)));
+        var config = await LoadConfigAsync(new Dictionary<string, object?> { [SpeechPiecesTranscription.WholeLanguagesConfigKey] = null });
+
+        var answer = await CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config));
+
+        Assert.Equal(4, server.Requests.Count);
+        Assert.All(server.Requests, r => Assert.Equal(new[] { "es", "ru" }, r.Values("languages[]")));
+        Assert.Equal(new object?[] { "es", "ru" }, (object?[])Block(answer.RawResponse)["whole_languages"]!);
+    }
+
+    [Fact]
+    public async Task A_chunk_that_is_one_piece_is_asked_once_and_as_a_piece()
+    {
+        // speech 1–9 s of a 10 s chunk: one piece, so one request, and that short it names the languages as a piece does
+        var server = new ScriptedServer(_ => (HttpStatusCode.OK, Answer("Hasta mañana.", 10)));
+        var config = await LoadConfigAsync();
+
+        var answer = await CreateWay(new FakeAudio { DurationSec = 10, Silence = new[] { Quiet(0, 1), Quiet(9, 10) } }, server)
+            .TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config));
+
+        var request = Assert.Single(server.Requests);
+        Assert.True(request.Whole);
+        Assert.Equal(new[] { "es", "ru" }, request.Values("languages[]"));
+        Assert.Equal("Hasta mañana.", Assert.Single(answer.Segments).Text);
     }
 
     [Fact]
@@ -662,6 +696,7 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
         Assert.Equal(pause, settings.PauseSec, 3);
         Assert.Equal(searchFrom, settings.Detect.MinDurationSec, 3);
         Assert.Equal(new[] { "es", "ru" }, settings.Languages);
+        Assert.Equal(new[] { "ru", "es" }, settings.WholeLanguages);
         Assert.Equal(15.0, settings.MaxPieceSec);
         Assert.Equal(3, settings.ParallelRequests);
     }

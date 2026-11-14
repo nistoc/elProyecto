@@ -29,6 +29,15 @@ public sealed class SpeechPiecesTranscription
     /// <summary>Config key: languages spoken in the recordings, for example <c>["es", "ru"]</c>.</summary>
     public const string LanguagesConfigKey = "speech_pieces_languages";
 
+    /// <summary>
+    /// Config key: the same languages in the order for the request of the whole chunk, for example
+    /// <c>["ru", "es"]</c>; absent or empty = the order of <see cref="LanguagesConfigKey"/>. The order
+    /// tells: with Spanish first, a long stretch of a lesson held mostly in Russian comes back with Russian
+    /// phrases written in Spanish (translated); with Russian first they stay Russian and the Spanish stays
+    /// Spanish. A piece is a few seconds and is asked in the order of <see cref="LanguagesConfigKey"/>.
+    /// </summary>
+    public const string WholeLanguagesConfigKey = "speech_pieces_whole_languages";
+
     /// <summary>Config key: the prompt of this way. The shared <c>prompt</c> key is not used: other models get that one.</summary>
     public const string PromptConfigKey = "speech_pieces_prompt";
 
@@ -116,6 +125,7 @@ public sealed class SpeechPiecesTranscription
     /// <summary>What the way reads from the job config.</summary>
     internal sealed record Settings(
         IReadOnlyList<string> Languages,
+        IReadOnlyList<string> WholeLanguages,
         string? Prompt,
         double PauseSec,
         double MaxPieceSec,
@@ -125,11 +135,10 @@ public sealed class SpeechPiecesTranscription
     {
         public static Settings FromConfig(TranscriptionConfig config)
         {
-            var languages = (config.Get<object[]>(LanguagesConfigKey) ?? Array.Empty<object>())
-                .Select(x => x?.ToString()?.Trim() ?? "")
-                .Where(x => x.Length > 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var languages = LanguagesOf(config, LanguagesConfigKey);
+            var wholeLanguages = LanguagesOf(config, WholeLanguagesConfigKey);
+            if (wholeLanguages.Count == 0)
+                wholeLanguages = languages;
             var prompt = config.Get<string>(PromptConfigKey);
             var pause = Math.Clamp(config.Get<double?>(PauseConfigKey) ?? DefaultPauseSec, 0.1, 30.0);
             var maxPiece = Math.Clamp(config.Get<double?>(MaxPieceConfigKey) ?? DefaultMaxPieceSec, 2.0, 300.0);
@@ -148,8 +157,15 @@ public sealed class SpeechPiecesTranscription
             if (detect.MinDurationSec > findFrom)
                 detect = detect with { MinDurationSec = findFrom };
 
-            return new Settings(languages, string.IsNullOrWhiteSpace(prompt) ? null : prompt, pause, maxPiece, parallel, context, detect);
+            return new Settings(languages, wholeLanguages, string.IsNullOrWhiteSpace(prompt) ? null : prompt, pause, maxPiece, parallel, context, detect);
         }
+
+        private static List<string> LanguagesOf(TranscriptionConfig config, string key) =>
+            (config.Get<object[]>(key) ?? Array.Empty<object>())
+            .Select(x => x?.ToString()?.Trim() ?? "")
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <param name="chunkPath">Audio of the chunk (or of a part of a chunk).</param>
@@ -196,6 +212,15 @@ public sealed class SpeechPiecesTranscription
         request.ExactRequest = true;
         request.StopAtServerError = false;
 
+        // A chunk cut into pieces is a long stretch: its request names the languages in the order kept for
+        // it. A chunk that is one piece is as short as a piece and is asked as one.
+        var wholeRequest = request;
+        if (pieces.Count > 1 && !settings.WholeLanguages.SequenceEqual(settings.Languages, StringComparer.OrdinalIgnoreCase))
+        {
+            wholeRequest = request.Clone();
+            wholeRequest.Languages = settings.WholeLanguages;
+        }
+
         activity?.Invoke(pieces.Count == 1
             ? "Speech pieces: one piece, asking the whole chunk"
             : $"Speech pieces: asking the whole chunk and its {pieces.Count} pieces");
@@ -206,7 +231,7 @@ public sealed class SpeechPiecesTranscription
         {
             using var gate = new SemaphoreSlim(settings.ParallelRequests, settings.ParallelRequests);
             var dropped = new List<TranscriptionClientResult>(); // runaway answers: not used, but paid for
-            var wholeTask = AskAsync(chunkPath, durationSec, request, gate, null, dropped, ct);
+            var wholeTask = AskAsync(chunkPath, durationSec, wholeRequest, gate, null, dropped, ct);
             var pieceTasks = new List<Task<TranscriptionClientResult?>>();
             if (pieces.Count > 1)
             {
@@ -536,6 +561,7 @@ public sealed class SpeechPiecesTranscription
     {
         ["model"] = model,
         ["languages"] = settings.Languages.Cast<object?>().ToArray(),
+        ["whole_languages"] = settings.WholeLanguages.Cast<object?>().ToArray(),
         ["pause_sec"] = Round(settings.PauseSec),
         ["max_piece_sec"] = Round(settings.MaxPieceSec),
         ["pieces"] = items.Length,
