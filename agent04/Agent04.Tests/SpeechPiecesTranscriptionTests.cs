@@ -642,4 +642,63 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
         Assert.Contains("- 158.00 speaker_0: \"Bien, seguimos con el verbo.\"", md);
         Assert.Contains("- 163.00 speaker_0: \"Теперь прошедшее время.\"", md);
     }
+
+    // ---- retranscribe and the md of the chunk ----
+
+    /// <summary>
+    /// A job of two chunks whose chunk 1 (from 157 s, one repeated second) was transcribed before: its JSON
+    /// holds one line at 2 s, and its md holds <paramref name="mdOnDisk"/>. Returns the path of that md.
+    /// </summary>
+    private async Task<string> JobWithATranscribedChunkAsync(string mdOnDisk)
+    {
+        var chunksDir = Path.Combine(_root, "chunks");
+        var jsonDir = Path.Combine(_root, "chunks_json");
+        var mdDir = Path.Combine(_root, "chunks_md");
+        foreach (var dir in new[] { chunksDir, jsonDir, mdDir })
+            Directory.CreateDirectory(dir);
+        var infos = new[]
+        {
+            new ChunkInfo(Path.Combine(chunksDir, "lesson_part_000.wav"), 0.0, 0.0),
+            new ChunkInfo(Path.Combine(chunksDir, "lesson_part_001.wav"), 157.0, 1.0),
+        };
+        File.WriteAllText(infos[0].Path, "chunk:0");
+        File.WriteAllText(infos[1].Path, "chunk:1");
+        await ChunkTimelineFile.SaveAsync(_root, infos, CancellationToken.None);
+        await File.WriteAllTextAsync(
+            Path.Combine(jsonDir, "lesson_part_001.json"),
+            """{ "text": "texto de antes", "segments": [ { "id": 0, "start": 2.0, "end": 3.0, "text": "texto de antes" } ] }""");
+        var mdPath = Path.Combine(mdDir, "lesson_part_001.md");
+        await File.WriteAllTextAsync(mdPath, mdOnDisk);
+        return mdPath;
+    }
+
+    private static ScriptedServer OneLineAgain() => new(seen => (HttpStatusCode.OK, Answer("Texto nuevo del trozo.", 30)));
+
+    [Fact]
+    public async Task Retranscribe_writes_the_md_of_the_chunk_anew_when_nobody_edited_it()
+    {
+        // the md is what the writer made of the previous answer; an editor only changed its line endings
+        var mdPath = await JobWithATranscribedChunkAsync(">>>>>>>\r\n- 159.00 speaker_0: \"texto de antes\"\r\n<<<<<\r\n");
+        var audio = new FakeAudio { DurationSec = 30, Silence = new[] { Quiet(0, 2), Quiet(6, 30) } };
+        var config = await LoadConfigAsync();
+
+        await CreatePipeline(audio, OneLineAgain()).RetranscribeMainChunkAsync(config, _root, "job1", 1, null, CancellationToken.None);
+
+        Assert.Equal(">>>>>>>\n- 159.00 speaker_0: \"Texto nuevo del trozo.\"\n<<<<<\n", await File.ReadAllTextAsync(mdPath));
+    }
+
+    [Fact]
+    public async Task Retranscribe_leaves_the_md_the_operator_edited()
+    {
+        const string edited = ">>>>>>>\n- 159.00 speaker_0: \"texto corregido a mano\"\n<<<<<\n";
+        var mdPath = await JobWithATranscribedChunkAsync(edited);
+        var audio = new FakeAudio { DurationSec = 30, Silence = new[] { Quiet(0, 2), Quiet(6, 30) } };
+        var config = await LoadConfigAsync();
+
+        await CreatePipeline(audio, OneLineAgain()).RetranscribeMainChunkAsync(config, _root, "job1", 1, null, CancellationToken.None);
+
+        Assert.Equal(edited, await File.ReadAllTextAsync(mdPath));
+        // the new answer is kept all the same: in the chunk's JSON
+        Assert.Contains("Texto nuevo del trozo.", await File.ReadAllTextAsync(Path.Combine(_root, "chunks_json", "lesson_part_001.json")));
+    }
 }

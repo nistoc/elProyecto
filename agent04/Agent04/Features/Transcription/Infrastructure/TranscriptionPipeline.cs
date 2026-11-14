@@ -1228,6 +1228,9 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
                 ProcessedChunks = 0
             });
 
+        // The answer the chunk's md was written from: it tells an md nobody touched from the operator's text.
+        var previousResult = await TryLoadPerChunkTranscriptionResultAsync(config, artifactRoot, targetChunk, ct).ConfigureAwait(false);
+
         var manifest = await _cache.LoadManifestAsync(manifestPath, ct).ConfigureAwait(false);
         var targetBasename = Path.GetFileName(targetChunk.Path);
         manifest.Chunks.Remove(targetBasename);
@@ -1321,10 +1324,29 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         var perChunkDirFull = Path.Combine(artifactRoot, perChunkRel);
         _artifacts.SaveJobPerChunkTranscriptionJson(Path.GetFileName(targetChunk.Path), newResult.RawResponse, perChunkDirFull);
 
-        _logger?.LogInformation(
-            "Retranscribed main chunk {Index}; updated per-chunk JSON under {Dir}",
-            chunkIndex,
-            perChunkDirFull);
+        // The md of the chunk is the source of the combined transcript. One that is still as it was written
+        // follows the new answer; one the operator edited is theirs and stays (the new text is in the JSON).
+        var perChunkMdDirFull = Path.Combine(artifactRoot, config.Get<string>("per_chunk_md_dir") ?? "chunks_md");
+        var speechTimeMap = await SpeechTimeMapFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
+        var mdWritten = _artifacts.RefreshJobPerChunkMarkdown(
+            Path.GetFileName(targetChunk.Path), previousResult?.Segments, newResult.Segments, newResult.Offset, newResult.EmitGuard, perChunkMdDirFull, speechTimeMap);
+
+        if (mdWritten)
+        {
+            _logger?.LogInformation(
+                "Retranscribed main chunk {Index}; updated per-chunk JSON under {Dir} and the chunk's md under {MdDir}",
+                chunkIndex,
+                perChunkDirFull,
+                perChunkMdDirFull);
+        }
+        else
+        {
+            _logger?.LogWarning(
+                "Retranscribed main chunk {Index}; updated per-chunk JSON under {Dir}. The chunk's md under {MdDir} was edited by hand and is left as it is: the combined transcript keeps the edited text",
+                chunkIndex,
+                perChunkDirFull,
+                perChunkMdDirFull);
+        }
 
         statusStore?.Update(
             agentJobId,

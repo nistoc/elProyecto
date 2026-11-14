@@ -78,6 +78,14 @@ public interface IProjectArtifactService
     /// <summary>Writes <c>{outputDir}/{chunkBasename}.md</c> for one chunk (the source of the stitched combined transcript).</summary>
     void WriteJobPerChunkMarkdown(string chunkBasename, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, string outputDir, SpeechTimeMap? timeMap = null);
 
+    /// <summary>
+    /// Writes the md of a chunk that was transcribed again, unless somebody edited it. The md on disk is
+    /// nobody's edit when it is absent or is exactly what <paramref name="previousSegments"/> (the answer
+    /// it was written from) give; any other md is the operator's text and stays as it is.
+    /// </summary>
+    /// <returns>True when the md was written; false when an edited md was left alone.</returns>
+    bool RefreshJobPerChunkMarkdown(string chunkBasename, IReadOnlyList<ASRSegment>? previousSegments, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, string outputDir, SpeechTimeMap? timeMap = null);
+
     /// <summary>Rebuilds <paramref name="finalMdPath"/> by concatenating per-chunk <c>chunks_md</c> / split merged md in index order.</summary>
     void StitchJobMarkdownFromChunks(string artifactRoot, IReadOnlyList<string> chunkBasenames, string perChunkMdDir, string splitChunksDir, string finalMdPath);
 

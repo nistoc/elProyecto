@@ -20,6 +20,9 @@ public interface ITranscriptionOutputWriter
     /// speaker map local to this chunk. This is the source material the combined transcript is stitched from.
     /// </summary>
     void WritePerChunkMarkdown(string chunkBasename, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, string outputDir, SpeechTimeMap? timeMap = null);
+
+    /// <summary>The text <see cref="WritePerChunkMarkdown"/> writes for these segments.</summary>
+    string RenderPerChunkMarkdown(IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, SpeechTimeMap? timeMap = null);
     void SaveCombinedJson(string jsonPath, IReadOnlyList<TranscriptionResult> results);
     void SavePerChunkJson(string chunkBasename, IReadOnlyDictionary<string, object?> response, string outputDir);
     void ResetSpeakerMap();

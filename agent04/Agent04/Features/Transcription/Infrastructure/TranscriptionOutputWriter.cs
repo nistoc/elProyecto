@@ -64,11 +64,17 @@ public sealed class TranscriptionOutputWriter : ITranscriptionOutputWriter
         Directory.CreateDirectory(outputDir);
         var safeBase = Path.GetFileNameWithoutExtension(chunkBasename);
         var outPath = Path.Combine(outputDir, safeBase + ".md");
-        // Local speaker map so each chunk file starts at speaker_0 (independent of other chunks and thread-safe).
-        var localMap = new Dictionary<string, string>();
         using var fs = new FileStream(outPath, FileMode.Create, FileAccess.Write, FileShare.Read);
         using var w = new StreamWriter(fs);
-        w.Write(">>>>>>>\n");
+        w.Write(RenderPerChunkMarkdown(segments, offset, emitGuard, timeMap));
+    }
+
+    public string RenderPerChunkMarkdown(IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, SpeechTimeMap? timeMap = null)
+    {
+        // Local speaker map so each chunk file starts at speaker_0 (independent of other chunks and thread-safe).
+        var localMap = new Dictionary<string, string>();
+        var sb = new System.Text.StringBuilder();
+        sb.Append(">>>>>>>\n");
         foreach (var seg in segments)
         {
             var isFallback = Math.Abs(seg.Start) < Eps && Math.Abs(seg.End) < Eps;
@@ -77,9 +83,11 @@ public sealed class TranscriptionOutputWriter : ITranscriptionOutputWriter
             var speaker = NormalizeSpeakerInto(localMap, seg.Speaker);
             var timestamp = FormatTimestamp(seg, offset, isFallback, timeMap);
             var text = (seg.Text ?? "").Replace("\"", "\\\"");
-            w.Write($"- {timestamp} {speaker}: \"{text}\"\n");
+            sb.Append($"- {timestamp} {speaker}: \"{text}\"\n");
         }
-        w.Write("<<<<<\n");
+
+        sb.Append("<<<<<\n");
+        return sb.ToString();
     }
 
     public void SaveCombinedJson(string jsonPath, IReadOnlyList<TranscriptionResult> results)

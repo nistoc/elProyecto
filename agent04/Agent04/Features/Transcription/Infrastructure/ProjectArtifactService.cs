@@ -236,6 +236,28 @@ public sealed class ProjectArtifactService : IProjectArtifactService
     public void WriteJobPerChunkMarkdown(string chunkBasename, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, string outputDir, SpeechTimeMap? timeMap = null) =>
         _outputWriter.WritePerChunkMarkdown(chunkBasename, segments, offset, emitGuard, outputDir, timeMap);
 
+    /// <inheritdoc />
+    public bool RefreshJobPerChunkMarkdown(string chunkBasename, IReadOnlyList<ASRSegment>? previousSegments, IReadOnlyList<ASRSegment> segments, double offset, double emitGuard, string outputDir, SpeechTimeMap? timeMap = null)
+    {
+        var mdPath = Path.Combine(outputDir, Path.GetFileNameWithoutExtension(chunkBasename) + ".md");
+        if (File.Exists(mdPath))
+        {
+            // Without the answer the md was written from, nothing tells it from an edited one.
+            if (previousSegments == null)
+                return false;
+            var onDisk = File.ReadAllText(mdPath);
+            var asWritten = _outputWriter.RenderPerChunkMarkdown(previousSegments, offset, emitGuard, timeMap);
+            if (!string.Equals(WithoutLineEndingNoise(onDisk), WithoutLineEndingNoise(asWritten), StringComparison.Ordinal))
+                return false;
+        }
+
+        _outputWriter.WritePerChunkMarkdown(chunkBasename, segments, offset, emitGuard, outputDir, timeMap);
+        return true;
+    }
+
+    /// <summary>An editor that only changed line endings or the blank end of the file did not edit the text.</summary>
+    private static string WithoutLineEndingNoise(string text) => text.Replace("\r\n", "\n").TrimEnd();
+
     public void StitchJobMarkdownFromChunks(string artifactRoot, IReadOnlyList<string> chunkBasenames, string perChunkMdDir, string splitChunksDir, string finalMdPath) =>
         ChunkMarkdownStitcher.Stitch(artifactRoot, chunkBasenames, perChunkMdDir, splitChunksDir, finalMdPath, _outputWriter, _logger);
 
