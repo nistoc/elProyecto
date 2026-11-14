@@ -577,6 +577,84 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
         string own, string line, string around, string? expected) =>
         Assert.Equal(expected, SpeechPieceSecondLook.SaidAsHeardAround(own, line, around));
 
+    // ---- the mirror: a line the whole text gave in Russian where the piece alone is Spanish ----
+
+    [Theory]
+    [InlineData("Может быть, завтра.", "Tal vez mañana.", true)]
+    [InlineData("Керемос салир.", "Queremos salir.", false)]                                  // the same speech in two spellings sounds alike
+    [InlineData("Угу.", "Mhm.", false)]                                                      // too little said to doubt a line by it
+    [InlineData("Tal vez mañana.", "Может быть, завтра.", false)]                             // that is the other doubt
+    [InlineData("comprar pan... так, comprar, comprar, а дальше...", "Comprar pan.", false)]  // the piece alone caught a part of the line, word for word
+    [InlineData("Нет.", "Нет, mañana no.", false)]                                            // the line is a part of what the piece heard: the rest stands in the next line
+    [InlineData("15 o", "quince o.", false)]                                                // no Russian word in the line: a number in figures
+    [InlineData("Может быть, завтра.", null, false)]
+    [InlineData("", "Tal vez mañana.", false)]
+    public void A_Russian_line_over_a_Spanish_piece_that_sounds_unlike_it_may_be_Spanish_speech(string? line, string? own, bool expected) =>
+        Assert.Equal(expected, SpeechPieceSecondLook.LooksWrittenInRussian(line, own));
+
+    [Theory]
+    [InlineData("Para comer, claro.", "Согласен? Claro.", "Они так делают. Para comer, claro. Ну давай.", "Para comer, claro.")]
+    [InlineData("Tal vez mañana llueva.", "Может быть, mañana", "Bien. Tal vez mañana llueve, llueve.", "Tal vez mañana llueve.")]   // cut out of a sentence: the piece's end mark
+    [InlineData("Luego, ya.", "потом", "Y mi trabajo, потом, estaba mal.", null)]                                                  // the Russian word of the line was said
+    [InlineData("Variable.", "viable. Вот", "¿Cuál? Variable. Вот и пример.", null)]                                               // so was this one: the line holds more than the piece
+    [InlineData("Problema.", "то.", "Ага. Проблема. Давай дальше.", null)]                                                         // a run without a Spanish word: the piece alone wrote Russian in Latin
+    [InlineData("Lara camino.", "неровный путь,", "Не как раньше. А. Вот. Camino, segundo... sí.", null)]                           // alike, but not enough for this doubt
+    [InlineData("Tal vez mañana.", "Может быть, завтра.", "Bien. Vamos a ver.", null)]                                              // the answer has neither
+    public void A_Russian_line_is_replaced_by_the_Spanish_run_of_the_answer_with_audio_around_that_sounds_like_the_piece(
+        string own, string line, string around, string? expected) =>
+        Assert.Equal(expected, SpeechPieceSecondLook.SaidInSpanishAround(own, line, around));
+
+    [Fact]
+    public async Task A_Russian_line_over_a_Spanish_piece_is_taken_from_the_piece_asked_again_with_the_audio_around_it()
+    {
+        // the whole text gives the Spanish phrase of the middle piece in Russian; alone and with its surroundings it is Spanish
+        const string withSurroundings = "Buenos días. Tal vez mañana. Hasta";
+        var audio = ThreePieces();
+        var server = new ScriptedServer(seen => (HttpStatusCode.OK,
+            seen.Whole ? Answer("Buenos días. Может быть, завтра. Hasta luego.", 60)
+            : seen.Context ? Answer(withSurroundings, 21)
+            : Answer(new[] { "Buenos dias", "Tal vez mañana", "Hasta luego" }[seen.Piece], 5)));
+        var config = await LoadConfigAsync();
+        var activity = new List<string>();
+
+        var answer = await CreateWay(audio, server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config), activity.Add);
+
+        Assert.Equal(new[] { "Buenos días.", "Tal vez mañana.", "Hasta luego." }, answer.Segments.Select(s => s.Text));
+        Assert.Equal(new[] { (1, 4.0, 21.0) }, audio.ContextCuts);
+        Assert.Contains("Speech pieces: asking 1 pieces whose line may be a translation again with the audio around them", activity);
+
+        var block = Block(answer.RawResponse);
+        Assert.Equal(5, block["requests"]);
+        Assert.Equal(1, block["lines_asked_with_context"]);
+        Assert.Equal(1, block["lines_taken_from_context"]);
+        var item = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(((object?[])block["items"]!)[1]);
+        Assert.Equal("Tal vez mañana", item["own_text"]);
+        Assert.Equal(withSurroundings, item["context_text"]);
+        Assert.Equal("Может быть, завтра.", item["whole_text_line"]);
+        Assert.Equal("line", item["second_look"]);
+    }
+
+    [Fact]
+    public async Task A_Russian_line_stays_when_the_piece_asked_again_with_the_audio_around_it_has_its_Russian_word()
+    {
+        // the piece alone put a Russian phrase into Spanish; with its surroundings it is the Russian of the whole text
+        var server = new ScriptedServer(seen => (HttpStatusCode.OK,
+            seen.Whole ? Answer("Buenos días. Может быть, завтра. Hasta luego.", 60)
+            : seen.Context ? Answer("Buenos días. Может быть, завтра. Hasta", 21)
+            : Answer(new[] { "Buenos dias", "Tal vez mañana", "Hasta luego" }[seen.Piece], 5)));
+        var config = await LoadConfigAsync();
+
+        var answer = await CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config));
+
+        Assert.Equal(new[] { "Buenos días.", "Может быть, завтра.", "Hasta luego." }, answer.Segments.Select(s => s.Text));
+        var block = Block(answer.RawResponse);
+        Assert.Equal(1, block["lines_asked_with_context"]);
+        Assert.Equal(0, block["lines_taken_from_context"]);
+        var item = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(((object?[])block["items"]!)[1]);
+        Assert.False(item.ContainsKey("whole_text_line"));
+        Assert.False(item.ContainsKey("second_look"));
+    }
+
     [Fact]
     public async Task A_line_that_may_be_a_translation_is_taken_from_the_piece_asked_again_with_the_audio_around_it()
     {

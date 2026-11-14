@@ -28,6 +28,13 @@ namespace Agent04.Features.Transcription.Infrastructure;
 /// only when that answer has a run that sounds like what the piece heard alone, and sounds more like it
 /// than anything in the answer sounds like the line (<see cref="SaidAsHeardAround"/>).
 /// </para>
+/// <para>
+/// The mirror of that doubt is rarer: asked with Russian named first, the text of a whole chunk now and
+/// then gives Spanish speech in Russian («Tal vez mañana» as «Может быть, mañana»). The line
+/// is Russian, the piece alone is Spanish, they do not sound alike (<see cref="LooksWrittenInRussian"/>),
+/// and the same request settles it (<see cref="SaidInSpanishAround"/>) — with a higher bar, because here
+/// the piece alone is the one that errs more often: it turns a Russian word into Spanish-looking sounds.
+/// </para>
 /// </summary>
 internal static class SpeechPieceSecondLook
 {
@@ -67,6 +74,18 @@ internal static class SpeechPieceSecondLook
 
     /// <summary>A piece of fewer letters («Угу.» against «Mhm.») says too little to doubt a line by it.</summary>
     public const int MinLettersToDoubt = 4;
+
+    /// <summary>
+    /// A Russian line is replaced by a Spanish run only when the run is this like what the piece heard
+    /// alone. On 20 doubted lines of 30 tracks the right runs stood at 0.9–1.0 and a doubtful one at 0.6.
+    /// </summary>
+    public const double SpanishRunSimilarity = 0.8;
+
+    /// <summary>
+    /// A Russian word of a line was said when the answer with audio around has it too, in Cyrillic, and
+    /// the word has at least this many letters: «а», «да», «ну» stand in any ten seconds of a lesson.
+    /// </summary>
+    public const int HeardRussianLetters = 3;
 
     public static bool HasCyrillic(string? text) => (text ?? "").Any(IsCyrillic);
 
@@ -161,6 +180,71 @@ internal static class SpeechPieceSecondLook
         var (_, lineSimilarity) = ClosestRun(Words(line), heard, spanishOnly: false);
         return ownSimilarity > lineSimilarity ? AsLine(own!, ownRun) : null;
     }
+
+    /// <summary>
+    /// The mirror of <see cref="LooksTranslated"/>: true when the line the whole text gave to a piece is
+    /// Russian where the piece asked alone is Spanish, and the two do not sound alike — Spanish speech may
+    /// have been written in Russian. Not when one is word for word a part of the other: the piece alone
+    /// only caught less («Comprar pan.» of «comprar pan... так, comprar, а дальше»), or the whole text
+    /// left the rest to the next line («Нет.» of «Нет, mañana no.»). Nor when the line has no Russian
+    /// word at all («15 o» over «quince o.» is a number written in figures).
+    /// </summary>
+    public static bool LooksWrittenInRussian(string? line, string? own)
+    {
+        var lineWords = Words(line);
+        var ownWords = Words(own);
+        if (lineWords.Count == 0 || ownWords.Count == 0)
+            return false;
+        if (!lineWords.Any(HasCyrillic))
+            return false;
+
+        var ownLetters = Letters(ownWords);
+        if (ownLetters.Length < MinLettersToDoubt)
+            return false;
+        if (LatinShare(ownWords) - LatinShare(lineWords) < OtherLanguageShare)
+            return false;
+        if (SpeechPieceWordAlignment.Similarity(Letters(lineWords), ownLetters) >= UnlikeSimilarity)
+            return false;
+
+        var (_, ownAsPart) = ClosestRun(ownWords, lineWords, spanishOnly: false);
+        if (ownAsPart >= PartSimilarity)
+            return false;
+        var (_, lineAsPart) = ClosestRun(lineWords, ownWords, spanishOnly: false);
+        return lineAsPart < PartSimilarity;
+    }
+
+    /// <summary>
+    /// What a piece with a line doubted by <see cref="LooksWrittenInRussian"/> says, by the answer for the
+    /// piece asked again with audio around it: the run of that answer that sounds like what the piece
+    /// heard alone — at least <see cref="SpanishRunSimilarity"/> alike, more alike than any run of the
+    /// answer is to the line, and holding a Spanish word. Else null. Null too when the answer has a
+    /// Russian word of the line (<see cref="HeardRussianLetters"/> letters or more, in Cyrillic): that
+    /// word was said, so the line is not Spanish speech put into Russian — the piece alone is the one
+    /// that turned «потом» into «Luego, ya.» or caught less than the line holds.
+    /// </summary>
+    public static string? SaidInSpanishAround(string? own, string? line, string? around)
+    {
+        var heard = Words(around);
+        var lineWords = Words(line);
+        if (lineWords.Any(word => IsRussianWordHeard(word, heard)))
+            return null;
+
+        var (ownRun, ownSimilarity) = ClosestRun(Words(own), heard, spanishOnly: false);
+        if (ownRun == null || ownSimilarity < SpanishRunSimilarity)
+            return null;
+
+        // A run without a Spanish word says the piece alone wrote Russian speech in Latin letters.
+        if (!ownRun.Any(IsLatinWord))
+            return null;
+
+        var (_, lineSimilarity) = ClosestRun(lineWords, heard, spanishOnly: false);
+        return ownSimilarity > lineSimilarity ? AsLine(own!, ownRun) : null;
+    }
+
+    private static bool IsRussianWordHeard(string word, IReadOnlyList<string> heard) =>
+        word.Any(IsCyrillic)
+        && SpeechPieceWordAlignment.Normalize(word).Length >= HeardRussianLetters
+        && heard.Any(other => other.Any(IsCyrillic) && SameWord(word, other));
 
     /// <summary>A run of an answer as a line of its own: no comma left hanging at its end, the piece's capital letter and end mark.</summary>
     private static string AsLine(string own, IReadOnlyList<string> run)

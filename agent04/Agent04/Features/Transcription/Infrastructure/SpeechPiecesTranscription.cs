@@ -374,13 +374,24 @@ public sealed class SpeechPiecesTranscription
 
             // A line of the whole text that is Spanish where its piece alone is Russian, and does not sound
             // like it, may be a translation of what was said. The piece asked with audio around it tells.
+            // The mirror — a Russian line over a Spanish piece — is doubted and settled the same way.
             var doubted = new List<int>();
+            var doubtedAsRussian = new HashSet<int>();
             if (placed != null && settings.ContextSec > 0)
             {
                 for (var k = 0; k < pieces.Count; k++)
                 {
-                    if (!lone.Contains(k) && SpeechPieceSecondLook.LooksTranslated(asPlaced[k], own[k]))
+                    if (lone.Contains(k))
+                        continue;
+                    if (SpeechPieceSecondLook.LooksTranslated(asPlaced[k], own[k]))
+                    {
                         doubted.Add(k);
+                    }
+                    else if (SpeechPieceSecondLook.LooksWrittenInRussian(asPlaced[k], own[k]))
+                    {
+                        doubted.Add(k);
+                        doubtedAsRussian.Add(k);
+                    }
                 }
             }
 
@@ -426,7 +437,9 @@ public sealed class SpeechPiecesTranscription
                     {
                         // The line is replaced only when that answer has what the piece heard alone and
                         // has nothing closer to the line.
-                        var said = SpeechPieceSecondLook.SaidAsHeardAround(own[k], asPlaced[k], contextText[k]);
+                        var said = doubtedAsRussian.Contains(k)
+                            ? SpeechPieceSecondLook.SaidInSpanishAround(own[k], asPlaced[k], contextText[k])
+                            : SpeechPieceSecondLook.SaidAsHeardAround(own[k], asPlaced[k], contextText[k]);
                         if (said != null)
                         {
                             wholeTextLine[k] = asPlaced[k];
