@@ -36,7 +36,8 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
     {
         public IReadOnlyList<string> Values(string name) => Fields.Where(f => f.Name == name).Select(f => f.Value).ToList();
         public bool Whole => Audio.StartsWith("chunk", StringComparison.Ordinal);
-        public int Piece => int.Parse(Audio["piece:".Length..]);
+        public bool Context => Audio.StartsWith("context:", StringComparison.Ordinal);
+        public int Piece => int.Parse(Audio[(Audio.IndexOf(':') + 1)..]);
     }
 
     private sealed class ScriptedServer : HttpMessageHandler
@@ -78,9 +79,17 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
         public List<SilenceDetectOptions> Searches { get; } = new();
         private readonly List<(int Piece, double Start, double Duration)> _cuts = new();
 
+        private readonly List<(int Piece, double Start, double Duration)> _contextCuts = new();
+
         public IReadOnlyList<(int Piece, double Start, double Duration)> Cuts
         {
             get { lock (_cuts) return _cuts.OrderBy(c => c.Piece).ToList(); }
+        }
+
+        /// <summary>Pieces cut once more with audio around them: which piece, from where, how long.</summary>
+        public IReadOnlyList<(int Piece, double Start, double Duration)> ContextCuts
+        {
+            get { lock (_cuts) return _contextCuts.OrderBy(c => c.Piece).ToList(); }
         }
 
         public string? WhichOr(string? pathKey, string defaultName) => defaultName;
@@ -94,9 +103,11 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
 
         public void ExtractAudioSegmentCopyOrReencode(string ffmpegPath, string inputPath, double startSeconds, double durationSeconds, string outputPath)
         {
-            var piece = int.Parse(Path.GetFileNameWithoutExtension(outputPath)["piece_".Length..]);
-            File.WriteAllText(outputPath, "piece:" + piece);
-            lock (_cuts) _cuts.Add((piece, Math.Round(startSeconds, 3), Math.Round(durationSeconds, 3)));
+            var name = Path.GetFileNameWithoutExtension(outputPath);
+            var kind = name[..name.IndexOf('_')]; // piece | context
+            var piece = int.Parse(name[(kind.Length + 1)..]);
+            File.WriteAllText(outputPath, kind + ":" + piece);
+            lock (_cuts) (kind == "context" ? _contextCuts : _cuts).Add((piece, Math.Round(startSeconds, 3), Math.Round(durationSeconds, 3)));
         }
 
         public int CalculateSegmentTime(long sizeBytes, double durationSec, double targetMb) => throw new NotSupportedException();
@@ -378,6 +389,128 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
 
         Assert.Equal(new[] { "Buenos días.", "Вот.", "Hasta luego." }, answer.Segments.Select(s => s.Text));
         Assert.Equal(1, Block(answer.RawResponse)["pieces_kept_own_text"]);
+
+        // three letters of sound are not asked again: there is nothing to respell
+        Assert.Equal(4, server.Requests.Count);
+        Assert.Equal(0, Block(answer.RawResponse)["pieces_asked_with_context"]);
+    }
+
+    // ---- a lone piece is spelled by what stands around it ----
+
+    [Theory]
+    [InlineData("Томар.", null, "tomar agua", "Tomar.")]
+    [InlineData("И.", "primero", "y después", "Y.")]
+    [InlineData("бебер", "quiero beber", "ahora", "beber")]
+    [InlineData("Но.", "да", "nos vamos", null)]          // a short word must sound exactly the same
+    [InlineData("Пока.", null, "пока нет", null)]         // the neighbour is Russian too: nothing to take
+    [InlineData("Сейчас.", null, "seis horas", null)]     // not the same word
+    public void A_lone_piece_that_repeats_its_neighbour_takes_the_neighbours_spelling(string own, string? previous, string? next, string? expected) =>
+        Assert.Equal(expected, SpeechPieceSecondLook.SpelledAsNeighbour(own, previous, next));
+
+    [Theory]
+    [InlineData("Сьерра.", "Vamos a la playa. Sierra. Mañana por la tarde.", "Sierra.")]
+    [InlineData("Керемос.", "Bueno. Y queremos, queremos salir.", "Queremos.")]         // said three times, written twice: found by sound, not by place
+    [InlineData("Номеакуэрдо.", "Pero no me acuerdo, no me acuerdo.", "No me acuerdo.")] // the piece glued the words
+    [InlineData("Подожди.", "Vamos a la playa. Ron. Mañana por la tarde.", null)]        // the answer left the piece out
+    [InlineData("Вселенная.", "¿Del universo? Вселенная. Universo.", null)]              // the answer keeps the Russian word
+    [InlineData("Ми но.", "Para mí. No quiero ir.", null)]                               // a run does not go over the end of a sentence
+    public void A_lone_piece_is_spelled_as_the_run_of_the_answer_with_audio_around_that_sounds_like_it(string own, string around, string? expected) =>
+        Assert.Equal(expected, SpeechPieceSecondLook.SpelledAsHeardAround(own, around));
+
+    [Fact]
+    public async Task A_lone_piece_that_says_the_first_word_of_the_next_line_is_spelled_as_that_line()
+    {
+        // the word is said twice; the text of the whole chunk has it once, at the line that goes on
+        var server = new ScriptedServer(seen => (HttpStatusCode.OK, seen.Whole
+            ? Answer("Quiero un vaso. Tomar agua fría.", 60)
+            : Answer(new[] { "Quiero un vaso", "Томар.", "Tomar agua fria" }[seen.Piece], 5)));
+        var config = await LoadConfigAsync();
+
+        var answer = await CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config));
+
+        Assert.Equal(new[] { "Quiero un vaso.", "Tomar.", "Tomar agua fría." }, answer.Segments.Select(s => s.Text));
+        Assert.Equal(4, server.Requests.Count); // the neighbour line said it: nothing more is asked
+        var block = Block(answer.RawResponse);
+        Assert.Equal(1, block["pieces_kept_own_text"]);
+        Assert.Equal(1, block["pieces_spelled_by_neighbour"]);
+        Assert.Equal(0, block["pieces_asked_with_context"]);
+        var item = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(((object?[])block["items"]!)[1]);
+        Assert.Equal("Томар.", item["own_text"]);
+        Assert.Equal("neighbour", item["second_look"]);
+        Assert.EndsWith("; 1 lone pieces spelled by what stands around them", SpeechPiecesTranscription.Describe(answer.RawResponse));
+    }
+
+    [Fact]
+    public async Task A_lone_piece_written_in_Cyrillic_is_asked_again_with_the_audio_around_it()
+    {
+        // the whole text leaves the middle word out; alone it is heard in Cyrillic, with its surroundings in Spanish
+        const string withSurroundings = "Vamos a la playa. Sierra. Mañana por la tarde.";
+        var audio = ThreePieces();
+        var server = new ScriptedServer(seen => (HttpStatusCode.OK,
+            seen.Whole ? Answer("Vamos a la playa. Mañana por la tarde.", 60)
+            : seen.Context ? Answer(withSurroundings, 21)
+            : Answer(new[] { "Vamos a la playa", "Сьерра.", "Manana por la tarde" }[seen.Piece], 5)));
+        var config = await LoadConfigAsync();
+        var activity = new List<string>();
+
+        var answer = await CreateWay(audio, server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config), activity.Add);
+
+        Assert.Equal(new[] { "Vamos a la playa.", "Sierra.", "Mañana por la tarde." }, answer.Segments.Select(s => s.Text));
+        Assert.Equal(new[] { (9.0, 20.0) }, answer.Segments.Where(s => s.Text == "Sierra.").Select(s => (s.Start, s.End)));
+
+        // the piece 9–20 s with five seconds on each side, asked as any other request of the way
+        Assert.Equal(new[] { (1, 4.0, 21.0) }, audio.ContextCuts);
+        var again = Assert.Single(server.Requests, r => r.Context);
+        Assert.Equal(1, again.Piece);
+        Assert.Equal(new[] { Model }, again.Values("model"));
+        Assert.Equal(new[] { "es", "ru" }, again.Values("languages[]"));
+        Assert.Contains("Speech pieces: asking 1 lone pieces again with the audio around them", activity);
+
+        var block = Block(answer.RawResponse);
+        Assert.Equal(5, block["requests"]);
+        Assert.Equal(1, block["pieces_asked_with_context"]);
+        Assert.Equal(1, block["pieces_spelled_by_context"]);
+        Assert.Equal(0, block["pieces_spelled_by_neighbour"]);
+        var item = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(((object?[])block["items"]!)[1]);
+        Assert.Equal("Сьерра.", item["own_text"]);
+        Assert.Equal(withSurroundings, item["context_text"]);
+        Assert.Equal("context", item["second_look"]);
+
+        var usage = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(answer.RawResponse["usage"]);
+        Assert.Equal(96.0, usage["seconds"]); // 60 whole + 3 × 5 pieces + 21 with the audio around
+    }
+
+    [Fact]
+    public async Task An_answer_with_audio_around_that_heard_something_else_does_not_replace_the_piece()
+    {
+        var server = new ScriptedServer(seen => (HttpStatusCode.OK,
+            seen.Whole ? Answer("Vamos a la playa. Mañana por la tarde.", 60)
+            : seen.Context ? Answer("Vamos a la playa. Ron. Mañana por la tarde.", 21)
+            : Answer(new[] { "Vamos a la playa", "Подожди.", "Manana por la tarde" }[seen.Piece], 5)));
+        var config = await LoadConfigAsync();
+
+        var answer = await CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config));
+
+        Assert.Equal(new[] { "Vamos a la playa.", "Подожди.", "Mañana por la tarde." }, answer.Segments.Select(s => s.Text));
+        var block = Block(answer.RawResponse);
+        Assert.Equal(1, block["pieces_asked_with_context"]);
+        Assert.Equal(0, block["pieces_spelled_by_context"]);
+        var item = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(((object?[])block["items"]!)[1]);
+        Assert.False(item.ContainsKey("second_look"));
+    }
+
+    [Fact]
+    public async Task With_no_seconds_of_audio_around_set_a_lone_piece_is_not_asked_again()
+    {
+        var server = new ScriptedServer(seen => (HttpStatusCode.OK, seen.Whole
+            ? Answer("Vamos a la playa. Mañana por la tarde.", 60)
+            : Answer(new[] { "Vamos a la playa", "Сьерра.", "Manana por la tarde" }[seen.Piece], 5)));
+        var config = await LoadConfigAsync(new Dictionary<string, object?> { [SpeechPiecesTranscription.ContextConfigKey] = 0 });
+
+        var answer = await CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config));
+
+        Assert.Equal(new[] { "Vamos a la playa.", "Сьерра.", "Mañana por la tarde." }, answer.Segments.Select(s => s.Text));
+        Assert.Equal(4, server.Requests.Count);
     }
 
     [Fact]
