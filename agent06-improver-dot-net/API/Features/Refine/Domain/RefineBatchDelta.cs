@@ -18,6 +18,11 @@ public sealed class RefineBatchDelta
     public string? Error { get; init; }
     /// <summary>Context lines from the previous refined batch that were sent with this one (how batches are stitched); empty for the first batch.</summary>
     public string ContextText { get; init; } = "";
+    /// <summary>
+    /// A request about the words in doubt: the words it asked about, one per line, each with the Spanish word of
+    /// the transcript it sounds like («вале — vale»). Empty in a run that sends lines to be rewritten.
+    /// </summary>
+    public string AskedWords { get; init; } = "";
     /// <summary>1-based first/last content line of this batch in the transcript body.</summary>
     public int StartLine { get; init; }
     public int EndLine { get; init; }

@@ -17,6 +17,7 @@ public static class TranslationImproverServiceRegistration
         services.AddSingleton<IRefineJobCancellation, InMemoryRefineJobCancellation>();
         services.AddSingleton<OpenAIChatClient>();
         services.AddSingleton<IOpenAIRefineClient, OpenAIRefineClient>();
+        services.AddSingleton<ISpellingJudge, OpenAISpellingJudge>();
         services.AddSingleton<IPromptLoader, FilePromptLoader>();
 
         services.AddSingleton<InMemoryNodeStore>();

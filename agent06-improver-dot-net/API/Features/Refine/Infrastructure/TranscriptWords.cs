@@ -18,6 +18,16 @@ public static class TranscriptWords
         return m.Success ? m.Groups["text"].Value : line;
     }
 
+    /// <summary>"- 12.50 speaker_0: \"…\"" — "12.50"; empty for a line of another form.</summary>
+    public static string TimeMarkOf(string line)
+    {
+        var m = Line.Match(line);
+        if (!m.Success)
+            return "";
+        var parts = m.Groups["head"].Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 1 ? parts[1] : "";
+    }
+
     /// <summary>The line cut at white space; a token keeps the punctuation written next to its word.</summary>
     public static List<string> Tokens(string text) =>
         text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).ToList();

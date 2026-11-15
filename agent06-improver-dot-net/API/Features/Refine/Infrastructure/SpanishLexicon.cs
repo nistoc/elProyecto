@@ -76,6 +76,23 @@ public sealed class SpanishLexicon
     }
 
     /// <summary>
+    /// The word of the transcript with exactly the sound of a word of one or two sounds («ла» — "la"), of several
+    /// the one written most often. Null for a longer word (<see cref="SoundsLike"/> is for those) and when
+    /// there is none.
+    /// </summary>
+    public Entry? SameShortSound(string cyrillicWord)
+    {
+        var sound = RespellingGuard.SoundForm(LettersOf(cyrillicWord));
+        if (sound.Length == 0 || sound.Length >= RespellingGuard.MinSoundLength || !_bySoundLength.TryGetValue(sound.Length, out var entries))
+            return null;
+        return entries
+            .Where(e => string.Equals(e.Sound, sound, StringComparison.Ordinal))
+            .OrderByDescending(e => e.Count)
+            .ThenBy(e => e.Bare, StringComparer.Ordinal)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
     /// The word of the transcript a word in Cyrillic letters sounds like (from <see cref="RespellingGuard.SoundsAlikeFrom"/>),
     /// the closest one, and of equally close ones the one written more often. Null when there is none, or when
     /// the word is too short to judge by sound.

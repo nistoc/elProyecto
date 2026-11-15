@@ -64,9 +64,9 @@ public sealed record RefineRunTotals
     /// <summary>Tokens of all calls of the run as the API reports them; 0 when it reports none.</summary>
     public int PromptTokens { get; init; }
     public int CompletionTokens { get; init; }
-    /// <summary>Changes of the model the check of edits kept; 0 without the check.</summary>
+    /// <summary>Changes of the model the check of edits kept; 0 without the check. In a run about the words in doubt: the words written anew.</summary>
     public int EditsLetThrough { get; init; }
-    /// <summary>Changes of the model the check of edits put back; 0 without the check.</summary>
+    /// <summary>Changes of the model the check of edits put back; 0 without the check. In a run about the words in doubt: the words left as they were.</summary>
     public int EditsPutBack { get; init; }
 }
 

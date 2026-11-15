@@ -67,6 +67,33 @@ public class SpellingCandidatesTests
             found.Select(c => (c.Line, c.Token, c.Word, c.Kind, c.Spanish?.Spelling)));
     }
 
+    [Fact]
+    public void A_short_word_is_in_doubt_only_inside_Spanish_speech()
+    {
+        var lines = new[]
+        {
+            Line("La casa en Madrid, el perro y un gato."),
+            Line("Una casa эн Madrid."),          // Spanish on both sides
+            Line("Каса эн Madrid."),              // a word in doubt on one side, Spanish on the other
+            Line("Дом эн Madrid."),               // a Russian word on one side
+            Line("Una casa и un perro."),         // «и» is a Russian word, whatever stands next to it
+            Line("Эн."),                          // alone in its line: nothing to read the language from
+            Line("Ла casa."),                     // one side only, and it is Spanish
+        };
+
+        var found = SpellingCandidates.Find(lines, SpanishLexicon.Of(lines));
+
+        Assert.Equal(
+            new[]
+            {
+                (1, "эн", SpellingCandidates.Kind.ShortInSpanish, "en"),
+                (2, "Каса", SpellingCandidates.Kind.SoundsSpanish, "casa"),
+                (2, "эн", SpellingCandidates.Kind.ShortInSpanish, "en"),
+                (6, "Ла", SpellingCandidates.Kind.ShortInSpanish, "la"),
+            },
+            found.Select(c => (c.Line, c.Word, c.Kind, c.Spanish!.Spelling)));
+    }
+
     [Theory]
     [InlineData("web-дизайнером", true)]
     [InlineData("email'а", true)]

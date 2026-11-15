@@ -5,7 +5,8 @@ namespace TranslationImprover.Features.Refine.Infrastructure;
 /// <summary>
 /// The words of a transcript whose spelling is in doubt, found by code: a word written in both alphabets at
 /// once («Теngo», «Nет»), and a word in Cyrillic letters that sounds like a Spanish word of the same
-/// transcript («бале» — "vale"). Nothing else in a transcript is a candidate for a change.
+/// transcript («бале» — "vale"), and a word of one or two sounds in Cyrillic letters that stands inside Spanish
+/// speech («una casa эн Madrid»). Nothing else in a transcript is a candidate for a change.
 /// </summary>
 public static class SpellingCandidates
 {
@@ -15,7 +16,14 @@ public static class SpellingCandidates
         BothAlphabets,
 
         /// <summary>Cyrillic letters, the sound of a Spanish word of the transcript.</summary>
-        SoundsSpanish
+        SoundsSpanish,
+
+        /// <summary>
+        /// One or two sounds in Cyrillic letters, exactly the sound of a Spanish word of the transcript, not a
+        /// Russian word of that length («и», «но»), and on every side it has a neighbour on stands a word in
+        /// Latin letters or a word of the two kinds above.
+        /// </summary>
+        ShortInSpanish
     }
 
     /// <param name="Line">Index of the line in the list given to <see cref="Find"/>.</param>
@@ -30,6 +38,7 @@ public static class SpellingCandidates
         for (var l = 0; l < lines.Count; l++)
         {
             var tokens = Tokens(TextOf(lines[l]));
+            var inLine = new List<Candidate>();
             for (var t = 0; t < tokens.Count; t++)
             {
                 var word = Parts(tokens[t]).Word;
@@ -41,17 +50,57 @@ public static class SpellingCandidates
                     if (IsCompound(word))
                         continue;
                     var like = lexicon.SoundsLike(word);
-                    found.Add(new Candidate(l, t, word, Kind.BothAlphabets, like?.Entry, like?.Likeness ?? 0));
+                    inLine.Add(new Candidate(l, t, word, Kind.BothAlphabets, like?.Entry, like?.Likeness ?? 0));
                     continue;
                 }
 
                 var match = lexicon.SoundsLike(word);
                 if (match != null)
-                    found.Add(new Candidate(l, t, word, Kind.SoundsSpanish, match.Entry, match.Likeness));
+                    inLine.Add(new Candidate(l, t, word, Kind.SoundsSpanish, match.Entry, match.Likeness));
             }
+
+            inLine.AddRange(ShortWordsInSpanish(l, tokens, inLine.Select(c => c.Token).ToHashSet(), lexicon));
+            found.AddRange(inLine.OrderBy(c => c.Token));
         }
 
         return found;
+    }
+
+    /// <param name="inDoubt">The tokens of the line that are candidates already: they may turn out Spanish.</param>
+    private static IEnumerable<Candidate> ShortWordsInSpanish(int line, List<string> tokens, HashSet<int> inDoubt, SpanishLexicon lexicon)
+    {
+        for (var t = 0; t < tokens.Count; t++)
+        {
+            var word = Parts(tokens[t]).Word;
+            if (word.Length == 0 || HasLatin(word) || inDoubt.Contains(t) || RespellingGuard.IsRussianShortWord(word))
+                continue;
+            var entry = lexicon.SameShortSound(word);
+            if (entry != null && SpanishOnEverySide(tokens, t, k => IsLatinWord(tokens[k]) || inDoubt.Contains(k)))
+                yield return new Candidate(line, t, word, Kind.ShortInSpanish, entry, 1);
+        }
+    }
+
+    /// <summary>
+    /// Is the nearest word on each side the token has one on Spanish? A token alone in its line has no side to
+    /// read the language from, and the answer is no.
+    /// </summary>
+    public static bool SpanishOnEverySide(IReadOnlyList<string> tokens, int token, Func<int, bool> isSpanish)
+    {
+        var sides = 0;
+        foreach (var step in new[] { -1, +1 })
+        {
+            for (var k = token + step; k >= 0 && k < tokens.Count; k += step)
+            {
+                if (!HasLetter(tokens[k]))
+                    continue; // a dash, a number
+                if (!isSpanish(k))
+                    return false;
+                sides++;
+                break;
+            }
+        }
+
+        return sides > 0;
     }
 
     /// <summary>

@@ -135,6 +135,17 @@ public class RefineJobRequestMapperTests : IDisposable
     }
 
     [Fact]
+    public void A_run_about_the_words_in_doubt_has_a_default_model_of_its_own()
+    {
+        Assert.Equal(RefineJobRequestMapper.DefaultJudgeModel,
+            RefineJobRequestMapper.Normalize(new RefineJobRequest { CandidatesOnly = true }).Model);
+        Assert.Equal("gpt-4o-mini",
+            RefineJobRequestMapper.Normalize(new RefineJobRequest { CandidatesOnly = true, Model = " gpt-4o-mini " }).Model);
+        Assert.Equal(RefineJobRequestMapper.DefaultModel,
+            RefineJobRequestMapper.Normalize(new RefineJobRequest { RespellingOnly = true }).Model);
+    }
+
+    [Fact]
     public void Validate_NamesWhatIsWrong()
     {
         File.WriteAllText(Path.Combine(_root, "there.md"), "- 1.00 Olga: \"vale\"\n");

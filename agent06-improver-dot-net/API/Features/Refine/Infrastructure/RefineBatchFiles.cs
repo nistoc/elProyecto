@@ -43,6 +43,7 @@ public sealed class RefineBatchFiles
             startLine = delta.StartLine,
             endLine = delta.EndLine,
             contextText = delta.ContextText,
+            askedWords = delta.AskedWords,
             originalText = delta.OriginalText,
             refinedText = delta.RefinedText,
             ok = delta.Ok,

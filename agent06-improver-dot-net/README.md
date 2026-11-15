@@ -61,7 +61,7 @@ By default the service listens on **http://localhost:5033** for gRPC (HTTP/2 onl
 
 Input: `input_file_path` (relative to WorkspaceRoot) or `input_content`. Output: optional `output_file_path` (relative). Prompt template: optional `prompt_file` or built-in default with `{context}` and `{batch}` placeholders.
 
-Both entries hand the request to one place (`RefineJobSubmitter`): `RefineJobRequestMapper` trims it, gives the defaults (model `gpt-4o-mini`, block of 10 lines, 3 lines of context) and checks the paths, so a field means the same over REST and over gRPC.
+Both entries hand the request to one place (`RefineJobSubmitter`): `RefineJobRequestMapper` trims it, gives the defaults (model `gpt-4o-mini` — `gpt-4.1-mini` for a run about the words in doubt —, block of 10 lines, 3 lines of context) and checks the paths, so a field means the same over REST and over gRPC.
 
 ### What a run leaves behind
 
@@ -95,6 +95,45 @@ Without the flag nothing changes: the lines are written as the model returned th
 What the check does not catch: a Russian word that sounds like a Latin word of the same transcript and has Spanish next to it («в историю, en la historia»). What it costs: a Spanish word in Cyrillic that occurs nowhere in the transcript in Latin letters stays in Cyrillic, and so does a Spanish word quoted alone inside Russian speech («что такое вале»).
 
 Measured on the stored answers of the model for 33 lesson dialogues (14,193 lines, 305 changes of the model; no new requests). Before the rule about the neighbours the check kept 24 changes: 14 right, 7 harmful (a Russian word turned Spanish), 3 doubtful. With it: 15 kept — 13 right, 1 harmful, 1 doubtful; 3 right ones are lost (a Spanish word alone in Russian speech). On 3 transcripts of the older transcriber (habit: Spanish in Cyrillic) the kept changes go from 71 to 75, all right — the 4 new ones are short words.
+
+### Words in doubt: `candidates_only`
+
+`SubmitRefineJobRequest.candidates_only` (gRPC, field 19; REST body `candidatesOnly`) starts another kind of run: no line is sent to the model to be rewritten. This is what agent05 asks for with `prompt: lesson`.
+
+1. **Code finds the words in doubt** (`SpellingCandidates`, against every word the transcript has in Latin letters — `SpanishLexicon`):
+   - a word in Cyrillic letters that sounds exactly like a Spanish word of the transcript («вале» — "vale");
+   - a word written in letters of both alphabets («Теngo», «Nет»);
+   - a word of one or two sounds with the exact sound of a Spanish word, not a Russian short word, with Spanish or another word in doubt on every side («эн» in «una casa эн Madrid»).
+
+   A word that is only close to a Spanish one (`Likeness` 0.85–0.99) is not asked about: the lesson set has 225 of them and nearly all are Russian — a cognate or a case form («момент», «системы»).
+2. **The model is the judge of them** (`ISpellingJudge`, `OpenAISpellingJudge`). Ten words to a request, the words of one line never parted. A word goes with the text of its line (at most 14 words on either side, the word marked `[[like this]]`; no time mark, no speaker). The answer is JSON: for each word `"said"` — `ru`, `es` or `mix` — and the word repeated; an answer that repeats another word belongs to another item and is dropped. The model is not asked for a spelling and none is read from its answer.
+3. **Code writes the spelling** (`CandidateRespelling`):
+   - a word in Cyrillic called Spanish gets the spelling the transcript has, with the capitals of the word; the punctuation around it stays;
+   - a short word called Spanish gets it too when, after the other changes, Spanish stands on every side it has a neighbour on;
+   - a word of both alphabets called Spanish gets the spelling of the transcript when it sounds exactly like a word of it, otherwise its Cyrillic letters are written in Latin — at most two of them, fewer than the Latin ones, and only letters with one reading («Теngo» → "Tengo"; «Кiero» stays: «К» may be c, qu or k);
+   - a word of both alphabets called Russian gets its Latin letters written in Cyrillic by sound — at most two of them and fewer than its Cyrillic ones, or any number when the result is a word the transcript has in Cyrillic («Nет» → «Нет»);
+   - a word called Russian or `mix`, a word without an answer and every word of a request that failed stay as they were.
+
+Everything else of the transcript is the source to the letter: only the tokens named change (`CandidateRespelling.ReplaceTokens`).
+
+**Model.** `gpt-4.1-mini` when the request names none (`RefineJobRequestMapper.DefaultJudgeModel`); block size, context lines and the prompts of the request are not used. The run sends about fifty times less text than one that sends every line, so the stronger model costs less here than the small one does there.
+
+**What the run leaves behind.** The run record says `Mode: words in doubt` and how many words of each kind were found; its section `## Words in doubt` lists every word written anew with the time mark of its line and counts the words left as they were by reason. A block of the status and of the block files is one request: `askedWords` (the words, each with the Spanish word it sounds like), the lines of the request before and after, `rawText`, the tokens. `edits_let_through` counts the words written anew, `edits_put_back` the words left as they were.
+
+**Measured** (2026-11-15, 33 lesson dialogues, 14,193 lines): 451 words asked about in 60 requests, 44,403 tokens in and 8,557 out — about $0.03 for all 33 at $0.40 / $1.60 per million. 54 words written anew in 20 of the dialogues: 43 right, 2 harmful, 9 doubtful. The run that sends every line with the check of edits, on the same dialogues: 15 changes kept — 13 right, 1 harmful, 1 doubtful — for about 2,840 requests. Two transcripts of the older transcriber (Spanish in Cyrillic as a habit): 52 words asked about, 46 written anew, all right; a third one was not run with the judge as it is now.
+
+**What was tried and dropped.**
+
+- The question "in which language was it said", with the like-sounding Spanish word as a hint and the neighbour lines: `gpt-4o-mini` called about 45 Russian words Spanish out of 106 («роль», «без», «её»). The hint and the neighbour lines went; the prompt now has the model say first whether Russian has the word as written.
+- `gpt-4o-mini` as the judge of the final question: 68 words called Spanish — 34 right, 28 harmful. `gpt-4.1-mini`: 4 harmful. Hence the default.
+- A second request without the line ("is this string a Russian word"): it removed the gross errors and disagreed with itself between calls.
+- Holding a word back in code whenever the model says that Russian has it: on the lesson set it stopped four respellings, all right (a Spanish word Russian has borrowed), and not one wrong. The model still says it, the code does not read it.
+
+**Limits.**
+
+- The two harmful changes are of one kind: a Russian case form that is, sound for sound, a Spanish word of the transcript («примера» — "primera", «паре» — "pare"), and the judge called it Spanish. The code has no dictionary of Russian to hold it back with.
+- The doubtful ones: a Spanish word that Russian has borrowed («гаспачо», «мате») said inside Russian speech is written in Latin letters.
+- A Spanish word in Cyrillic that the transcript has nowhere in Latin letters is not found, as with the check of edits. A lexicon of all lessons would find it; there is none.
 
 See [docs/RENTGEN_IMPLEMENTATION.md](docs/RENTGEN_IMPLEMENTATION.md) for the virtual model (nodes, semanticKey, tag).
 

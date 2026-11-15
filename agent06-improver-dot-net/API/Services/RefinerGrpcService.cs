@@ -45,6 +45,7 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
         SystemPrompt = request.SystemPrompt,
         SourceName = request.SourceName,
         RespellingOnly = request.RespellingOnly,
+        CandidatesOnly = request.CandidatesOnly,
         OpenAIBaseUrl = request.OpenaiBaseUrl,
         OpenAIOrganization = request.OpenaiOrganization,
         SaveIntermediate = request.SaveIntermediate,
@@ -180,6 +181,7 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
         Ok = d.Ok,
         Error = d.Error ?? "",
         ContextText = d.ContextText ?? "",
+        AskedWords = d.AskedWords ?? "",
         StartLine = d.StartLine,
         EndLine = d.EndLine
     };

@@ -71,6 +71,9 @@ public static class RespellingGuard
         "эх", "ох", "ух", "эй", "ха", "хе", "хо", "ел", "ей", "ее", "её", "им", "ем", "ум", "ус", "ок", "эм"
     };
 
+    /// <summary>Is it one of the Russian words of one or two sounds that sound like a Spanish word?</summary>
+    public static bool IsRussianShortWord(string word) => RussianShortWords.Contains(LettersOf(word));
+
     /// <summary>The words of Latin letters only in the text of the lines, lower-cased and without accents.</summary>
     public static HashSet<string> LatinWordsOf(IEnumerable<string> lines)
     {

@@ -10,7 +10,8 @@ public sealed class RefineJobRequest
     public string? OutputFilePath { get; set; }
     public int BatchSize { get; set; } = 10;
     public int ContextLines { get; set; } = 3;
-    public string Model { get; set; } = "gpt-4o-mini";
+    /// <summary>Empty = the default of the kind of run asked for (<c>RefineJobRequestMapper</c>).</summary>
+    public string Model { get; set; } = "";
     public float Temperature { get; set; } = 0f;
     public string? PromptFile { get; set; }
     /// <summary>Optional system prompt override; null = built-in <c>RefinePipeline.SystemPrompt</c>.</summary>
@@ -22,6 +23,12 @@ public sealed class RefineJobRequest
     /// (<c>RespellingGuard</c>); everything else of a line stays as it was.
     /// </summary>
     public bool RespellingOnly { get; set; }
+    /// <summary>
+    /// The model is asked only about the words in doubt found by code (<c>SpellingCandidates</c>): for each, in
+    /// which language it was said. It returns no line of the transcript; the spelling is written by code
+    /// (<c>CandidateRespelling</c>). Block size, context lines and the prompts of the request are not used.
+    /// </summary>
+    public bool CandidatesOnly { get; set; }
     public string? OpenAIBaseUrl { get; set; }
     public string? OpenAIOrganization { get; set; }
     public bool SaveIntermediate { get; set; } = true;

@@ -13,6 +13,14 @@ public sealed record RefineRequestError(string Message, string? Field = null, st
 public static class RefineJobRequestMapper
 {
     public const string DefaultModel = "gpt-4o-mini";
+
+    /// <summary>
+    /// The model of a run about the words in doubt (<see cref="RefineJobRequest.CandidatesOnly"/>) when the
+    /// request names none. Such a run sends about fifty times less text than one that sends every line, so a
+    /// stronger model costs less there than the small one does on all lines; and the small one, as the judge of
+    /// the words, called Russian words Spanish (measured on 33 lesson dialogues, see the README).
+    /// </summary>
+    public const string DefaultJudgeModel = "gpt-4.1-mini";
     public const int DefaultBatchSize = 10;
     public const int DefaultContextLines = 3;
 
@@ -24,12 +32,13 @@ public static class RefineJobRequestMapper
         OutputFilePath = TrimOrNull(request.OutputFilePath),
         BatchSize = request.BatchSize > 0 ? request.BatchSize : DefaultBatchSize,
         ContextLines = request.ContextLines >= 0 ? request.ContextLines : DefaultContextLines,
-        Model = TrimOrNull(request.Model) ?? DefaultModel,
+        Model = TrimOrNull(request.Model) ?? (request.CandidatesOnly ? DefaultJudgeModel : DefaultModel),
         Temperature = request.Temperature,
         PromptFile = TrimOrNull(request.PromptFile),
         SystemPrompt = TrimOrNull(request.SystemPrompt),
         SourceName = TrimOrNull(request.SourceName),
         RespellingOnly = request.RespellingOnly,
+        CandidatesOnly = request.CandidatesOnly,
         OpenAIBaseUrl = TrimOrNull(request.OpenAIBaseUrl),
         OpenAIOrganization = TrimOrNull(request.OpenAIOrganization),
         SaveIntermediate = request.SaveIntermediate,
