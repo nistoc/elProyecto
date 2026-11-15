@@ -97,7 +97,7 @@ public sealed class JobSettingsTests : IDisposable
             .Build();
         var workspace = new JobWorkspace(config, new FakeHostEnvironment { ContentRootPath = Path.GetTempPath() }, NullLogger<JobWorkspace>.Instance);
         var store = new InMemoryJobStore();
-        var queue = new RecordingQueue();
+        var queue = new RecordingQueue(_root);
         var controller = new JobsController(
             store, workspace, queue, new SilentBroadcaster(), new RecordingTranscriptionClient(), NullLogger<JobsController>.Instance);
         return (controller, store, workspace, queue);
@@ -151,16 +151,20 @@ public sealed class JobSettingsTests : IDisposable
         Assert.False(Directory.Exists(_root) && Directory.EnumerateFileSystemEntries(_root).Any());
     }
 
-    private sealed class RecordingQueue : IPipelineQueue
+    /// <summary>
+    /// Looks into the job folder of its own workspace. It used to walk the temp folder all test classes share;
+    /// a folder another class deleted meanwhile failed that walk ("Access to the path … is denied"), and with it
+    /// a test of this class now and then.
+    /// </summary>
+    private sealed class RecordingQueue(string workspace) : IPipelineQueue
     {
         public List<string> Jobs { get; } = new();
         public List<string> FilesSeenWhenQueued { get; } = new();
         public void Enqueue(string jobId)
         {
             Jobs.Add(jobId);
-            var dir = Directory.EnumerateDirectories(Path.Combine(Path.GetTempPath(), "XtractManagerTests"), jobId, SearchOption.AllDirectories)
-                .FirstOrDefault();
-            if (dir != null)
+            var dir = Path.Combine(workspace, jobId);
+            if (Directory.Exists(dir))
                 FilesSeenWhenQueued.AddRange(Directory.EnumerateFiles(dir).Select(Path.GetFileName)!);
         }
 

@@ -80,7 +80,7 @@ public sealed class SessionsControllerTests : IDisposable
         var workspace = new JobWorkspace(config, env, NullLogger<JobWorkspace>.Instance);
         var memory = new InMemoryJobStore();
         var store = new WorkspaceAwareJobStore(memory, workspace, NullLogger<WorkspaceAwareJobStore>.Instance);
-        var queue = new QueueSpy();
+        var queue = new QueueSpy(_workspace);
         var catalog = new RecordingsCatalog(config, env, NullLogger<RecordingsCatalog>.Instance);
         var controller = new SessionsController(
             catalog, store, workspace, queue, config, NullLogger<SessionsController>.Instance);
@@ -457,7 +457,11 @@ public sealed class SessionsControllerTests : IDisposable
         Assert.Empty(queue.Jobs);
     }
 
-    private sealed class QueueSpy : IPipelineQueue
+    /// <summary>
+    /// Looks into the job folder of its own workspace. It used to walk the temp folder all test classes share;
+    /// a folder another class deleted meanwhile failed that walk, and with it a test of this class now and then.
+    /// </summary>
+    private sealed class QueueSpy(string workspace) : IPipelineQueue
     {
         public List<string> Jobs { get; } = new();
         public List<string> FilesSeenWhenQueued { get; } = new();
@@ -465,9 +469,8 @@ public sealed class SessionsControllerTests : IDisposable
         public void Enqueue(string jobId)
         {
             Jobs.Add(jobId);
-            var dir = Directory.EnumerateDirectories(Path.Combine(Path.GetTempPath(), "XtractManagerTests"), jobId, SearchOption.AllDirectories)
-                .FirstOrDefault();
-            if (dir != null)
+            var dir = Path.Combine(workspace, jobId);
+            if (Directory.Exists(dir))
                 FilesSeenWhenQueued.AddRange(Directory.EnumerateFiles(dir).Select(Path.GetFileName)!);
         }
 
