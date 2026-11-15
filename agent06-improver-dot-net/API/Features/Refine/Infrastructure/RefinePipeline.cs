@@ -6,6 +6,13 @@ using TranslationImprover.Features.Refine.Domain;
 
 namespace TranslationImprover.Features.Refine.Infrastructure;
 
+/// <summary>
+/// A refine run from its request to its output. The steps live in their own classes: the transcript and the form
+/// of its text (<see cref="TranscriptText"/>), the blocks (<see cref="TranscriptParser"/>), the call of the model
+/// (<see cref="IOpenAIRefineClient"/>), the check of what it changed (<see cref="RespellingGuard"/>), the record
+/// of the run (<see cref="RefineRunRecord"/>) and of its blocks (<see cref="RefineBatchFiles"/>). This class
+/// puts them in order and tells the job store and the node model how far the run is.
+/// </summary>
 public sealed class RefinePipeline : IRefinePipeline
 {
     /// <summary>Fixed system prompt; the operator edits only the user template.</summary>
@@ -34,168 +41,74 @@ public sealed class RefinePipeline : IRefinePipeline
         _logger = logger;
     }
 
+    /// <summary>What a run works with once its request is read: the lines, their blocks and the prompts.</summary>
+    private sealed record RunPlan(
+        IReadOnlyList<string> ContentLines,
+        IReadOnlyList<BatchInfo> Batches,
+        int BatchSize,
+        int ContextLines,
+        string SystemPrompt,
+        string PromptTemplate)
+    {
+        public string PromptPreview => $"[system]\n{SystemPrompt.Trim()}\n\n[user template]\n{PromptTemplate.Trim()}";
+    }
+
+    /// <summary>One block after the call and the check: the lines to keep and what is to be recorded of it.</summary>
+    private sealed record RefinedBlock(
+        IReadOnlyList<string> Lines,
+        bool Ok,
+        string? Error,
+        string RawText,
+        int EditsLetThrough,
+        int EditsPutBack,
+        int PromptTokens,
+        int CompletionTokens);
+
     public async Task RunAsync(string jobId, RefineJobRequest request, string workspaceRoot, string artifactRoot, CancellationToken cancellationToken = default)
     {
-        IReadOnlyList<string> contentLines;
-        IReadOnlyList<string> headerLines;
-        IReadOnlyList<string> footerLines;
-
-        if (!string.IsNullOrEmpty(request.InputContent))
-        {
-            var lines = request.InputContent!.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n').Select(l => l + "\n").ToList();
-            TranscriptParser.ParseStructure(lines, out headerLines, out contentLines, out footerLines);
-        }
-        else
-        {
-            var inputPath = Path.Combine(artifactRoot, request.InputFilePath!.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            var allLines = (await File.ReadAllLinesAsync(inputPath, Encoding.UTF8, cancellationToken)).Select(l => l + "\n").ToList();
-            TranscriptParser.ParseStructure(allLines, out headerLines, out contentLines, out footerLines);
-        }
-
-        if (contentLines.Count == 0)
-        {
-            _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Completed, OutputFilePath = request.OutputFilePath });
-            await FireCallbackAsync(jobId);
-            return;
-        }
-
-        _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Running, CurrentPhase = "Starting" });
-        _nodeModel?.EnsureNode(jobId, null, jobId, "job");
-        _nodeModel?.StartNode(jobId);
-
-        var batchSize = request.BatchSize > 0 ? request.BatchSize : 10;
-        var contextLines = request.ContextLines >= 0 ? request.ContextLines : 3;
-        var batches = TranscriptParser.CreateBatches(contentLines, batchSize);
-        _store.Update(jobId, new RefineJobStatusUpdate { TotalBatches = batches.Count });
-
         var refineParent = jobId + ":refine";
-        _nodeModel?.EnsureNode(refineParent, jobId, jobId, "phase");
-        _nodeModel?.StartNode(refineParent);
-
-        var promptTemplate = await _promptLoader.LoadAsync(request.PromptFile, workspaceRoot, cancellationToken);
-        var systemPrompt = request.SystemPrompt ?? SystemPrompt; // operator override from the Refiner tab
-        await WriteRunRecordAsync(request, artifactRoot, systemPrompt, promptTemplate, batchSize, contextLines, cancellationToken);
-        _store.Update(jobId, new RefineJobStatusUpdate { PromptPreview = BuildPromptPreview(systemPrompt, promptTemplate) });
-        var intermediateDir = request.SaveIntermediate && !string.IsNullOrEmpty(request.IntermediateDir)
-            ? Path.Combine(artifactRoot, request.IntermediateDir.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
-            : null;
-        if (intermediateDir != null)
-        {
-            Directory.CreateDirectory(intermediateDir);
-            // The folder holds the LAST run only: drop the previous run's batches, then record the prompt used.
-            foreach (var old in Directory.EnumerateFiles(intermediateDir, "batch_*.json"))
-            {
-                try { File.Delete(old); } catch { /* best effort */ }
-            }
-            await File.WriteAllTextAsync(Path.Combine(intermediateDir, "prompt.txt"), BuildPromptPreview(systemPrompt, promptTemplate), Encoding.UTF8, cancellationToken);
-        }
-
-        var fixedContent = new List<string>();
-        IReadOnlyList<string>? previousContext = null;
-        string? outputPathFull = null;
-        // The check of edits knows the Spanish of the transcript as it was before this run.
-        var latinWords = request.RespellingOnly ? RespellingGuard.LatinWordsOf(contentLines) : null;
-        int editsLetThrough = 0, editsPutBack = 0;
-
         try
         {
-            for (var i = 0; i < batches.Count; i++)
+            var source = await TranscriptText.ReadAsync(request, artifactRoot, cancellationToken);
+            if (source.Content.Count == 0)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var batchInfo = batches[i];
-                if (previousContext != null && contextLines > 0)
-                    batchInfo = new BatchInfo { Index = batchInfo.Index, StartLine = batchInfo.StartLine, EndLine = batchInfo.EndLine, Lines = batchInfo.Lines, Context = previousContext.TakeLast(contextLines).ToList() };
-
-                var batchNodeId = refineParent + ":batch-" + i;
-                _nodeModel?.EnsureNode(batchNodeId, refineParent, jobId, "batch");
-                _nodeModel?.StartNode(batchNodeId);
-
-                _store.Update(jobId, new RefineJobStatusUpdate { CurrentBatch = i + 1, CurrentPhase = $"Batch {i + 1}/{batches.Count}" });
-                var percent = batches.Count > 0 ? (i + 1) * 100 / batches.Count : 100;
-                _nodeModel?.UpdateNodeProgress(jobId, percent, $"Batch {i + 1}/{batches.Count}");
-
-                var result = await _client.RefineBatchAsync(batchInfo, request.Model, request.Temperature, systemPrompt, promptTemplate, request.OpenAIBaseUrl, cancellationToken);
-
-                if (result.Success && latinWords != null)
-                {
-                    var checkedLines = RespellingGuard.Apply(batchInfo.Lines, result.FixedLines, latinWords);
-                    editsLetThrough += checkedLines.LetThrough;
-                    editsPutBack += checkedLines.PutBack;
-                    result = new BatchResult { BatchIndex = result.BatchIndex, Success = true, FixedLines = checkedLines.Lines.ToList() };
-                }
-
-                if (result.Success)
-                {
-                    fixedContent.AddRange(result.FixedLines);
-                    previousContext = result.FixedLines;
-                }
-                else
-                {
-                    fixedContent.AddRange(batchInfo.Lines);
-                    previousContext = batchInfo.Lines;
-                    _logger?.LogWarning("Batch {Index} failed: {Error}", i, result.Error);
-                }
-
-                // Publish the before/after fragment so the UI can render this batch's improvement live.
-                var refinedForDelta = result.Success ? result.FixedLines : batchInfo.Lines;
-                var delta = new RefineBatchDelta
-                {
-                    Index = i + 1,
-                    Total = batches.Count,
-                    OriginalText = JoinLines(batchInfo.Lines),
-                    RefinedText = JoinLines(refinedForDelta),
-                    Ok = result.Success,
-                    Error = result.Error,
-                    ContextText = batchInfo.Context is { Count: > 0 } ctx ? JoinLines(ctx) : "",
-                    StartLine = batchInfo.StartLine + 1, // parser: 0-based start, exclusive end → 1-based inclusive
-                    EndLine = batchInfo.EndLine
-                };
-                _store.Update(jobId, new RefineJobStatusUpdate { AppendBatch = delta });
-
-                // Persist every batch (ok or failed) so the before/after view survives a page reload.
-                if (intermediateDir != null)
-                {
-                    var json = JsonSerializer.Serialize(new
-                    {
-                        index = delta.Index,
-                        total = delta.Total,
-                        startLine = delta.StartLine,
-                        endLine = delta.EndLine,
-                        contextText = delta.ContextText,
-                        originalText = delta.OriginalText,
-                        refinedText = delta.RefinedText,
-                        ok = delta.Ok,
-                        error = delta.Error
-                    });
-                    await File.WriteAllTextAsync(Path.Combine(intermediateDir, $"batch_{i + 1:D4}_of_{batches.Count:D4}.json"), json, Encoding.UTF8, cancellationToken);
-                }
-
-                _nodeModel?.CompleteNode(batchNodeId, result.Success ? RefineJobState.Completed : RefineJobState.Failed, DateTimeOffset.UtcNow, result.Error);
+                _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Completed, OutputFilePath = request.OutputFilePath });
+                await FireCallbackAsync(jobId);
+                return;
             }
 
-            _nodeModel?.CompleteNode(refineParent, RefineJobState.Completed, DateTimeOffset.UtcNow);
+            _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Running, CurrentPhase = "Starting" });
+            _nodeModel?.EnsureNode(jobId, null, jobId, "job");
+            _nodeModel?.StartNode(jobId);
 
-            var fullContent = new List<string>();
-            fullContent.AddRange(headerLines);
-            fullContent.AddRange(fixedContent);
-            fullContent.AddRange(footerLines);
+            var plan = await PlanAsync(request, source, workspaceRoot, cancellationToken);
+            _store.Update(jobId, new RefineJobStatusUpdate { TotalBatches = plan.Batches.Count });
+            _nodeModel?.EnsureNode(refineParent, jobId, jobId, "phase");
+            _nodeModel?.StartNode(refineParent);
+
+            var record = new RefineRunRecord(request, artifactRoot, _logger);
+            await record.WriteStartAsync(request, plan.SystemPrompt, plan.PromptTemplate, plan.BatchSize, plan.ContextLines, cancellationToken);
+            _store.Update(jobId, new RefineJobStatusUpdate { PromptPreview = plan.PromptPreview });
+            var batchFiles = RefineBatchFiles.For(request, artifactRoot);
+            if (batchFiles != null)
+                await batchFiles.StartAsync(plan.PromptPreview, cancellationToken);
+
+            var (refined, totals) = await RefineBlocksAsync(jobId, request, plan, batchFiles, cancellationToken);
+            _nodeModel?.CompleteNode(refineParent, RefineJobState.Completed, DateTimeOffset.UtcNow);
 
             if (!string.IsNullOrEmpty(request.OutputFilePath))
             {
-                var rel = request.OutputFilePath.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                outputPathFull = Path.Combine(artifactRoot, rel);
-                Directory.CreateDirectory(Path.GetDirectoryName(outputPathFull)!);
-                await File.WriteAllLinesAsync(outputPathFull, fullContent.Select(l => l.TrimEnd('\n')), Encoding.UTF8, cancellationToken);
+                var outputPath = Path.Combine(artifactRoot, RefineJobRequestMapper.RelativePath(request.OutputFilePath));
+                await source.WriteAsync(outputPath, refined, cancellationToken);
             }
 
-            if (latinWords != null)
-            {
-                _logger?.LogInformation("Refine job {JobId}: check of edits let through {LetThrough}, put back {PutBack}", jobId, editsLetThrough, editsPutBack);
-                await AppendEditCheckToRunRecordAsync(request, artifactRoot, editsLetThrough, editsPutBack, cancellationToken);
-            }
+            if (request.RespellingOnly)
+                _logger?.LogInformation("Refine job {JobId}: check of edits let through {LetThrough}, put back {PutBack}", jobId, totals.EditsLetThrough, totals.EditsPutBack);
+            if (totals.FailedBatches > 0)
+                _logger?.LogWarning("Refine job {JobId}: {Failed} of {Total} blocks failed; their lines are in the output as they were", jobId, totals.FailedBatches, plan.Batches.Count);
+            await record.AppendOutcomeAsync(plan.Batches.Count, totals, request.RespellingOnly, cancellationToken);
 
-            _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Completed, ProgressPercent = 100, CurrentBatch = batches.Count, TotalBatches = batches.Count, OutputFilePath = request.OutputFilePath });
+            _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Completed, ProgressPercent = 100, CurrentBatch = plan.Batches.Count, TotalBatches = plan.Batches.Count, OutputFilePath = request.OutputFilePath, Totals = totals });
             _nodeModel?.EnsureNode(jobId, null, jobId, "job", request.OutputFilePath != null ? new Dictionary<string, object?> { ["output_file_path"] = request.OutputFilePath } : null);
             _nodeModel?.CompleteNode(jobId, RefineJobState.Completed, DateTimeOffset.UtcNow);
         }
@@ -204,8 +117,6 @@ public sealed class RefinePipeline : IRefinePipeline
             _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Cancelled, ErrorMessage = "Cancelled" });
             _nodeModel?.CompleteNode(refineParent, RefineJobState.Cancelled, DateTimeOffset.UtcNow, "Cancelled");
             _nodeModel?.CompleteNode(jobId, RefineJobState.Cancelled, DateTimeOffset.UtcNow, "Cancelled");
-            await FireCallbackAsync(jobId);
-            return;
         }
         catch (Exception ex)
         {
@@ -213,99 +124,114 @@ public sealed class RefinePipeline : IRefinePipeline
             _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Failed, ErrorMessage = ex.Message });
             _nodeModel?.CompleteNode(refineParent, RefineJobState.Failed, DateTimeOffset.UtcNow, ex.Message);
             _nodeModel?.CompleteNode(jobId, RefineJobState.Failed, DateTimeOffset.UtcNow, ex.Message);
-            await FireCallbackAsync(jobId);
-            return;
         }
 
         await FireCallbackAsync(jobId);
     }
 
-    private static string JoinLines(IReadOnlyList<string> lines) =>
-        string.Join("\n", lines.Select(l => l.TrimEnd('\n', '\r'))).TrimEnd();
+    private async Task<RunPlan> PlanAsync(RefineJobRequest request, TranscriptText source, string workspaceRoot, CancellationToken cancellationToken)
+    {
+        var batchSize = request.BatchSize > 0 ? request.BatchSize : RefineJobRequestMapper.DefaultBatchSize;
+        var contextLines = request.ContextLines >= 0 ? request.ContextLines : RefineJobRequestMapper.DefaultContextLines;
+        var promptTemplate = await _promptLoader.LoadAsync(request.PromptFile, workspaceRoot, cancellationToken);
+        return new RunPlan(
+            source.Content,
+            TranscriptParser.CreateBatches(source.Content, batchSize),
+            batchSize,
+            contextLines,
+            request.SystemPrompt ?? SystemPrompt, // operator override from the Refiner tab
+            promptTemplate);
+    }
 
     /// <summary>
-    /// Writes <c>&lt;output&gt;.prompt.md</c> next to the refined file at the START of the run: which prompts,
-    /// model and batch geometry produced that output (kept even if the run fails), so runs can be compared.
+    /// The blocks one after another: each is sent with the last lines of the block before it, as they came out of
+    /// that block, for context. A block whose call failed keeps its lines and is counted, the run goes on.
     /// </summary>
-    private async Task WriteRunRecordAsync(RefineJobRequest request, string artifactRoot, string systemPrompt, string promptTemplate,
-        int batchSize, int contextLines, CancellationToken ct)
+    private async Task<(List<string> Lines, RefineRunTotals Totals)> RefineBlocksAsync(
+        string jobId, RefineJobRequest request, RunPlan plan, RefineBatchFiles? batchFiles, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrEmpty(request.OutputFilePath)) return;
-        try
+        var refineParent = jobId + ":refine";
+        var count = plan.Batches.Count;
+        var refined = new List<string>();
+        IReadOnlyList<string>? previous = null;
+        // The check of edits knows the Spanish of the transcript as it was before this run.
+        var latinWords = request.RespellingOnly ? RespellingGuard.LatinWordsOf(plan.ContentLines) : null;
+        var totals = new RefineRunTotals();
+
+        for (var i = 0; i < count; i++)
         {
-            var rel = request.OutputFilePath.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var outFull = Path.Combine(artifactRoot, rel);
-            var recordPath = Path.Combine(Path.GetDirectoryName(outFull)!, Path.GetFileNameWithoutExtension(outFull) + ".prompt.md");
-            Directory.CreateDirectory(Path.GetDirectoryName(recordPath)!);
-            var inv = System.Globalization.CultureInfo.InvariantCulture;
-            var lines = new[]
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var batch = plan.Batches[i];
+            if (previous != null && plan.ContextLines > 0)
+                batch = new BatchInfo { Index = batch.Index, StartLine = batch.StartLine, EndLine = batch.EndLine, Lines = batch.Lines, Context = previous.TakeLast(plan.ContextLines).ToList() };
+
+            var batchNodeId = refineParent + ":batch-" + i;
+            _nodeModel?.EnsureNode(batchNodeId, refineParent, jobId, "batch");
+            _nodeModel?.StartNode(batchNodeId);
+            _store.Update(jobId, new RefineJobStatusUpdate { CurrentBatch = i + 1, CurrentPhase = $"Batch {i + 1}/{count}" });
+            _nodeModel?.UpdateNodeProgress(jobId, (i + 1) * 100 / count, $"Batch {i + 1}/{count}");
+
+            var block = await RefineBlockAsync(batch, request, plan, latinWords, cancellationToken);
+            refined.AddRange(block.Lines);
+            previous = block.Lines;
+            if (!block.Ok)
+                _logger?.LogWarning("Batch {Index} failed: {Error}", i, block.Error);
+
+            totals = totals with
             {
-                "# Refiner run",
-                "",
-                $"- Started: {DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss", inv)} UTC",
-                $"- Source: {request.SourceName ?? "(inline content)"}",
-                $"- Output: {Path.GetFileName(outFull)}",
-                $"- Model: {request.Model}, temperature {request.Temperature.ToString(inv)}",
-                $"- Lines per block: {batchSize}, context lines: {contextLines}",
-                request.RespellingOnly
-                    ? "- Check of edits: on — of what the model changes only a word in Cyrillic letters respelled in Latin letters is kept"
-                    : "- Check of edits: off — the lines are taken as the model wrote them",
-                "",
-                "## System prompt" + (request.SystemPrompt == null ? " (built-in)" : ""),
-                "",
-                "```text",
-                systemPrompt.Trim(),
-                "```",
-                "",
-                "## User prompt template" + (string.IsNullOrEmpty(request.PromptFile) ? " (built-in)" : ""),
-                "",
-                "```text",
-                promptTemplate.Trim(),
-                "```",
-                ""
+                FailedBatches = totals.FailedBatches + (block.Ok ? 0 : 1),
+                PromptTokens = totals.PromptTokens + block.PromptTokens,
+                CompletionTokens = totals.CompletionTokens + block.CompletionTokens,
+                EditsLetThrough = totals.EditsLetThrough + block.EditsLetThrough,
+                EditsPutBack = totals.EditsPutBack + block.EditsPutBack
             };
-            await File.WriteAllTextAsync(recordPath, string.Join("\n", lines), new UTF8Encoding(false), ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger?.LogWarning(ex, "Could not write refiner run record for {Output}", request.OutputFilePath);
-        }
-    }
 
-    /// <summary>The run record's path next to the output; null when the run has no output file.</summary>
-    private static string? RunRecordPath(RefineJobRequest request, string artifactRoot)
-    {
-        if (string.IsNullOrEmpty(request.OutputFilePath)) return null;
-        var rel = request.OutputFilePath.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var outFull = Path.Combine(artifactRoot, rel);
-        return Path.Combine(Path.GetDirectoryName(outFull)!, Path.GetFileNameWithoutExtension(outFull) + ".prompt.md");
-    }
-
-    /// <summary>Adds to the run record what the check of edits did, once the run is through.</summary>
-    private async Task AppendEditCheckToRunRecordAsync(RefineJobRequest request, string artifactRoot, int letThrough, int putBack, CancellationToken ct)
-    {
-        var recordPath = RunRecordPath(request, artifactRoot);
-        if (recordPath == null || !File.Exists(recordPath)) return;
-        try
-        {
-            var lines = new[]
+            // Publish the before/after fragment so the UI can render this batch's improvement live.
+            var delta = new RefineBatchDelta
             {
-                "## Check of edits",
-                "",
-                $"- Changes of the model let through: {letThrough}",
-                $"- Changes of the model put back as they were: {putBack}",
-                ""
+                Index = i + 1,
+                Total = count,
+                OriginalText = JoinLines(batch.Lines),
+                RefinedText = JoinLines(block.Lines),
+                Ok = block.Ok,
+                Error = block.Error,
+                ContextText = batch.Context is { Count: > 0 } context ? JoinLines(context) : "",
+                StartLine = batch.StartLine + 1, // parser: 0-based start, exclusive end → 1-based inclusive
+                EndLine = batch.EndLine,
+                RawText = block.RawText,
+                EditsLetThrough = block.EditsLetThrough,
+                EditsPutBack = block.EditsPutBack,
+                PromptTokens = block.PromptTokens,
+                CompletionTokens = block.CompletionTokens
             };
-            await File.AppendAllTextAsync(recordPath, string.Join("\n", lines), new UTF8Encoding(false), ct);
+            _store.Update(jobId, new RefineJobStatusUpdate { AppendBatch = delta, Totals = totals });
+            if (batchFiles != null)
+                await batchFiles.WriteAsync(delta, cancellationToken);
+
+            _nodeModel?.CompleteNode(batchNodeId, block.Ok ? RefineJobState.Completed : RefineJobState.Failed, DateTimeOffset.UtcNow, block.Error);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger?.LogWarning(ex, "Could not add the check of edits to the run record of {Output}", request.OutputFilePath);
-        }
+
+        return (refined, totals);
     }
 
-    private static string BuildPromptPreview(string systemPrompt, string userPromptTemplate) =>
-        $"[system]\n{systemPrompt.Trim()}\n\n[user template]\n{userPromptTemplate.Trim()}";
+    /// <summary>One block: the call of the model and, when the run asks for it, the check of what the model changed.</summary>
+    private async Task<RefinedBlock> RefineBlockAsync(BatchInfo batch, RefineJobRequest request, RunPlan plan, IReadOnlySet<string>? latinWords, CancellationToken cancellationToken)
+    {
+        var result = await _client.RefineBatchAsync(batch, request.Model, request.Temperature, plan.SystemPrompt, plan.PromptTemplate, request.OpenAIBaseUrl, cancellationToken);
+        if (!result.Success)
+            return new RefinedBlock(batch.Lines, false, result.Error, result.RawAnswer ?? "", 0, 0, result.PromptTokens, result.CompletionTokens);
+
+        var rawText = result.RawAnswer?.Trim() ?? JoinLines(result.FixedLines);
+        if (latinWords == null)
+            return new RefinedBlock(result.FixedLines, true, null, rawText, 0, 0, result.PromptTokens, result.CompletionTokens);
+
+        var kept = RespellingGuard.Apply(batch.Lines, result.FixedLines, latinWords);
+        return new RefinedBlock(kept.Lines, true, null, rawText, kept.LetThrough, kept.PutBack, result.PromptTokens, result.CompletionTokens);
+    }
+
+    private static string JoinLines(IReadOnlyList<string> lines) =>
+        string.Join("\n", lines.Select(l => l.TrimEnd('\n', '\r'))).TrimEnd();
 
     private async Task FireCallbackAsync(string jobId)
     {
@@ -323,7 +249,8 @@ public sealed class RefinePipeline : IRefinePipeline
                 job.CurrentBatch,
                 job.TotalBatches,
                 job.OutputFilePath,
-                job.ErrorMessage
+                job.ErrorMessage,
+                failedBatches = job.Totals.FailedBatches
             });
             var content = new StringContent(json, Encoding.UTF8, "application/json");
             await client.PostAsync(job.CallbackUrl, content);

@@ -9,86 +9,50 @@ namespace TranslationImprover.Services;
 
 public class RefinerGrpcService : RefinerService.RefinerServiceBase
 {
-    private const string DefaultModel = "gpt-4o-mini";
-
     private readonly IRefineJobStore _store;
-    private readonly IRefinePipeline _pipeline;
+    private readonly RefineJobSubmitter _submitter;
     private readonly IRefineJobCancellation _cancellation;
-    private readonly WorkspaceRoot _workspaceRoot;
 
-    public RefinerGrpcService(IRefineJobStore store, IRefinePipeline pipeline, IRefineJobCancellation cancellation, WorkspaceRoot workspaceRoot)
+    public RefinerGrpcService(IRefineJobStore store, RefineJobSubmitter submitter, IRefineJobCancellation cancellation)
     {
         _store = store;
-        _pipeline = pipeline;
+        _submitter = submitter;
         _cancellation = cancellation;
-        _workspaceRoot = workspaceRoot;
     }
 
     public override Task<SubmitRefineJobResponse> SubmitRefineJob(SubmitRefineJobRequest request, ServerCallContext context)
     {
-        var root = _workspaceRoot.RootPath;
-        string artifactRoot;
-        try
-        {
-            artifactRoot = RefineWorkspacePaths.ResolveEffectiveArtifactRoot(root,
-                string.IsNullOrWhiteSpace(request.JobDirectoryRelative) ? null : request.JobDirectoryRelative.Trim());
-        }
-        catch (ArgumentException ex)
-        {
-            throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
-        }
-
-        if (string.IsNullOrEmpty(request.InputFilePath) && string.IsNullOrEmpty(request.InputContent))
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "Either input_file_path or input_content must be set"));
-
-        if (!string.IsNullOrEmpty(request.InputFilePath))
-        {
-            var raw = request.InputFilePath.Trim();
-            if (Path.IsPathRooted(raw))
-                throw new RpcException(new Status(StatusCode.InvalidArgument, "input_file_path must be relative to workspace_root; absolute paths are not allowed"));
-            var rel = raw.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var full = Path.Combine(artifactRoot, rel);
-            if (!File.Exists(full))
-                throw new RpcException(new Status(StatusCode.InvalidArgument, "Input file not found"));
-        }
-
-        if (!string.IsNullOrEmpty(request.OutputFilePath))
-        {
-            var raw = request.OutputFilePath.Trim();
-            if (Path.IsPathRooted(raw))
-                throw new RpcException(new Status(StatusCode.InvalidArgument, "output_file_path must be relative to workspace_root"));
-        }
-
-        var req = new RefineJobRequest
-        {
-            InputFilePath = string.IsNullOrEmpty(request.InputFilePath) ? null : request.InputFilePath.Trim(),
-            InputContent = string.IsNullOrEmpty(request.InputContent) ? null : request.InputContent,
-            OutputFilePath = string.IsNullOrEmpty(request.OutputFilePath) ? null : request.OutputFilePath.Trim(),
-            BatchSize = request.BatchSize > 0 ? request.BatchSize : 10,
-            ContextLines = request.ContextLines >= 0 ? request.ContextLines : 3,
-            Model = string.IsNullOrWhiteSpace(request.Model) ? DefaultModel : request.Model.Trim(),
-            Temperature = request.Temperature,
-            PromptFile = string.IsNullOrEmpty(request.PromptFile) ? null : request.PromptFile.Trim(),
-            SystemPrompt = string.IsNullOrWhiteSpace(request.SystemPrompt) ? null : request.SystemPrompt.Trim(),
-            SourceName = string.IsNullOrWhiteSpace(request.SourceName) ? null : request.SourceName.Trim(),
-            RespellingOnly = request.RespellingOnly,
-            OpenAIBaseUrl = string.IsNullOrEmpty(request.OpenaiBaseUrl) ? null : request.OpenaiBaseUrl.Trim(),
-            OpenAIOrganization = string.IsNullOrEmpty(request.OpenaiOrganization) ? null : request.OpenaiOrganization.Trim(),
-            SaveIntermediate = request.SaveIntermediate,
-            IntermediateDir = string.IsNullOrEmpty(request.IntermediateDir) ? null : request.IntermediateDir.Trim(),
-            CallbackUrl = string.IsNullOrEmpty(request.CallbackUrl) ? null : request.CallbackUrl.Trim(),
-            Tags = request.Tags?.Count > 0 ? request.Tags.ToList() : null,
-            JobDirectoryRelative = string.IsNullOrWhiteSpace(request.JobDirectoryRelative) ? null : request.JobDirectoryRelative.Trim()
-        };
-
-        var tags = request.Tags?.Count > 0 ? request.Tags.ToList() : null;
-        var callbackUrl = !string.IsNullOrWhiteSpace(request.CallbackUrl) ? request.CallbackUrl.Trim() : null;
-        var jobId = _store.Create(tags, callbackUrl);
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
-        _cancellation.Register(jobId, cts);
-        _ = _pipeline.RunAsync(jobId, req, root, artifactRoot, cts.Token);
-        return Task.FromResult(new SubmitRefineJobResponse { JobId = jobId });
+        var result = _submitter.Submit(FromProto(request), context.CancellationToken);
+        if (result.Error is { } error)
+            throw new RpcException(new Status(StatusCode.InvalidArgument, error.Message));
+        return Task.FromResult(new SubmitRefineJobResponse { JobId = result.JobId });
     }
+
+    /// <summary>
+    /// The message as a request, field for field; defaults and trimming are <see cref="RefineJobRequestMapper"/>'s,
+    /// the same for the REST entry. <c>RefineJobRequestMapperTests</c> fails when a field of the message is left out.
+    /// </summary>
+    public static RefineJobRequest FromProto(SubmitRefineJobRequest request) => new()
+    {
+        InputFilePath = request.InputFilePath,
+        InputContent = request.InputContent,
+        OutputFilePath = request.OutputFilePath,
+        BatchSize = request.BatchSize,
+        ContextLines = request.ContextLines,
+        Model = request.Model,
+        Temperature = request.Temperature,
+        PromptFile = request.PromptFile,
+        SystemPrompt = request.SystemPrompt,
+        SourceName = request.SourceName,
+        RespellingOnly = request.RespellingOnly,
+        OpenAIBaseUrl = request.OpenaiBaseUrl,
+        OpenAIOrganization = request.OpenaiOrganization,
+        SaveIntermediate = request.SaveIntermediate,
+        IntermediateDir = request.IntermediateDir,
+        CallbackUrl = request.CallbackUrl,
+        Tags = request.Tags.ToList(),
+        JobDirectoryRelative = request.JobDirectoryRelative
+    };
 
     public override Task<RefineStatusResponse> GetRefineStatus(GetRefineStatusRequest request, ServerCallContext context)
     {
@@ -176,7 +140,12 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
             CreatedAt = job.CreatedAt.ToString("O"),
             StartedAt = job.StartedAt?.ToString("O") ?? "",
             CompletedAt = job.CompletedAt?.ToString("O") ?? "",
-            UpdatedAt = job.UpdatedAt.ToString("O")
+            UpdatedAt = job.UpdatedAt.ToString("O"),
+            FailedBatches = job.Totals.FailedBatches,
+            PromptTokens = job.Totals.PromptTokens,
+            CompletionTokens = job.Totals.CompletionTokens,
+            EditsLetThrough = job.Totals.EditsLetThrough,
+            EditsPutBack = job.Totals.EditsPutBack
         };
     }
 
@@ -193,7 +162,12 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
             OutputFilePath = job.OutputFilePath ?? "",
             ErrorMessage = job.ErrorMessage ?? "",
             UpdatedAt = job.UpdatedAt.ToString("O"),
-            PromptPreview = job.PromptPreview ?? ""
+            PromptPreview = job.PromptPreview ?? "",
+            FailedBatches = job.Totals.FailedBatches,
+            PromptTokens = job.Totals.PromptTokens,
+            CompletionTokens = job.Totals.CompletionTokens,
+            EditsLetThrough = job.Totals.EditsLetThrough,
+            EditsPutBack = job.Totals.EditsPutBack
         };
     }
 
@@ -215,6 +189,6 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
         {
             SystemPrompt = Features.Refine.Infrastructure.RefinePipeline.SystemPrompt,
             UserPromptTemplate = Features.Refine.Infrastructure.FilePromptLoader.DefaultPrompt,
-            Model = DefaultModel
+            Model = RefineJobRequestMapper.DefaultModel
         });
 }

@@ -61,6 +61,17 @@ By default the service listens on **http://localhost:5033** for gRPC (HTTP/2 onl
 
 Input: `input_file_path` (relative to WorkspaceRoot) or `input_content`. Output: optional `output_file_path` (relative). Prompt template: optional `prompt_file` or built-in default with `{context}` and `{batch}` placeholders.
 
+Both entries hand the request to one place (`RefineJobSubmitter`): `RefineJobRequestMapper` trims it, gives the defaults (model `gpt-4o-mini`, block of 10 lines, 3 lines of context) and checks the paths, so a field means the same over REST and over gRPC.
+
+### What a run leaves behind
+
+- **Output file** (`output_file_path`): the transcript with the refined lines, in the form of its source — byte order mark, line ends and the line end after the last line are kept, so a run that changes nothing gives the source back byte for byte.
+- **Run record** (`<output>.prompt.md`): model, block size, both prompts, and at the end the section `## Outcome` — how many blocks there were, how many of them **failed** (their lines are in the output as they were), and the tokens billed.
+- **Block records** (`<intermediate_dir>/batch_NNNN_of_NNNN.json`, with `save_intermediate`): the lines before and after, the context, `rawText` — the model's answer as it came, before any check —, `editsLetThrough` / `editsPutBack` of the check, `promptTokens` / `completionTokens`.
+- **Status** (REST `GET /api/refine/jobs/{id}`, gRPC `GetRefineStatus` / `StreamRefineStatus`): `failed_batches`, `prompt_tokens`, `completion_tokens`, `edits_let_through`, `edits_put_back` of the run so far.
+
+A block whose request failed, or whose answer has no text, keeps its lines and is counted as failed; the job still ends `Completed`, so read `failed_batches`. A run that cannot read its transcript ends `Failed`.
+
 ### Check of edits: `respelling_only`
 
 `SubmitRefineJobRequest.respelling_only` (gRPC, field 18; REST body `respellingOnly`) turns on a check of what the model changed (`RespellingGuard`). It is meant for the built-in prompt on lesson transcripts: the prompt asks for one kind of edit, a Spanish word written in Cyrillic letters by ear respelled in Latin letters, and a small model still does more. With the flag a changed stretch of a line is kept only when all of this holds:

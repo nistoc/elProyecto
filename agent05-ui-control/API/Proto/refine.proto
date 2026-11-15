@@ -60,6 +60,13 @@ message RefineStatusResponse {
   string completed_at = 11;
   string updated_at = 12;
   repeated string tags = 13;
+  // The sums of the run. A block whose call failed keeps its lines as they were and the job still ends
+  // Completed: failed_batches is where a caller sees that a part of the transcript was not refined.
+  int32 failed_batches = 14;
+  int32 prompt_tokens = 15;        // as the API reports them; 0 when it reports none
+  int32 completion_tokens = 16;
+  int32 edits_let_through = 17;    // changes of the model the check of edits kept; 0 without the check
+  int32 edits_put_back = 18;       // changes of the model the check of edits put back
 }
 
 message StreamRefineStatusRequest {
@@ -90,6 +97,12 @@ message RefineStatusUpdate {
   string updated_at = 9;
   string prompt_preview = 10;
   repeated RefineBatchDelta batches = 11;
+  // The sums of the run so far (see RefineStatusResponse).
+  int32 failed_batches = 12;
+  int32 prompt_tokens = 13;
+  int32 completion_tokens = 14;
+  int32 edits_let_through = 15;
+  int32 edits_put_back = 16;
 }
 
 message CancelRefineJobRequest {

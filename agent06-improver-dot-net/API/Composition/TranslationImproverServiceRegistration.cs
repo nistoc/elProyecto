@@ -15,6 +15,7 @@ public static class TranslationImproverServiceRegistration
     {
         services.AddSingleton<IRefineJobStore, InMemoryRefineJobStore>();
         services.AddSingleton<IRefineJobCancellation, InMemoryRefineJobCancellation>();
+        services.AddSingleton<OpenAIChatClient>();
         services.AddSingleton<IOpenAIRefineClient, OpenAIRefineClient>();
         services.AddSingleton<IPromptLoader, FilePromptLoader>();
 
@@ -23,6 +24,7 @@ public static class TranslationImproverServiceRegistration
         services.AddSingleton<INodeQuery>(sp => sp.GetRequiredService<InMemoryNodeStore>());
 
         services.AddSingleton<IRefinePipeline, RefinePipeline>();
+        services.AddSingleton<RefineJobSubmitter>();
         services.AddSingleton<IRefineJobQueryService, RefineJobQueryService>();
 
         return services;

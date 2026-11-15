@@ -43,6 +43,7 @@ public sealed class InMemoryRefineJobStore : IRefineJobStore
             var next = new List<RefineBatchDelta>(job.Batches) { update.AppendBatch };
             job.Batches = next;
         }
+        if (update.Totals != null) job.Totals = update.Totals;
         if (update.State == RefineJobState.Running && !job.StartedAt.HasValue) job.StartedAt = now;
         if (update.State is RefineJobState.Completed or RefineJobState.Failed or RefineJobState.Cancelled) job.CompletedAt = now;
         job.UpdatedAt = now;

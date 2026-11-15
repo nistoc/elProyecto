@@ -39,7 +39,9 @@ public class RefineControllerSubmitTests : IDisposable
     {
         var store = new InMemoryRefineJobStore();
         var pipeline = new RecordingPipeline();
-        var controller = new RefineController(store, pipeline, new InMemoryRefineJobCancellation(), new RefineJobQueryService(store), new WorkspaceRoot(_root));
+        var cancellation = new InMemoryRefineJobCancellation();
+        var workspace = new WorkspaceRoot(_root);
+        var controller = new RefineController(store, new RefineJobSubmitter(store, pipeline, cancellation, workspace), cancellation, new RefineJobQueryService(store), workspace);
         return (controller, pipeline);
     }
 

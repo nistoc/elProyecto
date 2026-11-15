@@ -1,6 +1,3 @@
-using System.Net.Http.Json;
-using System.Text.Json;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using TranslationImprover.Features.Refine.Application;
 using TranslationImprover.Features.Refine.Domain;
@@ -9,14 +6,12 @@ namespace TranslationImprover.Features.Refine.Infrastructure;
 
 public sealed class OpenAIRefineClient : IOpenAIRefineClient
 {
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IConfiguration _config;
+    private readonly OpenAIChatClient _chat;
     private readonly ILogger<OpenAIRefineClient>? _logger;
 
-    public OpenAIRefineClient(IHttpClientFactory httpClientFactory, IConfiguration config, ILogger<OpenAIRefineClient>? logger = null)
+    public OpenAIRefineClient(OpenAIChatClient chat, ILogger<OpenAIRefineClient>? logger = null)
     {
-        _httpClientFactory = httpClientFactory;
-        _config = config;
+        _chat = chat;
         _logger = logger;
     }
 
@@ -29,55 +24,17 @@ public sealed class OpenAIRefineClient : IOpenAIRefineClient
         string? baseUrlOverride = null,
         CancellationToken cancellationToken = default)
     {
-        var apiKey = _config["OpenAiApiKey"] ?? _config["OpenAI:ApiKey"] ?? "";
-        if (string.IsNullOrEmpty(apiKey))
+        if (!_chat.HasKey)
         {
             _logger?.LogWarning("OpenAI API key not configured");
             return new BatchResult { BatchIndex = batchInfo.Index, FixedLines = batchInfo.Lines.ToList(), Success = false, Error = "OpenAI API key not configured" };
         }
 
-        var baseUrl = (baseUrlOverride ?? _config["OpenAI:BaseUrl"] ?? "https://api.openai.com/").TrimEnd('/') + "/";
-        var client = _httpClientFactory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-        client.BaseAddress = new Uri(baseUrl);
-        client.Timeout = TimeSpan.FromSeconds(120);
-
-        var contextText = batchInfo.Context != null && batchInfo.Context.Count > 0
-            ? "Context from previous batch (for continuity):\n```\n" + string.Join("\n", batchInfo.Context.Select(l => l.TrimEnd())) + "\n```"
-            : "No previous context available.";
-        var batchText = string.Join("", batchInfo.Lines.Select(l => l.TrimEnd() + "\n"));
-        var userPrompt = userPromptTemplate
-            .Replace("{context}", contextText, StringComparison.Ordinal)
-            .Replace("{batch}", batchText, StringComparison.Ordinal);
-
-        var body = new
-        {
-            model,
-            temperature,
-            messages = new[]
-            {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = userPrompt }
-            }
-        };
-
         try
         {
-            var response = await client.PostAsJsonAsync("v1/chat/completions", body, cancellationToken);
-            response.EnsureSuccessStatusCode();
-            var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
-            var content = json.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
-            var fixedText = content.Trim();
-            var fixedLines = new List<string>();
-            foreach (var line in fixedText.Split('\n'))
-            {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                fixedLines.Add(line.TrimEnd() + (line.EndsWith('\n') ? "" : "\n"));
-            }
-            if (fixedLines.Count == 0 && batchInfo.Lines.Count > 0)
-                fixedLines = batchInfo.Lines.ToList();
-
-            return new BatchResult { BatchIndex = batchInfo.Index, FixedLines = fixedLines, Success = true };
+            var answer = await _chat.CompleteAsync(model, temperature, systemPrompt, BuildUserPrompt(batchInfo, userPromptTemplate),
+                baseUrlOverride, jsonAnswer: false, cancellationToken);
+            return ToResult(answer, batchInfo);
         }
         catch (Exception ex)
         {
@@ -86,4 +43,49 @@ public sealed class OpenAIRefineClient : IOpenAIRefineClient
         }
     }
 
+    /// <summary>The template with the block's lines at <c>{batch}</c> and its context at <c>{context}</c>.</summary>
+    public static string BuildUserPrompt(BatchInfo batchInfo, string userPromptTemplate)
+    {
+        var contextText = batchInfo.Context != null && batchInfo.Context.Count > 0
+            ? "Context from previous batch (for continuity):\n```\n" + string.Join("\n", batchInfo.Context.Select(l => l.TrimEnd())) + "\n```"
+            : "No previous context available.";
+        var batchText = string.Join("", batchInfo.Lines.Select(l => l.TrimEnd() + "\n"));
+        return userPromptTemplate
+            .Replace("{context}", contextText, StringComparison.Ordinal)
+            .Replace("{batch}", batchText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The block's result from the model's answer: its lines without the empty ones, each ending with "\n".
+    /// An answer with no line at all gives the block's own lines back (the call still counts as answered).
+    /// </summary>
+    public static BatchResult ToResult(OpenAIChatClient.Answer answer, BatchInfo batchInfo)
+    {
+        var lines = LinesOf(answer.Content);
+        if (lines.Count == 0 && batchInfo.Lines.Count > 0)
+            lines = batchInfo.Lines.ToList();
+
+        return new BatchResult
+        {
+            BatchIndex = batchInfo.Index,
+            FixedLines = lines,
+            Success = true,
+            RawAnswer = answer.Content,
+            PromptTokens = answer.PromptTokens,
+            CompletionTokens = answer.CompletionTokens
+        };
+    }
+
+    /// <summary>The lines of a text that have anything in them, trimmed at the end, each with a "\n".</summary>
+    public static List<string> LinesOf(string content)
+    {
+        var lines = new List<string>();
+        foreach (var line in content.Trim().Split('\n'))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            lines.Add(line.TrimEnd() + "\n");
+        }
+
+        return lines;
+    }
 }

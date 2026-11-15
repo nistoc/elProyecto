@@ -24,6 +24,9 @@ export function RefinerProgress({ progress, t }: Props) {
   const inFlight =
     !fromDisk && totalBatches > 0 && lastDone < totalBatches ? lastDone + 1 : null;
   const changedCount = batches.filter((b) => b.original !== b.refined).length;
+  // A block whose request failed keeps its lines and the run still ends "done": say it at the top,
+  // the marked row can be hundreds of rows down.
+  const failedCount = batches.filter((b) => !b.ok).length;
   const pct =
     totalBatches > 0
       ? Math.min(100, Math.round((currentBatch / totalBatches) * 100))
@@ -45,6 +48,12 @@ export function RefinerProgress({ progress, t }: Props) {
               <span className="refine-progress__changed">
                 {' '}
                 · {changedCount} {t('refineProgressChanged')}
+              </span>
+            )}
+            {failedCount > 0 && (
+              <span className="refine-progress__failed-count">
+                {' '}
+                · ⚠ {failedCount} {t('refineProgressFailedCount')}
               </span>
             )}
           </span>
@@ -240,6 +249,7 @@ export function RefinerProgress({ progress, t }: Props) {
         .refine-progress__row--changed td:nth-child(3) pre { color: var(--color-accent, #2d7ff9); }
         .refine-progress__row--failed { background: var(--color-danger-bg, rgba(220, 60, 60, 0.08)); }
         .refine-progress__flag { color: var(--color-warning, #d08700); }
+        .refine-progress__failed-count { color: var(--color-warning, #d08700); font-weight: 500; }
       `}</style>
     </div>
   );

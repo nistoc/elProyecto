@@ -13,7 +13,7 @@ namespace TranslationImprover.Controllers;
 public class RefineController : ControllerBase
 {
     private readonly IRefineJobStore _store;
-    private readonly IRefinePipeline _pipeline;
+    private readonly RefineJobSubmitter _submitter;
     private readonly IRefineJobCancellation _cancellation;
     private readonly IRefineJobQueryService _queryService;
     private readonly INodeQuery? _nodeQuery;
@@ -21,14 +21,14 @@ public class RefineController : ControllerBase
 
     public RefineController(
         IRefineJobStore store,
-        IRefinePipeline pipeline,
+        RefineJobSubmitter submitter,
         IRefineJobCancellation cancellation,
         IRefineJobQueryService queryService,
         WorkspaceRoot workspaceRoot,
         INodeQuery? nodeQuery = null)
     {
         _store = store;
-        _pipeline = pipeline;
+        _submitter = submitter;
         _cancellation = cancellation;
         _queryService = queryService;
         _workspaceRoot = workspaceRoot;
@@ -44,69 +44,14 @@ public class RefineController : ControllerBase
         [FromHeader(Name = "X-Caller-Id")] string? xCallerId,
         CancellationToken cancellationToken)
     {
-        var root = _workspaceRoot.RootPath;
-        string artifactRoot;
-        try
+        var result = _submitter.Submit(request, cancellationToken);
+        if (result.Error is { } error)
         {
-            artifactRoot = RefineWorkspacePaths.ResolveEffectiveArtifactRoot(root, request?.JobDirectoryRelative);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(ProblemDetailsFor(400, "Bad Request", ex.Message));
+            return BadRequest(ProblemDetailsFor(400, "Bad Request", error.Message,
+                error.Field != null ? new Dictionary<string, object?> { [error.Field] = error.Value } : null));
         }
 
-        if (string.IsNullOrEmpty(request?.InputFilePath) && string.IsNullOrEmpty(request?.InputContent))
-            return BadRequest(ProblemDetailsFor(400, "Bad Request", "Either input_file_path or input_content must be set"));
-
-        if (!string.IsNullOrEmpty(request.InputFilePath))
-        {
-            var raw = request.InputFilePath.Trim();
-            if (Path.IsPathRooted(raw))
-                return BadRequest(ProblemDetailsFor(400, "Bad Request", "input_file_path must be relative to workspace_root; absolute paths are not allowed", new Dictionary<string, object?> { ["inputFilePath"] = raw }));
-            var rel = raw.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var full = Path.Combine(artifactRoot, rel);
-            if (!System.IO.File.Exists(full))
-                return BadRequest(ProblemDetailsFor(400, "Bad Request", "Input file not found", new Dictionary<string, object?> { ["inputFilePath"] = rel }));
-        }
-
-        if (!string.IsNullOrEmpty(request.OutputFilePath))
-        {
-            var raw = request.OutputFilePath.Trim();
-            if (Path.IsPathRooted(raw))
-                return BadRequest(ProblemDetailsFor(400, "Bad Request", "output_file_path must be relative to workspace_root", new Dictionary<string, object?> { ["outputFilePath"] = raw }));
-        }
-
-        var tags = request.Tags?.Count > 0 ? request.Tags.ToList() : null;
-        var callbackUrl = !string.IsNullOrWhiteSpace(request.CallbackUrl) ? request.CallbackUrl.Trim() : null;
-        var jobId = _store.Create(tags, callbackUrl);
-
-        var req = new RefineJobRequest
-        {
-            InputFilePath = string.IsNullOrEmpty(request.InputFilePath) ? null : request.InputFilePath.Trim(),
-            InputContent = request.InputContent,
-            OutputFilePath = string.IsNullOrEmpty(request.OutputFilePath) ? null : request.OutputFilePath.Trim(),
-            BatchSize = request.BatchSize > 0 ? request.BatchSize : 10,
-            ContextLines = request.ContextLines >= 0 ? request.ContextLines : 3,
-            Model = request.Model ?? "gpt-4o-mini",
-            Temperature = request.Temperature,
-            PromptFile = string.IsNullOrEmpty(request.PromptFile) ? null : request.PromptFile.Trim(),
-            SystemPrompt = string.IsNullOrWhiteSpace(request.SystemPrompt) ? null : request.SystemPrompt.Trim(),
-            SourceName = string.IsNullOrWhiteSpace(request.SourceName) ? null : request.SourceName.Trim(),
-            RespellingOnly = request.RespellingOnly,
-            OpenAIBaseUrl = string.IsNullOrEmpty(request.OpenAIBaseUrl) ? null : request.OpenAIBaseUrl.Trim(),
-            OpenAIOrganization = string.IsNullOrEmpty(request.OpenAIOrganization) ? null : request.OpenAIOrganization.Trim(),
-            SaveIntermediate = request.SaveIntermediate,
-            IntermediateDir = string.IsNullOrEmpty(request.IntermediateDir) ? null : request.IntermediateDir.Trim(),
-            CallbackUrl = callbackUrl,
-            Tags = request.Tags,
-            JobDirectoryRelative = string.IsNullOrWhiteSpace(request.JobDirectoryRelative) ? null : request.JobDirectoryRelative.Trim()
-        };
-
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _cancellation.Register(jobId, cts);
-        _ = _pipeline.RunAsync(jobId, req, root, artifactRoot, cts.Token);
-
-        return AcceptedAtAction(nameof(Get), new { id = jobId }, new { jobId });
+        return AcceptedAtAction(nameof(Get), new { id = result.JobId }, new { jobId = result.JobId });
     }
 
     /// <summary>Get job status (state, progress, output_file_path when completed, error_message when failed).</summary>
