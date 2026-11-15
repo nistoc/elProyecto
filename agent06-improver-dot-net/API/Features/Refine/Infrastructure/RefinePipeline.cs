@@ -9,7 +9,7 @@ namespace TranslationImprover.Features.Refine.Infrastructure;
 public sealed class RefinePipeline : IRefinePipeline
 {
     /// <summary>Fixed system prompt; the operator edits only the user template.</summary>
-    public const string SystemPrompt = "You are a precise transcript editor. You fix Cyrillic transliterations of Spanish words back to Latin script. You preserve everything else exactly as is.";
+    public const string SystemPrompt = "You copy the lines of a bilingual (Russian and Spanish) lesson transcript exactly as they are. While copying you respell only Spanish words that were written in Cyrillic letters by ear. You keep the language and the alphabet of every other word.";
 
     private readonly IRefineJobStore _store;
     private readonly IOpenAIRefineClient _client;
