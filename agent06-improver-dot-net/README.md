@@ -122,6 +122,8 @@ Everything else of the transcript is the source to the letter: only the tokens n
 
 **Measured** (2026-11-15, 33 lesson dialogues, 14,193 lines): 451 words asked about in 60 requests, 44,403 tokens in and 8,557 out — about $0.03 for all 33 at $0.40 / $1.60 per million. 54 words written anew in 20 of the dialogues: 43 right, 2 harmful, 9 doubtful. The run that sends every line with the check of edits, on the same dialogues: 15 changes kept — 13 right, 1 harmful, 1 doubtful — for about 2,840 requests. Two transcripts of the older transcriber (Spanish in Cyrillic as a habit): 52 words asked about, 46 written anew, all right; a third one was not run with the judge as it is now.
 
+**Measured a second time** (the same 33 dialogues run as jobs through agent05; same prompt, model and temperature 0, token counts equal to the unit): 65 words written anew — 48 right, 7 harmful, 10 doubtful. 53 words are written in both runs (43 right, 2 harmful, 8 doubtful).
+
 **What was tried and dropped.**
 
 - The question "in which language was it said", with the like-sounding Spanish word as a hint and the neighbour lines: `gpt-4o-mini` called about 45 Russian words Spanish out of 106 («роль», «без», «её»). The hint and the neighbour lines went; the prompt now has the model say first whether Russian has the word as written.
@@ -131,7 +133,9 @@ Everything else of the transcript is the source to the letter: only the tokens n
 
 **Limits.**
 
-- The two harmful changes are of one kind: a Russian case form that is, sound for sound, a Spanish word of the transcript («примера» — "primera", «паре» — "pare"), and the judge called it Spanish. The code has no dictionary of Russian to hold it back with.
+- The judge does not give the same answer twice. In the second run it answered 12 of the 451 words differently, and they sit in 4 of the 60 requests: an answer that changes takes several words of its request with it. Five of the twelve are harmful, so one run writes 2 harmful words and the next 7. Read the numbers of one run as one draw.
+- Any Latin word of the transcript counts as Spanish. Where the transcriber wrote a Russian word in Latin letters in one line ("grad", "problem"), the same word in Cyrillic elsewhere («град», «проблем») gets a like-sounding spelling, and once the judge calls it Spanish it is written so. The code has no dictionary of Spanish to tell that "grad" is not a word.
+- The two harmful changes of the first run are of one kind: a Russian case form that is, sound for sound, a Spanish word of the transcript («примера» — "primera", «паре» — "pare"), and the judge called it Spanish. The code has no dictionary of Russian to hold it back with.
 - The doubtful ones: a Spanish word that Russian has borrowed («гаспачо», «мате») said inside Russian speech is written in Latin letters.
 - A Spanish word in Cyrillic that the transcript has nowhere in Latin letters is not found, as with the check of edits. A lexicon of all lessons would find it; there is none.
 
