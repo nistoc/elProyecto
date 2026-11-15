@@ -11,6 +11,7 @@ import type {
 } from '../types';
 import { isTerminalSnapshot } from '../utils/streamReconnect';
 import type { JobSettings } from '../utils/jobSettings';
+import type { RefinePrompt } from '../utils/refinePrompt';
 import {
   fetchJob,
   fetchJobsList,
@@ -97,8 +98,12 @@ export function useJob(): {
   handleStart: (tags?: string[], settings?: JobSettings) => Promise<void>;
   handleReset: () => void;
   handleDeleteJob: (id: string) => Promise<void>;
-  /** Manually run the refiner (skip=true marks the job completed without refining; inputFile picks a specific combined transcript). */
-  startRefiner: (skip?: boolean, inputFile?: string | null) => Promise<void>;
+  /** Manually run the refiner (skip=true marks the job completed without refining; inputFile picks a specific combined transcript; prompt picks the lesson prompt or the saved settings). */
+  startRefiner: (
+    skip?: boolean,
+    inputFile?: string | null,
+    prompt?: RefinePrompt
+  ) => Promise<void>;
   /** Live before/after refiner progress from SSE, or null when idle. */
   refineProgress: RefineProgressState | null;
 } {
@@ -403,12 +408,12 @@ export function useJob(): {
 
   /** Manually start the refiner (or skip it) for the current job; updates arrive over SSE. */
   const startRefiner = useCallback(
-    async (skip = false, inputFile?: string | null) => {
+    async (skip = false, inputFile?: string | null, prompt?: RefinePrompt) => {
       if (!jobId) return;
       setError(null);
       if (!skip) setRefineProgress(null); // fresh run → drop the previous before/after table
       try {
-        await startRefine(jobId, skip, inputFile);
+        await startRefine(jobId, skip, inputFile, prompt);
         // The stream may already be closed (job was completed): reopen it to get live progress and the final snapshot.
         setStreamEpoch((n) => n + 1);
       } catch (e) {

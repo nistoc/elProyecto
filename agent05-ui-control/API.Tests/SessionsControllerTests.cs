@@ -497,6 +497,6 @@ public sealed class SessionsControllerTests : IDisposable
                 FilesSeenWhenQueued.AddRange(Directory.EnumerateFiles(dir).Select(Path.GetFileName)!);
         }
 
-        public void EnqueueRefiner(string jobId, string? inputFile = null) { }
+        public void EnqueueRefiner(string jobId, string? inputFile = null, bool lessonPrompt = false) { }
     }
 }

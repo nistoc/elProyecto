@@ -605,7 +605,8 @@ public class JobsController : ControllerBase
 
     /// <summary>
     /// Manually starts the refiner (agent06) for a job whose transcription finished, or skips it.
-    /// The refiner never runs automatically — the operator reviews the transcript first. Body: <c>{ "skip": bool }</c>.
+    /// The refiner never runs automatically — the operator reviews the transcript first.
+    /// Body: <c>{ "skip": bool, "inputFile"?: string, "prompt"?: "lesson" | "saved" }</c> (<see cref="RefinerRunPlan"/>).
     /// Allowed when phase is <c>awaiting_refiner</c> or <c>completed</c> (re-run), or when a transcript file exists on disk.
     /// </summary>
     [HttpPost("{id}/refine")]
@@ -627,6 +628,10 @@ public class JobsController : ControllerBase
 
         if (string.Equals(phase, "refiner", StringComparison.OrdinalIgnoreCase))
             return Conflict(new { error = "refiner is already running for this job" });
+
+        var lessonPrompt = RefinerRunPlan.TryParsePrompt(body?.Prompt);
+        if (lessonPrompt == null)
+            return BadRequest(new { error = $"prompt must be \"{RefinerRunPlan.PromptLesson}\" or \"{RefinerRunPlan.PromptSaved}\"" });
 
         if (body?.Skip == true)
         {
@@ -654,8 +659,14 @@ public class JobsController : ControllerBase
         // response sees a non-terminal snapshot (a stale 'completed' would make it close the stream again).
         await _store.UpdateAsync(id, s => { s.Phase = "refiner"; s.Status = "running"; });
         await PublishEnrichedSnapshotAsync(id, ct);
-        _pipelineQueue.EnqueueRefiner(id, chosen);
-        return Accepted(new { ok = true, message = "refiner_started", inputFile = chosen });
+        _pipelineQueue.EnqueueRefiner(id, chosen, lessonPrompt.Value);
+        return Accepted(new
+        {
+            ok = true,
+            message = "refiner_started",
+            inputFile = chosen,
+            prompt = lessonPrompt.Value ? RefinerRunPlan.PromptLesson : RefinerRunPlan.PromptSaved,
+        });
     }
 
     /// <summary>SSE stream: snapshot first, then status/snapshot/done events; ": ping" comments keep the connection alive.</summary>
@@ -743,4 +754,10 @@ public sealed class RefineActionRequest
 
     /// <summary>Optional job-relative transcript file name to refine (e.g. <c>transcript_20260718_194306_499.md</c>). When null, the newest combined transcript is used.</summary>
     public string? InputFile { get; set; }
+
+    /// <summary>
+    /// Which prompt the run goes with: <c>lesson</c> — the refiner's built-in lesson prompt with the check of
+    /// edits; <c>saved</c> or nothing — the settings saved on the Refiner tab (<see cref="RefinerRunPlan"/>).
+    /// </summary>
+    public string? Prompt { get; set; }
 }

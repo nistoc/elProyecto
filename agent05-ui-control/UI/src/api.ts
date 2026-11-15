@@ -13,6 +13,7 @@ import type { ChunkArtifactGroup } from './utils/chunkArtifactGroups';
 import type { JobSettings } from './utils/jobSettings';
 import type { LessonsResponse } from './utils/lessons';
 import type { JobLanguageShareReport } from './utils/languageShare';
+import type { RefinePrompt } from './utils/refinePrompt';
 import {
   computeReconnectDelay,
   isTerminalSnapshot,
@@ -229,14 +230,19 @@ export async function deleteJob(id: string): Promise<void> {
 export async function startRefine(
   jobId: string,
   skip = false,
-  inputFile?: string | null
+  inputFile?: string | null,
+  prompt?: RefinePrompt
 ): Promise<{ ok: boolean; message: string }> {
   const r = await fetch(
     `${API_BASE}/api/jobs/${encodeURIComponent(jobId)}/refine`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(inputFile ? { skip, inputFile } : { skip }),
+      body: JSON.stringify({
+        skip,
+        ...(inputFile ? { inputFile } : {}),
+        ...(prompt ? { prompt } : {}),
+      }),
     }
   );
   const text = await r.text();

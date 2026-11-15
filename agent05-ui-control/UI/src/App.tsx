@@ -17,6 +17,7 @@ import { RefinerProgress } from './components/RefinerProgress';
 import { RefinerSettingsPanel } from './components/RefinerSettingsPanel';
 import { runSettingsLine } from './utils/runSettings';
 import { conversationLines, languageShareLines } from './utils/languageShare';
+import { refinePromptFor, type RefinePromptPick } from './utils/refinePrompt';
 
 function AppContent() {
   const { t, locale, setLocale } = useI18n();
@@ -55,6 +56,11 @@ function AppContent() {
     setShowLessons(false);
     handleSelectJob(id, 'transcriber');
   };
+
+  // The prompt of a refine run: the lesson prompt is offered first for a job that holds a lesson;
+  // what the operator picks holds for the job it was picked for.
+  const [promptPick, setPromptPick] = useState<RefinePromptPick | null>(null);
+  const refinePrompt = refinePromptFor(jobId, job?.lesson, promptPick);
 
   const debouncedRevision = useDebouncedValue(jobSnapshotRevision, 3000);
   const jobFiles = useJobProjectFiles(jobId, debouncedRevision);
@@ -304,6 +310,45 @@ function AppContent() {
                           </button>
                         )}
                       </div>
+                      <div
+                        className="refiner-prompt"
+                        role="radiogroup"
+                        aria-label={t('refinerPromptLabel')}
+                        data-testid="refiner-prompt"
+                      >
+                        <span className="refiner-prompt__label">
+                          {t('refinerPromptLabel')}
+                        </span>
+                        {(['lesson', 'saved'] as const).map((p) => (
+                          <label key={p} className="refiner-prompt__option">
+                            <input
+                              type="radio"
+                              name="refiner-prompt"
+                              value={p}
+                              checked={refinePrompt === p}
+                              disabled={job.phase === 'refiner'}
+                              onChange={() =>
+                                setPromptPick({ jobId, prompt: p })
+                              }
+                            />
+                            {t(
+                              p === 'lesson'
+                                ? 'refinerPromptLesson'
+                                : 'refinerPromptSaved'
+                            )}
+                          </label>
+                        ))}
+                        <p
+                          className="refiner-prompt__hint"
+                          data-testid="refiner-prompt-hint"
+                        >
+                          {t(
+                            refinePrompt === 'lesson'
+                              ? 'refinerPromptLessonHint'
+                              : 'refinerPromptSavedHint'
+                          )}
+                        </p>
+                      </div>
                       {refinerInputs.length === 0 ? (
                         <p className="refiner-panel__hint">
                           {t('refinerInputUnknown')}
@@ -329,7 +374,9 @@ function AppContent() {
                                 type="button"
                                 className="refiner-actions__run"
                                 disabled={job.phase === 'refiner'}
-                                onClick={() => startRefiner(false, f.name)}
+                                onClick={() =>
+                                  startRefiner(false, f.name, refinePrompt)
+                                }
                               >
                                 {job.phase === 'completed'
                                   ? t('refinerRerun')
@@ -592,6 +639,18 @@ function AppContent() {
         }
         .refiner-panel__file--out { color: var(--color-text-secondary); }
         .refiner-panel__arrow { color: var(--color-text-muted); }
+        .refiner-prompt {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 0.3rem 1rem;
+          margin: 0 0 0.7rem 0;
+          font-size: 0.85rem;
+          color: var(--color-text);
+        }
+        .refiner-prompt__label { font-size: 0.8rem; color: var(--color-text-secondary); }
+        .refiner-prompt__option { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
+        .refiner-prompt__hint { flex-basis: 100%; margin: 0; font-size: 0.8rem; color: var(--color-text-secondary); }
         .refiner-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
         .refiner-files__row {
           display: flex;

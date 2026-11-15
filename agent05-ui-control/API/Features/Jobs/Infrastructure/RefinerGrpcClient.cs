@@ -33,6 +33,7 @@ public sealed class RefinerGrpcClient : Application.IRefinerServiceClient, IDisp
             PromptFile = input.PromptFile ?? "",
             SystemPrompt = input.SystemPrompt ?? "",
             SourceName = input.SourceName ?? "",
+            RespellingOnly = input.RespellingOnly,
             Model = input.Model ?? "",
             SaveIntermediate = !string.IsNullOrEmpty(input.IntermediateDir),
             IntermediateDir = input.IntermediateDir ?? ""

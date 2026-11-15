@@ -180,11 +180,11 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         Broadcast(jobId, "done", null);
     }
 
-    public async Task RunRefinerAsync(string jobId, string? inputFile, CancellationToken ct = default)
+    public async Task RunRefinerAsync(string jobId, string? inputFile, bool lessonPrompt, CancellationToken ct = default)
     {
         try
         {
-            await RunRefinerCoreAsync(jobId, inputFile, ct);
+            await RunRefinerCoreAsync(jobId, inputFile, lessonPrompt, ct);
         }
         catch (Exception ex)
         {
@@ -202,7 +202,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         }
     }
 
-    private async Task RunRefinerCoreAsync(string jobId, string? inputFile, CancellationToken ct)
+    private async Task RunRefinerCoreAsync(string jobId, string? inputFile, bool lessonPrompt, CancellationToken ct)
     {
         var snap = await _store.GetAsync(jobId, ct);
         if (snap == null) return;
@@ -279,18 +279,17 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         Application.SubmitRefineJobResult refinerResult;
         try
         {
-            // Operator-tuned settings (Refiner tab): custom prompt file, batch geometry, model.
-            var settings = _refinerSettings.Load();
-            var batchSize = settings.BatchSize ?? IRefinerSettingsStore.DefaultBatchSize;
-            var contextLines = settings.ContextLines ?? IRefinerSettingsStore.DefaultContextLines;
-            var promptFile = settings.PromptTemplate != null ? IRefinerSettingsStore.PromptFileName : null;
-            _logger.LogInformation("Job {JobId}: refiner settings batch={Batch} context={Context} model={Model} prompt={Prompt} system={System}",
-                jobId, batchSize, contextLines, settings.Model ?? IRefinerSettingsStore.DefaultModel, promptFile ?? "built-in", settings.SystemPrompt != null ? "custom" : "built-in");
+            // The operator's choice at the start of the run: the lesson prompt with the check of edits,
+            // or the settings saved on the Refiner tab (custom prompt file, batch geometry, model).
+            var plan = RefinerRunPlan.Choose(_refinerSettings.Load(), lessonPrompt);
+            _logger.LogInformation("Job {JobId}: refiner run prompt={Choice} batch={Batch} context={Context} model={Model} template={Prompt} system={System} respellingOnly={RespellingOnly}",
+                jobId, lessonPrompt ? RefinerRunPlan.PromptLesson : RefinerRunPlan.PromptSaved, plan.BatchSize, plan.ContextLines,
+                plan.Model ?? IRefinerSettingsStore.DefaultModel, plan.PromptFile ?? "built-in", plan.SystemPrompt != null ? "custom" : "built-in", plan.RespellingOnly);
             var refineInput = outputRelForRefiner != null
-                ? new RefineJobInput(null, transcriptContent ?? "", outputName, batchSize, contextLines, tagsList, jobId,
-                    promptFile, settings.Model, RefineBatchesDir, settings.SystemPrompt, sourceName)
-                : new RefineJobInput(null, transcriptContent ?? "", null, batchSize, contextLines, tagsList, null,
-                    promptFile, settings.Model, null, settings.SystemPrompt, sourceName);
+                ? new RefineJobInput(null, transcriptContent ?? "", outputName, plan.BatchSize, plan.ContextLines, tagsList, jobId,
+                    plan.PromptFile, plan.Model, RefineBatchesDir, plan.SystemPrompt, sourceName, plan.RespellingOnly)
+                : new RefineJobInput(null, transcriptContent ?? "", null, plan.BatchSize, plan.ContextLines, tagsList, null,
+                    plan.PromptFile, plan.Model, null, plan.SystemPrompt, sourceName, plan.RespellingOnly);
             refinerResult = await _refiner.SubmitRefineJobAsync(refineInput, ct);
         }
         catch (Exception ex)

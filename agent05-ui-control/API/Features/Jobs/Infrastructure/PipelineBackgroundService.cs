@@ -13,7 +13,7 @@ public sealed class PipelineBackgroundService : BackgroundService, IPipelineQueu
     private readonly IPipeline _pipeline;
     private readonly ILogger<PipelineBackgroundService> _logger;
 
-    private readonly record struct WorkItem(string JobId, bool RefinerOnly, string? InputFile = null);
+    private readonly record struct WorkItem(string JobId, bool RefinerOnly, string? InputFile = null, bool LessonPrompt = false);
 
     public PipelineBackgroundService(IPipeline pipeline, ILogger<PipelineBackgroundService> logger)
     {
@@ -23,7 +23,8 @@ public sealed class PipelineBackgroundService : BackgroundService, IPipelineQueu
 
     public void Enqueue(string jobId) => _queue.Writer.TryWrite(new WorkItem(jobId, RefinerOnly: false));
 
-    public void EnqueueRefiner(string jobId, string? inputFile = null) => _queue.Writer.TryWrite(new WorkItem(jobId, RefinerOnly: true, InputFile: inputFile));
+    public void EnqueueRefiner(string jobId, string? inputFile = null, bool lessonPrompt = false) =>
+        _queue.Writer.TryWrite(new WorkItem(jobId, RefinerOnly: true, InputFile: inputFile, LessonPrompt: lessonPrompt));
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -35,7 +36,7 @@ public sealed class PipelineBackgroundService : BackgroundService, IPipelineQueu
                 try
                 {
                     if (work.RefinerOnly)
-                        await _pipeline.RunRefinerAsync(work.JobId, work.InputFile, stoppingToken);
+                        await _pipeline.RunRefinerAsync(work.JobId, work.InputFile, work.LessonPrompt, stoppingToken);
                     else
                         await _pipeline.RunAsync(work.JobId, stoppingToken);
                 }

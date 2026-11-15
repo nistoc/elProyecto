@@ -66,6 +66,13 @@ public class JobSnapshot
     public JobRunSettings? RunSettings { get; set; }
 
     /// <summary>
+    /// The job holds a lesson: it was started from the lessons list (<c>track_source.json</c>) or is a dialogue
+    /// merged from such jobs (<c>dialogue.json</c>). Read from the folder on every request. The UI offers the
+    /// lesson prompt of the refiner first for such a job.
+    /// </summary>
+    public bool Lesson { get; set; }
+
+    /// <summary>
     /// Deprecated: no longer populated. Use <c>GET /api/jobs/{id}/files</c> for structured project files. Kept for JSON backward compatibility with older clients.
     /// </summary>
     public IReadOnlyList<JobFileInfo>? Files { get; set; }
@@ -90,6 +97,7 @@ public class JobSnapshot
         MdOutputPath = MdOutputPath,
         JobDirectoryPath = JobDirectoryPath,
         RunSettings = RunSettings,
+        Lesson = Lesson,
         Files = Files?.Select(f => new JobFileInfo
         {
             Name = f.Name,

@@ -34,6 +34,8 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
             snap.JobDirectoryPath ??= dirPath;
             JobSnapshotDiskEnricher.TryEnrichFromDisk(snap, dirPath, _logger);
             snap.RunSettings = JobRunSettingsReader.Read(dirPath);
+            snap.Lesson = File.Exists(Path.Combine(dirPath, Features.Sessions.Infrastructure.TrackSourceFile.FileName))
+                          || File.Exists(Path.Combine(dirPath, DialogueManifestFile.FileName));
         }
 
         return snap;

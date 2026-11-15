@@ -24,7 +24,8 @@ public record RefineJobInput(
     string? Model = null,
     string? IntermediateDir = null,
     string? SystemPrompt = null,
-    string? SourceName = null);
+    string? SourceName = null,
+    bool RespellingOnly = false);
 
 public record SubmitRefineJobResult(string JobId);
 

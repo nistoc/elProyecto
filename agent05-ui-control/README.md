@@ -109,11 +109,12 @@ npm run build
 |--------|-------------------------|----------|
 | GET    | /health                 | Проверка состояния (JSON: status, service) |
 | GET    | /api/jobs               | Список заданий. Query: semanticKey, status, from, to, limit, offset. Ответ: `{ "jobs": JobListItem[] }`. |
-| GET    | /api/jobs/{id}          | Снепшот задания (JobSnapshot). 404 если нет. Поле `files` в JSON больше не заполняется — список файлов: **GET /api/jobs/{id}/files**. Во время транскрипции могут быть **`agent04JobId`**, **`chunks`** (`total`, `completed`, `active`, …). Поле **`runSettings`** — с какими настройками шёл запуск (см. «Настройки запуска»). |
+| GET    | /api/jobs/{id}          | Снепшот задания (JobSnapshot). 404 если нет. Поле `files` в JSON больше не заполняется — список файлов: **GET /api/jobs/{id}/files**. Во время транскрипции могут быть **`agent04JobId`**, **`chunks`** (`total`, `completed`, `active`, …). Поле **`runSettings`** — с какими настройками шёл запуск (см. «Настройки запуска»). Поле **`lesson`** — задание держит урок (см. «Запуск refiner»). |
 | POST   | /api/jobs/{id}/chunk-actions | Операторские действия по чанку → gRPC Agent04 `ChunkCommand`. Тело JSON: **`action`**: `cancel` \| `skip` \| `retranscribe` \| `split`, **`chunkIndex`**: неотрицательный индекс (0-based). Допустимо только при **`phase`** = `transcriber` и **`status`** = `running`. Ответ 200: `{ "ok": bool, "message": string }`. Ошибки gRPC: 400 / 404 / 409 / 502. |
 | POST   | /api/jobs               | Создать задание. Form: file (обязательно), tags (опционально, строка через запятую), **settings** (опционально: JSON-объект настроек этого задания — `silence_compress_enabled`, `silence_keep_sec` 0,05–5, `model`; например `{"silence_keep_sec":1.0}`; пишется в `job_settings.json` в папке задания, agent04 кладёт его поверх общего config; чужой ключ или значение вне границ — 400, задание не создаётся). Ответ: 202, `{ "jobId": string }`. Пайплайн запускается в фоне (agent04 → agent06). Лимит тела запроса 512 MB. |
 | DELETE | /api/jobs/{id}          | Удалить задание. 204 при успехе, 404 если нет. |
 | GET    | /api/jobs/{id}/stream   | SSE: первый ответ — snapshot (type: "snapshot", payload: JobSnapshot), далее события type: "status" | "done". При "done" стрим завершается. |
+| POST   | /api/jobs/{id}/refine | **Запустить refiner вручную** или пропустить его. Тело JSON: `{ "skip"?: bool, "inputFile"?: string, "prompt"?: "lesson" или "saved" }`. Ответ **202**: `{ "ok", "message": "refiner_started", "inputFile", "prompt" }`; при `skip` — **200** `{ "ok", "message": "refiner_skipped" }`. 400 — неизвестный `prompt` или негодный `inputFile`; 404 — задания нет; 409 — транскрипта ещё нет или refiner уже идёт. См. ниже. |
 | GET    | /api/jobs/{id}/files    | Структурированный список файлов задания (как в agent-browser). См. ниже. |
 | GET    | /api/jobs/{id}/language-share | **Доли речи:** сколько речи задания идёт по-испански и сколько по-русски; у задания-диалога — по каждой дорожке и сумма, плюс паузы и перебивания (`conversation`). 404, если папки задания нет. См. ниже. |
 | GET    | /api/jobs/{id}/files/content | Отдача файла из каталога задания по относительному пути. Query: **path** (обязательно), например `path=chunks/foo_part_000.wav`. Поддержка Range для аудио. |
@@ -139,6 +140,21 @@ Zoom пишет каждого участника в свой файл. Кажд
 ```bash
 curl -X POST http://localhost:5010/api/jobs/dialogue -H "Content-Type: application/json" --data-binary @dialogue.json
 ```
+
+### Запуск refiner: `POST /api/jobs/{id}/refine`
+
+Refiner никогда не запускается сам: оператор смотрит транскрипт и запускает его кнопкой **Run Refiner** (или пропускает — `skip: true`, задание сразу становится `completed`). `inputFile` — голое имя combined-транскрипта в папке задания (не `_fixed`); без него берётся самый новый.
+
+Поле **`prompt`** выбирает, с чем идёт запуск (`RefinerRunPlan`):
+
+| `prompt` | Что уходит в agent06 |
+|---|---|
+| `lesson` | Встроенный prompt agent06 для урока, блоки по 5 строк и 2 строки контекста, модель по умолчанию и **проверка правок** (`respelling_only`): из того, что изменила модель, остаётся только испанское слово, записанное кириллицей и переписанное латиницей (например «грасиас» → «gracias»); остальное в строке возвращается как было. Сохранённые настройки не используются. |
+| `saved` или поле не названо | Настройки вкладки Refiner (`GET` / `PUT /api/refiner/settings`): свой prompt, размер блока, модель. Строки берутся такими, как их написала модель. Так шёл любой запуск до появления выбора. |
+
+Другое значение — **400**, запуск в очередь не ставится.
+
+Снепшот задания несёт поле **`lesson`** (bool): в папке задания есть `track_source.json` (запуск из списка уроков) или `dialogue.json` (диалог из дорожек). UI для такого задания предлагает `lesson` первым, для обычной загрузки — `saved`; выбор оператора держится за тем заданием, для которого сделан. Правила проверки правок — в README agent06, раздел «Check of edits».
 
 ### Настройки запуска: поле `runSettings`
 

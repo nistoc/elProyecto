@@ -8,5 +8,5 @@ public sealed class StubPipeline : Application.IPipeline
         return Task.CompletedTask;
     }
 
-    public Task RunRefinerAsync(string jobId, string? inputFile, CancellationToken ct = default) => Task.CompletedTask;
+    public Task RunRefinerAsync(string jobId, string? inputFile, bool lessonPrompt, CancellationToken ct = default) => Task.CompletedTask;
 }

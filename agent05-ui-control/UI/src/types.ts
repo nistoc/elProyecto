@@ -78,6 +78,8 @@ export interface JobSnapshot {
   transcriptionSyncDebug?: string | null;
   /** What the job was transcribed with, read from its folder; null when the folder does not tell. */
   runSettings?: JobRunSettings | null;
+  /** The job holds a lesson (started from the lessons list, or a dialogue): the lesson prompt of the refiner is offered first. */
+  lesson?: boolean;
   /** @deprecated Not populated by API. Use GET /api/jobs/:id/files (JobProjectFiles). */
   files?: JobFileInfo[] | null;
 }
