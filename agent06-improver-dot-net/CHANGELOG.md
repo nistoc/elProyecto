@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **REST submit keeps the check of edits.** `POST /api/refine/jobs` copies the request field by field, and `respellingOnly`, `systemPrompt` and `sourceName` were left out of that copy: a REST run asked with `respellingOnly: true` took the model's lines as they were and its run record said "Check of edits: off", with no error. The gRPC entry (what agent05 calls) was not affected. The three fields are now passed on; `RefineControllerSubmitTests` holds it.
+
 ### Changed
 
 - **Built-in refine prompt reworded as copying with one exception.** The built-in user template (`FilePromptLoader.DefaultPrompt`) and the system prompt (`RefinePipeline.SystemPrompt`) no longer say that the transcript "contains Russian speech where Spanish was transcribed in Cyrillic" and no longer give a numbered task to find and replace. They say: copy the lines of the batch; the transcript is bilingual on purpose, keep every word in the language and alphabet it has, the speaker's mistakes included; one kind of word is respelled — a Spanish word written in Cyrillic by ear — and such words are rare. Reason: transcripts made by `gpt-transcribe` are already right in most lines, and the old wording made `gpt-4o-mini` look for things to fix. Measured on one lesson dialogue of 593 lines (batch 5, context 2, temperature 0): the old wording changed 29 lines — about 3 for the better, about 13 Russian words translated or broken into mixed script, about 9 "corrections" of the speaker's own Spanish; a wording with a list of "never" rules and an example of each changed 47 lines (the model did the very things the examples named: Russian words written in Latin letters, whole Russian lines translated); the wording kept here changed 7 lines — 1 for the better, 6 small ones for the worse. So the refiner is now close to doing nothing on such a transcript, and its output still has to be read. A prompt saved by the operator in agent05 (Refiner tab) is used instead of the built-in one, as before. Tests: `BuiltInPromptTests`.
