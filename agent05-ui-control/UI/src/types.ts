@@ -166,6 +166,8 @@ export interface RefineBatch {
   error?: string | null;
   /** Lines of the previous (already refined) batch sent along as context — the seam between blocks. */
   context?: string;
+  /** A request about the words in doubt: the words the model was asked about, one per line («word — the Spanish word it sounds like»). */
+  asked?: string;
   /** 1-based content line range of this batch in the transcript. */
   startLine?: number;
   endLine?: number;

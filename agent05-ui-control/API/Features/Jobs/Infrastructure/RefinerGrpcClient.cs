@@ -33,7 +33,7 @@ public sealed class RefinerGrpcClient : Application.IRefinerServiceClient, IDisp
             PromptFile = input.PromptFile ?? "",
             SystemPrompt = input.SystemPrompt ?? "",
             SourceName = input.SourceName ?? "",
-            RespellingOnly = input.RespellingOnly,
+            CandidatesOnly = input.CandidatesOnly,
             Model = input.Model ?? "",
             SaveIntermediate = !string.IsNullOrEmpty(input.IntermediateDir),
             IntermediateDir = input.IntermediateDir ?? ""
@@ -67,7 +67,7 @@ public sealed class RefinerGrpcClient : Application.IRefinerServiceClient, IDisp
                     ? update.Batches.Select(b => new Application.RefineBatchDelta(
                         b.Index, b.Total, b.OriginalText, b.RefinedText, b.Ok,
                         string.IsNullOrEmpty(b.Error) ? null : b.Error,
-                        b.ContextText, b.StartLine, b.EndLine)).ToList()
+                        b.ContextText, b.StartLine, b.EndLine, b.AskedWords)).ToList()
                     : null
             );
             if (update.State is "Completed" or "Failed" or "Cancelled")

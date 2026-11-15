@@ -279,17 +279,21 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
         Application.SubmitRefineJobResult refinerResult;
         try
         {
-            // The operator's choice at the start of the run: the lesson prompt with the check of edits,
-            // or the settings saved on the Refiner tab (custom prompt file, batch geometry, model).
+            // The operator's choice at the start of the run: the lesson run about the words in doubt, or the
+            // settings saved on the Refiner tab (custom prompt file, batch geometry, model) for every line.
             var plan = RefinerRunPlan.Choose(_refinerSettings.Load(), lessonPrompt);
-            _logger.LogInformation("Job {JobId}: refiner run prompt={Choice} batch={Batch} context={Context} model={Model} template={Prompt} system={System} respellingOnly={RespellingOnly}",
-                jobId, lessonPrompt ? RefinerRunPlan.PromptLesson : RefinerRunPlan.PromptSaved, plan.BatchSize, plan.ContextLines,
-                plan.Model ?? IRefinerSettingsStore.DefaultModel, plan.PromptFile ?? "built-in", plan.SystemPrompt != null ? "custom" : "built-in", plan.RespellingOnly);
+            if (plan.CandidatesOnly)
+                _logger.LogInformation("Job {JobId}: refiner run prompt={Choice}: the words in doubt only, the refiner's own prompt and model",
+                    jobId, RefinerRunPlan.PromptLesson);
+            else
+                _logger.LogInformation("Job {JobId}: refiner run prompt={Choice} batch={Batch} context={Context} model={Model} template={Prompt} system={System}",
+                    jobId, RefinerRunPlan.PromptSaved, plan.BatchSize, plan.ContextLines,
+                    plan.Model ?? IRefinerSettingsStore.DefaultModel, plan.PromptFile ?? "built-in", plan.SystemPrompt != null ? "custom" : "built-in");
             var refineInput = outputRelForRefiner != null
                 ? new RefineJobInput(null, transcriptContent ?? "", outputName, plan.BatchSize, plan.ContextLines, tagsList, jobId,
-                    plan.PromptFile, plan.Model, RefineBatchesDir, plan.SystemPrompt, sourceName, plan.RespellingOnly)
+                    plan.PromptFile, plan.Model, RefineBatchesDir, plan.SystemPrompt, sourceName, plan.CandidatesOnly)
                 : new RefineJobInput(null, transcriptContent ?? "", null, plan.BatchSize, plan.ContextLines, tagsList, null,
-                    plan.PromptFile, plan.Model, null, plan.SystemPrompt, sourceName, plan.RespellingOnly);
+                    plan.PromptFile, plan.Model, null, plan.SystemPrompt, sourceName, plan.CandidatesOnly);
             refinerResult = await _refiner.SubmitRefineJobAsync(refineInput, ct);
         }
         catch (Exception ex)
@@ -545,6 +549,7 @@ public sealed class TranscriptionRefinerPipeline : Application.IPipeline
                     ok = b.Ok,
                     error = b.Error,
                     context = b.ContextText,
+                    asked = b.AskedWords,
                     startLine = b.StartLine,
                     endLine = b.EndLine
                 })

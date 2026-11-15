@@ -756,8 +756,9 @@ public sealed class RefineActionRequest
     public string? InputFile { get; set; }
 
     /// <summary>
-    /// Which prompt the run goes with: <c>lesson</c> — the refiner's built-in lesson prompt with the check of
-    /// edits; <c>saved</c> or nothing — the settings saved on the Refiner tab (<see cref="RefinerRunPlan"/>).
+    /// What the run goes with: <c>lesson</c> — the refiner asks the model only about the words in doubt and
+    /// writes their spelling itself; <c>saved</c> or nothing — the settings saved on the Refiner tab, every line
+    /// sent to the model (<see cref="RefinerRunPlan"/>).
     /// </summary>
     public string? Prompt { get; set; }
 }

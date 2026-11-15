@@ -12,6 +12,7 @@ public interface IRefinerServiceClient
 
 public record RefineDefaults(string SystemPrompt, string UserPromptTemplate, string Model);
 
+/// <param name="CandidatesOnly">The run about the words in doubt: the model is asked about single words and returns no line.</param>
 public record RefineJobInput(
     string? InputFilePath,
     string? InputContent,
@@ -25,7 +26,7 @@ public record RefineJobInput(
     string? IntermediateDir = null,
     string? SystemPrompt = null,
     string? SourceName = null,
-    bool RespellingOnly = false);
+    bool CandidatesOnly = false);
 
 public record SubmitRefineJobResult(string JobId);
 
@@ -40,6 +41,7 @@ public record RefineStatusUpdate(
     string? PromptPreview = null,
     IReadOnlyList<RefineBatchDelta>? Batches = null);
 
+/// <param name="AskedWords">A request about the words in doubt: the words asked about, one per line; empty in a run that sends lines.</param>
 public record RefineBatchDelta(
     int Index,
     int Total,
@@ -49,4 +51,5 @@ public record RefineBatchDelta(
     string? Error,
     string ContextText = "",
     int StartLine = 0,
-    int EndLine = 0);
+    int EndLine = 0,
+    string AskedWords = "");

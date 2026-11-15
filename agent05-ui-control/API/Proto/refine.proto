@@ -36,6 +36,10 @@ message SubmitRefineJobRequest {
   // Of what the model changes keep only a word in Cyrillic letters respelled in Latin letters (RespellingGuard);
   // everything else of a line stays as it was. Meant for the built-in lesson prompt.
   bool respelling_only = 18;
+  // Ask the model only about the words in doubt found by code (SpellingCandidates): in which language each was
+  // said. The model returns no line; the spelling is written by code. batch_size, context_lines and the prompts
+  // are not used.
+  bool candidates_only = 19;
 }
 
 message SubmitRefineJobResponse {
@@ -83,6 +87,7 @@ message RefineBatchDelta {
   string context_text = 7;    // lines from the previous refined batch sent as context (the seam)
   int32 start_line = 8;       // 1-based first content line of this batch
   int32 end_line = 9;         // 1-based last content line of this batch
+  string asked_words = 10;    // a request about the words in doubt: the words asked about, one per line ("word — the Spanish word it sounds like")
 }
 
 message RefineStatusUpdate {

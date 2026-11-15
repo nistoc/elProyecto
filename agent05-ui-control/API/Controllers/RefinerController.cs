@@ -106,7 +106,8 @@ public class RefinerController : ControllerBase
 
     /// <summary>
     /// Batches of the job's last refiner run, as saved by agent06 under <c>refine_batches/</c>:
-    /// order, line range, context (the seam with the previous batch), text sent and text received.
+    /// order, line range, context (the seam with the previous batch), text sent and text received; in a run
+    /// about the words in doubt a batch is one request, with the words it asked about (<c>askedWords</c>).
     /// </summary>
     [HttpGet("api/jobs/{id}/refine-batches")]
     public async Task<IActionResult> GetRefineBatches(string id, CancellationToken ct = default)

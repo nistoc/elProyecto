@@ -487,6 +487,7 @@ export async function fetchRefineBatches(
       startLine?: number;
       endLine?: number;
       contextText?: string;
+      askedWords?: string;
       originalText: string;
       refinedText: string;
       ok: boolean;
@@ -503,6 +504,7 @@ export async function fetchRefineBatches(
       ok: b.ok,
       error: b.error,
       context: b.contextText,
+      asked: b.askedWords,
       startLine: b.startLine,
       endLine: b.endLine,
     })),

@@ -11,8 +11,8 @@ using Xunit;
 namespace XtractManager.Tests;
 
 /// <summary>
-/// A refine run goes with the prompt the operator picks: the refiner's lesson prompt with the check of edits,
-/// or the settings saved on the Refiner tab.
+/// A refine run goes with what the operator picks: the lesson run about the words in doubt, or the settings
+/// saved on the Refiner tab.
 /// </summary>
 public sealed class RefinePromptChoiceTests : IDisposable
 {
@@ -31,16 +31,14 @@ public sealed class RefinePromptChoiceTests : IDisposable
         new("OWN TEMPLATE {context} {batch}", BatchSize: 10, ContextLines: 5, Model: "gpt-4o", SystemPrompt: "OWN SYSTEM PROMPT");
 
     [Fact]
-    public void The_lesson_prompt_takes_nothing_from_the_saved_settings_and_asks_for_the_check_of_edits()
+    public void The_lesson_run_takes_nothing_from_the_saved_settings_and_asks_about_the_words_in_doubt_only()
     {
         var plan = RefinerRunPlan.Choose(SavedForAnotherMaterial, lessonPrompt: true);
 
         Assert.Null(plan.PromptFile); // built-in template
         Assert.Null(plan.SystemPrompt); // built-in system prompt
-        Assert.Null(plan.Model); // the refiner's default model
-        Assert.Equal(IRefinerSettingsStore.DefaultBatchSize, plan.BatchSize);
-        Assert.Equal(IRefinerSettingsStore.DefaultContextLines, plan.ContextLines);
-        Assert.True(plan.RespellingOnly);
+        Assert.Null(plan.Model); // the refiner's default model for this kind of run
+        Assert.True(plan.CandidatesOnly);
     }
 
     [Fact]
@@ -53,7 +51,7 @@ public sealed class RefinePromptChoiceTests : IDisposable
         Assert.Equal("gpt-4o", plan.Model);
         Assert.Equal(10, plan.BatchSize);
         Assert.Equal(5, plan.ContextLines);
-        Assert.False(plan.RespellingOnly);
+        Assert.False(plan.CandidatesOnly);
     }
 
     [Fact]
@@ -65,7 +63,7 @@ public sealed class RefinePromptChoiceTests : IDisposable
         Assert.Null(plan.SystemPrompt);
         Assert.Equal(IRefinerSettingsStore.DefaultBatchSize, plan.BatchSize);
         Assert.Equal(IRefinerSettingsStore.DefaultContextLines, plan.ContextLines);
-        Assert.False(plan.RespellingOnly);
+        Assert.False(plan.CandidatesOnly);
     }
 
     [Theory]

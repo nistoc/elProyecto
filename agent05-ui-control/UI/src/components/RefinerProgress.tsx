@@ -123,6 +123,14 @@ export function RefinerProgress({ progress, t }: Props) {
                           <pre>{b.context}</pre>
                         </div>
                       )}
+                      {b.asked && (
+                        <div className="refine-progress__context">
+                          <div className="refine-progress__context-label">
+                            ↳ {t('refineProgressAsked')}
+                          </div>
+                          <pre>{b.asked}</pre>
+                        </div>
+                      )}
                       <pre>{b.original}</pre>
                     </td>
                     <td>
