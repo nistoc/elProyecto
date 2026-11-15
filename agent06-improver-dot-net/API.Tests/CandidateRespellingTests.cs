@@ -133,6 +133,38 @@ public class CandidateRespellingTests
     }
 
     [Fact]
+    public void A_word_the_answers_disagree_on_stays()
+    {
+        var (lines, asks, cyrillic) = Planned();
+        var ask = asks.Single();
+        var first = Answers(ask, w => w.Word is "Каса" or "Теngo" or "эн" ? Spanish : w.Word == "Nет" ? Russian : null);
+        // Asked again: another language for «Каса», no answer for «эн», an answer for «тема» where the first had none.
+        var again = Answers(ask, w => w.Word == "Теngo" ? Spanish : w.Word is "Nет" or "Каса" or "тема" ? Russian : null);
+
+        var said = CandidateRespelling.Agreed(new[] { first, again }, out var differ);
+        var applied = CandidateRespelling.Apply(lines, ask, said, cyrillic, differ);
+
+        Assert.Equal(new[] { "Теngo", "Nет" }, said.Keys.OrderBy(n => n).Select(n => ask.Words[n - 1].Word));
+        Assert.Equal(new[] { "Каса", "эн", "тема" }, differ.OrderBy(n => n).Select(n => ask.Words[n - 1].Word));
+        Assert.Equal(Line("Каса у меня большая, Tengo и Нет.", "3.00"), lines[2]);
+        Assert.Equal(Line("Una casa эн Madrid, это тема.", "4.00"), lines[3]);
+        Assert.Equal(3, applied.LeftAsTheyWere[CandidateRespelling.Left.AnswersDiffer]);
+        Assert.Equal(4, applied.LeftAsTheyWere[CandidateRespelling.Left.NoAnswer]); // «вале» twice, «Кiero», «casaчка»
+    }
+
+    [Fact]
+    public void One_answer_alone_is_taken_as_it_is()
+    {
+        var (_, asks, _) = Planned();
+        var only = Answers(asks.Single(), w => w.Word == "Каса" ? Spanish : w.Word == "Nет" ? Russian : null);
+
+        var said = CandidateRespelling.Agreed(new[] { only }, out var differ);
+
+        Assert.Equal(only, said);
+        Assert.Empty(differ);
+    }
+
+    [Fact]
     public void A_word_called_Spanish_is_written_anew_also_when_Russian_has_the_same_word()
     {
         // The code takes the word of the judge: it has no dictionary of Russian to hold «тема» back with.

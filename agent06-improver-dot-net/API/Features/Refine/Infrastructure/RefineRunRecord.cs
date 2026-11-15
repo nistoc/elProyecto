@@ -73,13 +73,18 @@ public sealed class RefineRunRecord
     /// <summary>The words in doubt of a run, for the head of its record.</summary>
     /// <param name="Lines">The lines of the transcript.</param>
     /// <param name="LinesWithWords">The lines that have a word in doubt.</param>
-    public sealed record WordsInDoubt(int Lines, int LinesWithWords, int OfBothAlphabets, int SoundingSpanish, int ShortInSpanish, int Requests)
+    /// <param name="Requests">The requests the words are parted into.</param>
+    /// <param name="TimesAsked">How many times each request is made.</param>
+    public sealed record WordsInDoubt(int Lines, int LinesWithWords, int OfBothAlphabets, int SoundingSpanish, int ShortInSpanish, int Requests, int TimesAsked = 1)
     {
         public int Words => OfBothAlphabets + SoundingSpanish + ShortInSpanish;
 
+        /// <summary>«3, each made 2 times» — what is billed is the product.</summary>
+        public string RequestsText => Requests > 0 && TimesAsked > 1 ? $"{Requests}, each made {TimesAsked} times" : Requests.ToString(CultureInfo.InvariantCulture);
+
         public string Summary =>
             $"{Words} in {LinesWithWords} of {Lines} lines — {SoundingSpanish} in Cyrillic letters that sound like a Spanish word of the transcript, "
-            + $"{OfBothAlphabets} of both alphabets, {ShortInSpanish} short ones inside Spanish speech; requests: {Requests}";
+            + $"{OfBothAlphabets} of both alphabets, {ShortInSpanish} short ones inside Spanish speech; requests: {RequestsText}";
     }
 
     /// <summary>The head of the record of a run that asks about the words in doubt only.</summary>
@@ -98,7 +103,8 @@ public sealed class RefineRunRecord
                 $"- Source: {request.SourceName ?? "(inline content)"}",
                 $"- Output: {_outputName}",
                 $"- Model: {request.Model}, temperature {request.Temperature.ToString(inv)}",
-                "- Mode: words in doubt — the code finds them, the model says for each in which language it was said, the code writes the spelling; no line is sent to be rewritten",
+                "- Mode: words in doubt — the code finds them, the model says for each in which language it was said, the code writes the spelling; no line is sent to be rewritten"
+                + (words.TimesAsked > 1 ? "; a word is written anew only when every answer to its request names the same language" : ""),
                 $"- Words in doubt: {words.Summary}",
                 "",
                 "## System prompt (built-in)",
@@ -121,7 +127,7 @@ public sealed class RefineRunRecord
     /// <param name="Left">Why the other words stayed, with how many for each reason.</param>
     public sealed record WordsOutcome(IReadOnlyList<string> Changes, IReadOnlyList<(string Why, int Words)> Left);
 
-    public async Task AppendWordsOutcomeAsync(int requests, RefineRunTotals totals, WordsOutcome outcome, CancellationToken ct)
+    public async Task AppendWordsOutcomeAsync(WordsInDoubt words, RefineRunTotals totals, WordsOutcome outcome, CancellationToken ct)
     {
         if (_path == null || !File.Exists(_path)) return;
         try
@@ -141,8 +147,8 @@ public sealed class RefineRunRecord
                 "## Outcome",
                 "",
                 totals.FailedBatches == 0
-                    ? $"- Requests: {requests}, none failed"
-                    : $"- Requests: {requests}, FAILED: {totals.FailedBatches} — their words are in the output as they were",
+                    ? $"- Requests: {words.RequestsText}, none failed"
+                    : $"- Requests: {words.RequestsText}, FAILED: {totals.FailedBatches} — their words are in the output as they were",
                 totals.PromptTokens + totals.CompletionTokens > 0
                     ? $"- Tokens billed: {totals.PromptTokens} in, {totals.CompletionTokens} out"
                     : "- Tokens billed: not reported by the API",

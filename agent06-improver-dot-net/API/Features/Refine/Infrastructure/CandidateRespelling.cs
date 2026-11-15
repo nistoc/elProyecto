@@ -20,7 +20,8 @@ namespace TranslationImprover.Features.Refine.Infrastructure;
 /// <item>a word of one or two sounds said in Spanish is respelled only when, after all of the above, Spanish
 /// stands on every side it has a neighbour on;</item>
 /// <item>everything else stays as it was: a word said in Russian, a word made of both languages on purpose,
-/// a word without an answer, a word no rule above can spell.</item>
+/// a word without an answer, a word the answers disagree on (<see cref="Agreed"/>), a word no rule above can
+/// spell.</item>
 /// </list>
 /// Nothing of a line but the words asked about can change: the model returns no text.
 /// </summary>
@@ -28,6 +29,14 @@ public static class CandidateRespelling
 {
     /// <summary>How many words one request to the judge holds; the words of one line are never parted.</summary>
     public const int WordsPerRequest = 10;
+
+    /// <summary>
+    /// How many times one request is made. One answer is one draw: on 33 lesson dialogues the judge, asked again
+    /// with the same prompt at temperature 0, named another language for 12 words of 451, and five of them were
+    /// Russian words it now called Spanish. A word is written anew only when every answer names the same
+    /// language for it (<see cref="Agreed"/>).
+    /// </summary>
+    public const int TimesAsked = 2;
 
     /// <summary>How many words of the line are sent on each side of the word asked about.</summary>
     private const int WordsAround = 14;
@@ -42,6 +51,7 @@ public static class CandidateRespelling
     {
         SaidInRussian,
         OfBothLanguages,
+        AnswersDiffer,
         NoAnswer,
         NoSafeSpelling,
         NoSpanishNextTo,
@@ -137,16 +147,40 @@ public static class CandidateRespelling
         return words;
     }
 
+    /// <summary>
+    /// What the answers to one request come to when it was made more than once: a word has a language only when
+    /// every answer names that language for it.
+    /// </summary>
+    /// <param name="answers">Each answer by the number of the word.</param>
+    /// <param name="differ">The numbers of the words the answers disagree on, or that only some of them answer.</param>
+    public static Dictionary<int, SaidIn> Agreed(IReadOnlyList<IReadOnlyDictionary<int, SaidIn>> answers, out HashSet<int> differ)
+    {
+        var agreed = new Dictionary<int, SaidIn>();
+        differ = new HashSet<int>();
+        foreach (var number in answers.SelectMany(a => a.Keys).Distinct())
+        {
+            var first = answers[0].GetValueOrDefault(number, SaidIn.Unknown);
+            if (first != SaidIn.Unknown && answers.All(a => a.GetValueOrDefault(number, SaidIn.Unknown) == first))
+                agreed[number] = first;
+            else
+                differ.Add(number);
+        }
+
+        return agreed;
+    }
+
     /// <summary>Writes into <paramref name="lines"/> what the answers of the judge come to for the words of one request.</summary>
     /// <param name="said">The answer by the number of the word (its place in <see cref="Ask.Words"/>, from 1).</param>
     /// <param name="cyrillicWords">The words of the transcript in Cyrillic letters (<see cref="CyrillicWordsOf"/>).</param>
-    public static Applied Apply(IList<string> lines, Ask ask, IReadOnlyDictionary<int, SaidIn> said, IReadOnlySet<string> cyrillicWords)
+    /// <param name="differ">The numbers of the words the answers disagree on (<see cref="Agreed"/>); they stay as they were.</param>
+    public static Applied Apply(IList<string> lines, Ask ask, IReadOnlyDictionary<int, SaidIn> said, IReadOnlySet<string> cyrillicWords,
+        IReadOnlySet<int>? differ = null)
     {
         var changes = new List<Change>();
         var left = new Dictionary<Left, int>();
         void Leave(Left why) => left[why] = left.GetValueOrDefault(why) + 1;
 
-        var numbered = ask.Words.Select((word, i) => (Word: word, Said: said.GetValueOrDefault(i + 1, SaidIn.Unknown))).ToList();
+        var numbered = ask.Words.Select((word, i) => (Word: word, Number: i + 1, Said: said.GetValueOrDefault(i + 1, SaidIn.Unknown))).ToList();
         foreach (var ofLine in numbered.GroupBy(w => w.Word.Line))
         {
             var line = lines[ofLine.Key];
@@ -154,11 +188,17 @@ public static class CandidateRespelling
             var now = new Dictionary<int, string>();
 
             // First the words judged on their own, then the short ones: those need to know what stands next to them now.
-            foreach (var (word, language) in ofLine.OrderBy(w => w.Word.Kind == Kind.ShortInSpanish))
+            foreach (var (word, number, language) in ofLine.OrderBy(w => w.Word.Kind == Kind.ShortInSpanish))
             {
                 if (word.Token >= tokens.Count)
                 {
                     Leave(Left.NoSafeSpelling);
+                    continue;
+                }
+
+                if (differ != null && differ.Contains(number))
+                {
+                    Leave(Left.AnswersDiffer);
                     continue;
                 }
 

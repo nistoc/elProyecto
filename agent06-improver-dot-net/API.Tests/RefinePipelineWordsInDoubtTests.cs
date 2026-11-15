@@ -40,7 +40,12 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
 
     private sealed class FakeJudge : ISpellingJudge
     {
-        public bool Fails { get; init; }
+        /// <summary>The number of the request that fails, as does every one after it; 0 — none fails.</summary>
+        public int FailsFrom { get; init; }
+
+        /// <summary>What a request made again answers otherwise for a word: a language, or null for no answer.</summary>
+        public Dictionary<string, SaidIn?> AgainSays { get; } = new();
+
         public List<IReadOnlyList<SpellingQuestion>> Asked { get; } = new();
         public string? ModelSeen { get; private set; }
 
@@ -51,9 +56,10 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
         {
             Asked.Add(questions);
             ModelSeen = model;
-            if (Fails)
+            if (FailsFrom > 0 && Asked.Count >= FailsFrom)
                 throw new InvalidOperationException("HTTP 500");
 
+            var again = Asked.Count % 2 == 0;
             var said = new Dictionary<int, SaidIn>();
             foreach (var q in questions)
             {
@@ -65,6 +71,8 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
                     "casaчка" => SaidIn.Both,
                     _ => null
                 };
+                if (again && AgainSays.TryGetValue(q.Word, out var other))
+                    answer = other;
                 if (answer is { } language)
                     said[q.Id] = language;
             }
@@ -110,13 +118,15 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
             + "<<<<<\n",
             output);
 
-        // One request with the nine words; the judge sees the text of a line, never its time mark or speaker.
-        var questions = Assert.Single(judge.Asked);
+        // One request with the nine words, made twice; the judge sees the text of a line, never its time mark or speaker.
+        Assert.Equal(CandidateRespelling.TimesAsked, judge.Asked.Count);
+        var questions = judge.Asked[0];
+        Assert.Equal(questions, judge.Asked[1]);
         Assert.Equal(new[] { "вале", "Каса", "Теngo", "Nет", "эн", "тема", "вале", "Кiero", "casaчка" }, questions.Select(q => q.Word));
         Assert.All(questions, q => Assert.DoesNotContain("Olga", q.Text));
         Assert.Equal(RefineJobRequestMapper.DefaultJudgeModel, judge.ModelSeen);
 
-        Assert.Equal(new RefineRunTotals { PromptTokens = 700, CompletionTokens = 90, EditsLetThrough = 5, EditsPutBack = 4 }, job.Totals);
+        Assert.Equal(new RefineRunTotals { PromptTokens = 1400, CompletionTokens = 180, EditsLetThrough = 5, EditsPutBack = 4 }, job.Totals);
         var block = Assert.Single(job.Batches);
         Assert.Equal((2, 5), (block.StartLine, block.EndLine));
         Assert.Contains("Да, вале, это мой дом.", block.OriginalText);
@@ -126,25 +136,61 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
         Assert.Equal("", block.ContextText);
 
         Assert.Contains("- Mode: words in doubt", record);
-        Assert.Contains("- Words in doubt: 9 in 4 of 5 lines — 4 in Cyrillic letters that sound like a Spanish word of the transcript, 4 of both alphabets, 1 short ones inside Spanish speech; requests: 1", record);
+        Assert.Contains("a word is written anew only when every answer to its request names the same language", record);
+        Assert.Contains("- Words in doubt: 9 in 4 of 5 lines — 4 in Cyrillic letters that sound like a Spanish word of the transcript, 4 of both alphabets, 1 short ones inside Spanish speech; requests: 1, each made 2 times", record);
         Assert.Contains("Say what each word is.", record);
         Assert.Contains("- Written anew: 5\n  - 2.00 «вале,» → «vale,»\n  - 3.00 «Каса» → «Casa»\n  - 3.00 «Теngo» → «Tengo»\n  - 3.00 «Nет.» → «Нет.»\n  - 4.00 «эн» → «en»\n", record);
         Assert.Contains("- Left as they were: 4\n", record);
         Assert.Contains("  - said in Russian: 2\n", record);
         Assert.Contains("  - made of both languages, or the judge could not tell: 1\n", record);
         Assert.Contains("  - no spelling the code can vouch for: 1\n", record);
-        Assert.Contains("- Requests: 1, none failed", record);
-        Assert.Contains("- Tokens billed: 700 in, 90 out", record);
+        Assert.Contains("- Requests: 1, each made 2 times, none failed", record);
+        Assert.Contains("- Tokens billed: 1400 in, 180 out", record);
 
         var stored = JsonDocument.Parse(File.ReadAllText(Path.Combine(_root, "refine_batches", "batch_0001_of_0001.json"))).RootElement;
-        Assert.Equal("{\"answers\":[]}", stored.GetProperty("rawText").GetString());
+        Assert.Equal("[answer 1]\n{\"answers\":[]}\n\n[answer 2]\n{\"answers\":[]}", stored.GetProperty("rawText").GetString());
         Assert.Equal(5, stored.GetProperty("editsLetThrough").GetInt32());
+    }
+
+    [Fact]
+    public async Task A_word_the_two_answers_disagree_on_stays_as_it_was()
+    {
+        // Made again, the request gets «Каса» called Russian and no answer for «эн».
+        var judge = new FakeJudge { AgainSays = { ["Каса"] = SaidIn.Russian, ["эн"] = null } };
+
+        var (job, output, record) = await RunAsync(judge, "transcript_fixed_differ.md");
+
+        Assert.Equal(
+            ">>>>>>>\n"
+            + "- 1.00 Olga: \"Vale, tengo una casa en Madrid. Un tema.\"\n"
+            + "- 2.00 Maria: \"Да, vale, это мой дом.\"\n"
+            + "- 3.00 Olga: \"Каса у меня большая, Tengo и Нет.\"\n"
+            + "- 4.00 Maria: \"Una casa эн Madrid, это тема.\"\n"
+            + "- 5.00 Olga: \"Ну, вале, пошли. Кiero casaчка.\"\n"
+            + "<<<<<\n",
+            output);
+        Assert.Equal(new RefineRunTotals { PromptTokens = 1400, CompletionTokens = 180, EditsLetThrough = 3, EditsPutBack = 6 }, job.Totals);
+        Assert.Contains("- Written anew: 3\n", record);
+        Assert.Contains("  - the answers of the judge differ: 2\n", record);
+    }
+
+    [Fact]
+    public async Task When_the_request_fails_the_second_time_its_words_stay_and_the_first_answer_is_billed()
+    {
+        var (job, output, record) = await RunAsync(new FakeJudge { FailsFrom = 2 }, "transcript_fixed_failed_again.md");
+
+        Assert.Equal(Transcript, output);
+        Assert.Equal(new RefineRunTotals { FailedBatches = 1, PromptTokens = 700, CompletionTokens = 90, EditsPutBack = 9 }, job.Totals);
+        var block = Assert.Single(job.Batches);
+        Assert.False(block.Ok);
+        Assert.Equal("[answer 1]\n{\"answers\":[]}", block.RawText);
+        Assert.Contains("  - the request failed: 9\n", record);
     }
 
     [Fact]
     public async Task A_request_that_fails_leaves_its_words_as_they_were()
     {
-        var (job, output, record) = await RunAsync(new FakeJudge { Fails = true }, "transcript_fixed_failed.md");
+        var (job, output, record) = await RunAsync(new FakeJudge { FailsFrom = 1 }, "transcript_fixed_failed.md");
 
         Assert.Equal(RefineJobState.Completed, job.State);
         Assert.Equal(Transcript, output);
@@ -154,7 +200,7 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
         Assert.Equal("HTTP 500", block.Error);
         Assert.Contains("- Written anew: 0\n", record);
         Assert.Contains("  - the request failed: 9\n", record);
-        Assert.Contains("- Requests: 1, FAILED: 1", record);
+        Assert.Contains("- Requests: 1, each made 2 times, FAILED: 1", record);
     }
 
     [Fact]

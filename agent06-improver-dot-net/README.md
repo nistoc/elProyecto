@@ -106,23 +106,25 @@ Measured on the stored answers of the model for 33 lesson dialogues (14,193 line
    - a word of one or two sounds with the exact sound of a Spanish word, not a Russian short word, with Spanish or another word in doubt on every side («эн» in «una casa эн Madrid»).
 
    A word that is only close to a Spanish one (`Likeness` 0.85–0.99) is not asked about: the lesson set has 225 of them and nearly all are Russian — a cognate or a case form («момент», «системы»).
-2. **The model is the judge of them** (`ISpellingJudge`, `OpenAISpellingJudge`). Ten words to a request, the words of one line never parted. A word goes with the text of its line (at most 14 words on either side, the word marked `[[like this]]`; no time mark, no speaker). The answer is JSON: for each word `"said"` — `ru`, `es` or `mix` — and the word repeated; an answer that repeats another word belongs to another item and is dropped. The model is not asked for a spelling and none is read from its answer.
+2. **The model is the judge of them** (`ISpellingJudge`, `OpenAISpellingJudge`). Ten words to a request, the words of one line never parted. A word goes with the text of its line (at most 14 words on either side, the word marked `[[like this]]`; no time mark, no speaker). The answer is JSON: for each word `"said"` — `ru`, `es` or `mix` — and the word repeated; an answer that repeats another word belongs to another item and is dropped. The model is not asked for a spelling and none is read from its answer. Every request is made twice (`CandidateRespelling.TimesAsked`), and a word has a language only when both answers name the same one (`CandidateRespelling.Agreed`).
 3. **Code writes the spelling** (`CandidateRespelling`):
    - a word in Cyrillic called Spanish gets the spelling the transcript has, with the capitals of the word; the punctuation around it stays;
    - a short word called Spanish gets it too when, after the other changes, Spanish stands on every side it has a neighbour on;
    - a word of both alphabets called Spanish gets the spelling of the transcript when it sounds exactly like a word of it, otherwise its Cyrillic letters are written in Latin — at most two of them, fewer than the Latin ones, and only letters with one reading («Теngo» → "Tengo"; «Кiero» stays: «К» may be c, qu or k);
    - a word of both alphabets called Russian gets its Latin letters written in Cyrillic by sound — at most two of them and fewer than its Cyrillic ones, or any number when the result is a word the transcript has in Cyrillic («Nет» → «Нет»);
-   - a word called Russian or `mix`, a word without an answer and every word of a request that failed stay as they were.
+   - a word called Russian or `mix`, a word the two answers disagree on, a word without an answer and every word of a request that failed stay as they were.
 
 Everything else of the transcript is the source to the letter: only the tokens named change (`CandidateRespelling.ReplaceTokens`).
 
 **Model.** `gpt-4.1-mini` when the request names none (`RefineJobRequestMapper.DefaultJudgeModel`); block size, context lines and the prompts of the request are not used. The run sends about fifty times less text than one that sends every line, so the stronger model costs less here than the small one does there.
 
-**What the run leaves behind.** The run record says `Mode: words in doubt` and how many words of each kind were found; its section `## Words in doubt` lists every word written anew with the time mark of its line and counts the words left as they were by reason. A block of the status and of the block files is one request: `askedWords` (the words, each with the Spanish word it sounds like), the lines of the request before and after, `rawText`, the tokens. `edits_let_through` counts the words written anew, `edits_put_back` the words left as they were.
+**What the run leaves behind.** The run record says `Mode: words in doubt` and how many words of each kind were found; its section `## Words in doubt` lists every word written anew with the time mark of its line and counts the words left as they were by reason. A block of the status and of the block files is one request: `askedWords` (the words, each with the Spanish word it sounds like), the lines of the request before and after, `rawText` (both answers, under `[answer 1]` and `[answer 2]`), the tokens of both. `edits_let_through` counts the words written anew, `edits_put_back` the words left as they were.
 
 **Measured** (2026-11-15, 33 lesson dialogues, 14,193 lines): 451 words asked about in 60 requests, 44,403 tokens in and 8,557 out — about $0.03 for all 33 at $0.40 / $1.60 per million. 54 words written anew in 20 of the dialogues: 43 right, 2 harmful, 9 doubtful. The run that sends every line with the check of edits, on the same dialogues: 15 changes kept — 13 right, 1 harmful, 1 doubtful — for about 2,840 requests. Two transcripts of the older transcriber (Spanish in Cyrillic as a habit): 52 words asked about, 46 written anew, all right; a third one was not run with the judge as it is now.
 
 **Measured a second time** (the same 33 dialogues run as jobs through agent05; same prompt, model and temperature 0, token counts equal to the unit): 65 words written anew — 48 right, 7 harmful, 10 doubtful. 53 words are written in both runs (43 right, 2 harmful, 8 doubtful).
+
+**Two answers.** Both measurements were made with one answer to a request. The run now makes every request twice and writes a word anew only when the answers agree. Replayed over the stored answers of the two runs, with no request to the model, it writes those 53 words; the answers disagree on 14 of the 451. A run bills twice the tokens — about $0.06 for the 33 dialogues.
 
 **What was tried and dropped.**
 
@@ -133,9 +135,9 @@ Everything else of the transcript is the source to the letter: only the tokens n
 
 **Limits.**
 
-- The judge does not give the same answer twice. In the second run it answered 12 of the 451 words differently, and they sit in 4 of the 60 requests: an answer that changes takes several words of its request with it. Five of the twelve are harmful, so one run writes 2 harmful words and the next 7. Read the numbers of one run as one draw.
-- Any Latin word of the transcript counts as Spanish. Where the transcriber wrote a Russian word in Latin letters in one line ("grad", "problem"), the same word in Cyrillic elsewhere («град», «проблем») gets a like-sounding spelling, and once the judge calls it Spanish it is written so. The code has no dictionary of Spanish to tell that "grad" is not a word.
-- The two harmful changes of the first run are of one kind: a Russian case form that is, sound for sound, a Spanish word of the transcript («примера» — "primera", «паре» — "pare"), and the judge called it Spanish. The code has no dictionary of Russian to hold it back with.
+- The judge does not give the same answer twice. In the second run it answered 12 of the 451 words differently, and they sit in 4 of the 60 requests: an answer that changes takes several words of its request with it. Five of the twelve are harmful: with one answer to a request one run wrote 2 harmful words and the next 7. Two answers hold that back as far as it was checked — on the stored answers of two runs made three hours apart. Whether two requests made one after the other differ as often is not measured.
+- Any Latin word of the transcript counts as Spanish. Where the transcriber wrote a Russian word in Latin letters in one line ("grad", "problem"), the same word in Cyrillic elsewhere («град», «проблем») gets a like-sounding spelling, and when both answers call it Spanish it is written so. The code has no dictionary of Spanish to tell that "grad" is not a word.
+- The two harmful changes that both runs made are of one kind: a Russian case form that is, sound for sound, a Spanish word of the transcript («примера» — "primera", «паре» — "pare"), and the judge called it Spanish. The code has no dictionary of Russian to hold it back with.
 - The doubtful ones: a Spanish word that Russian has borrowed («гаспачо», «мате») said inside Russian speech is written in Latin letters.
 - A Spanish word in Cyrillic that the transcript has nowhere in Latin letters is not found, as with the check of edits. A lexicon of all lessons would find it; there is none.
 

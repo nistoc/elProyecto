@@ -7,9 +7,10 @@ namespace TranslationImprover.Features.Refine.Infrastructure;
 /// <summary>
 /// The run that asks about the words in doubt only (<see cref="RefineJobRequest.CandidatesOnly"/>). The code finds
 /// the words (<see cref="SpellingCandidates"/>), the judge says for each in which language it was said
-/// (<see cref="ISpellingJudge"/>), the code writes the spelling (<see cref="CandidateRespelling"/>). A request to
-/// the judge is to the job store and to the block files what a block is to the other run: its lines before and
-/// after, the answer as it came, the tokens.
+/// (<see cref="ISpellingJudge"/>), the code writes the spelling (<see cref="CandidateRespelling"/>). Every request
+/// is made <see cref="CandidateRespelling.TimesAsked"/> times, and a word is written anew only when the answers
+/// agree on it. A request to the judge is to the job store and to the block files what a block is to the other
+/// run: its lines before and after, the answers as they came, the tokens of all of them.
 /// </summary>
 public sealed partial class RefinePipeline
 {
@@ -17,6 +18,7 @@ public sealed partial class RefinePipeline
     {
         (CandidateRespelling.Left.SaidInRussian, "said in Russian"),
         (CandidateRespelling.Left.OfBothLanguages, "made of both languages, or the judge could not tell"),
+        (CandidateRespelling.Left.AnswersDiffer, "the answers of the judge differ"),
         (CandidateRespelling.Left.NoSpanishNextTo, "a short word without Spanish on every side"),
         (CandidateRespelling.Left.NoSafeSpelling, "no spelling the code can vouch for"),
         (CandidateRespelling.Left.NoAnswer, "no answer of the judge"),
@@ -41,7 +43,8 @@ public sealed partial class RefinePipeline
             candidates.Count(c => c.Kind == SpellingCandidates.Kind.BothAlphabets),
             candidates.Count(c => c.Kind == SpellingCandidates.Kind.SoundsSpanish),
             candidates.Count(c => c.Kind == SpellingCandidates.Kind.ShortInSpanish),
-            asks.Count);
+            asks.Count,
+            CandidateRespelling.TimesAsked);
         var promptPreview = $"[system]\n{_judge.SystemPrompt.Trim()}\n\n[words in doubt]\n{words.Summary}";
 
         _store.Update(jobId, new RefineJobStatusUpdate { TotalBatches = asks.Count });
@@ -70,13 +73,17 @@ public sealed partial class RefinePipeline
             _nodeModel?.UpdateNodeProgress(jobId, (i + 1) * 100 / asks.Count, $"Words in doubt {i + 1}/{asks.Count}");
 
             var before = JoinLines(ask.Lines.Select(l => lines[l]).ToList());
-            SpellingAnswers? answers = null;
+            // An answer that came is billed and kept, also when a later request of the same words fails.
+            var answers = new List<SpellingAnswers>(CandidateRespelling.TimesAsked);
             string? error = null;
             int written = 0, stayed = ask.Words.Count;
             try
             {
-                answers = await _judge.AskAsync(CandidateRespelling.QuestionsOf(lines, ask), request.Model, request.Temperature, request.OpenAIBaseUrl, cancellationToken);
-                var applied = CandidateRespelling.Apply(lines, ask, answers.Said, cyrillicWords);
+                var questions = CandidateRespelling.QuestionsOf(lines, ask);
+                for (var time = 0; time < CandidateRespelling.TimesAsked; time++)
+                    answers.Add(await _judge.AskAsync(questions, request.Model, request.Temperature, request.OpenAIBaseUrl, cancellationToken));
+                var said = CandidateRespelling.Agreed(answers.Select(a => a.Said).ToList(), out var differ);
+                var applied = CandidateRespelling.Apply(lines, ask, said, cyrillicWords, differ);
                 changes.AddRange(applied.Changes.Select(c => $"{c.At} «{c.Was}» → «{c.Now}»".TrimStart()));
                 foreach (var (why, count) in applied.LeftAsTheyWere)
                     left[why] = left.GetValueOrDefault(why) + count;
@@ -93,8 +100,8 @@ public sealed partial class RefinePipeline
             totals = totals with
             {
                 FailedBatches = totals.FailedBatches + (error == null ? 0 : 1),
-                PromptTokens = totals.PromptTokens + (answers?.PromptTokens ?? 0),
-                CompletionTokens = totals.CompletionTokens + (answers?.CompletionTokens ?? 0),
+                PromptTokens = totals.PromptTokens + answers.Sum(a => a.PromptTokens),
+                CompletionTokens = totals.CompletionTokens + answers.Sum(a => a.CompletionTokens),
                 EditsLetThrough = totals.EditsLetThrough + written,
                 EditsPutBack = totals.EditsPutBack + stayed
             };
@@ -110,11 +117,11 @@ public sealed partial class RefinePipeline
                 AskedWords = string.Join("\n", ask.Words.Select(w => w.Spanish == null ? w.Word : $"{w.Word} — {w.Spanish.Spelling}")),
                 StartLine = ask.Lines[0] + 1,
                 EndLine = ask.Lines[^1] + 1,
-                RawText = answers?.RawText ?? "",
+                RawText = string.Join("\n\n", answers.Select((a, n) => $"[answer {n + 1}]\n{a.RawText}")),
                 EditsLetThrough = written,
                 EditsPutBack = stayed,
-                PromptTokens = answers?.PromptTokens ?? 0,
-                CompletionTokens = answers?.CompletionTokens ?? 0
+                PromptTokens = answers.Sum(a => a.PromptTokens),
+                CompletionTokens = answers.Sum(a => a.CompletionTokens)
             };
             _store.Update(jobId, new RefineJobStatusUpdate { AppendBatch = delta, Totals = totals });
             if (batchFiles != null)
@@ -129,7 +136,7 @@ public sealed partial class RefinePipeline
         _logger?.LogInformation("Refine job {JobId}: {Words} words in doubt, {Written} written anew, {Stayed} left as they were", jobId, words.Words, totals.EditsLetThrough, totals.EditsPutBack);
         if (totals.FailedBatches > 0)
             _logger?.LogWarning("Refine job {JobId}: {Failed} of {Total} requests failed; their words are in the output as they were", jobId, totals.FailedBatches, asks.Count);
-        await record.AppendWordsOutcomeAsync(asks.Count, totals,
+        await record.AppendWordsOutcomeAsync(words, totals,
             new RefineRunRecord.WordsOutcome(changes, WhyLeft.Select(w => (w.Text, left.GetValueOrDefault(w.Why))).ToList()), cancellationToken);
         return (totals, asks.Count);
     }
