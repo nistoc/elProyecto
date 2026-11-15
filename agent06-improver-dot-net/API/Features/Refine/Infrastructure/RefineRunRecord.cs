@@ -70,24 +70,31 @@ public sealed class RefineRunRecord
         }
     }
 
+    /// <summary>What the check of edits did in a run, for the record.</summary>
+    /// <param name="Rule">Which rule about the neighbours of a word was in force, and why.</param>
+    /// <param name="Kept">Every change let through: the time mark of its line, the words before and after.</param>
+    public sealed record EditCheckReport(string Rule, IReadOnlyList<string> Kept);
+
     /// <summary>Adds what the run came to, once it is through.</summary>
-    /// <param name="editsChecked">The run had the check of edits on: its two counts are written too.</param>
-    public async Task AppendOutcomeAsync(int blocks, RefineRunTotals totals, bool editsChecked, CancellationToken ct)
+    /// <param name="check">The run had the check of edits on: what it did is written too.</param>
+    public async Task AppendOutcomeAsync(int blocks, RefineRunTotals totals, EditCheckReport? check, CancellationToken ct)
     {
         if (_path == null || !File.Exists(_path)) return;
         try
         {
             var lines = new List<string>();
-            if (editsChecked)
+            if (check != null)
             {
                 lines.AddRange(new[]
                 {
                     "## Check of edits",
                     "",
+                    $"- {check.Rule}",
                     $"- Changes of the model let through: {totals.EditsLetThrough}",
-                    $"- Changes of the model put back as they were: {totals.EditsPutBack}",
-                    ""
+                    $"- Changes of the model put back as they were: {totals.EditsPutBack}"
                 });
+                lines.AddRange(check.Kept.Select(k => "  - " + k));
+                lines.Add("");
             }
 
             lines.AddRange(new[]

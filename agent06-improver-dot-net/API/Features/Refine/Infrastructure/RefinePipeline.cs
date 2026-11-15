@@ -64,6 +64,28 @@ public sealed class RefinePipeline : IRefinePipeline
         int PromptTokens,
         int CompletionTokens);
 
+    /// <summary>
+    /// The check of edits of a run: the Spanish the transcript held before the run, and whether a respelled word
+    /// must have Spanish next to it — it must, unless the transcript writes its Spanish in Cyrillic as a habit.
+    /// </summary>
+    private sealed record EditCheck(IReadOnlySet<string> Words, bool SpanishMustBeNextTo, SpellingCandidates.Habit Habit)
+    {
+        public List<string> Kept { get; } = new();
+
+        public static EditCheck Of(IReadOnlyList<string> lines)
+        {
+            var lexicon = SpanishLexicon.Of(lines);
+            var habit = SpellingCandidates.HabitOf(SpellingCandidates.Find(lines, lexicon), lexicon);
+            return new EditCheck(lexicon.Words, !habit.WritesSpanishInCyrillic, habit);
+        }
+
+        public string Rule =>
+            (SpanishMustBeNextTo
+                ? "A respelled word must have Spanish next to it: the transcript writes its Spanish in Latin letters"
+                : "A respelled word needs no Spanish next to it: the transcript writes much of its Spanish in Cyrillic letters")
+            + $" ({Habit.SoundingSpanish} words in Cyrillic letters sound like a Spanish word of it, {Habit.InLatin} words are in Latin letters)";
+    }
+
     public async Task RunAsync(string jobId, RefineJobRequest request, string workspaceRoot, string artifactRoot, CancellationToken cancellationToken = default)
     {
         var refineParent = jobId + ":refine";
@@ -93,7 +115,9 @@ public sealed class RefinePipeline : IRefinePipeline
             if (batchFiles != null)
                 await batchFiles.StartAsync(plan.PromptPreview, cancellationToken);
 
-            var (refined, totals) = await RefineBlocksAsync(jobId, request, plan, batchFiles, cancellationToken);
+            // The check of edits knows the Spanish of the transcript as it was before this run.
+            var check = request.RespellingOnly ? EditCheck.Of(plan.ContentLines) : null;
+            var (refined, totals) = await RefineBlocksAsync(jobId, request, plan, check, batchFiles, cancellationToken);
             _nodeModel?.CompleteNode(refineParent, RefineJobState.Completed, DateTimeOffset.UtcNow);
 
             if (!string.IsNullOrEmpty(request.OutputFilePath))
@@ -102,11 +126,11 @@ public sealed class RefinePipeline : IRefinePipeline
                 await source.WriteAsync(outputPath, refined, cancellationToken);
             }
 
-            if (request.RespellingOnly)
-                _logger?.LogInformation("Refine job {JobId}: check of edits let through {LetThrough}, put back {PutBack}", jobId, totals.EditsLetThrough, totals.EditsPutBack);
+            if (check != null)
+                _logger?.LogInformation("Refine job {JobId}: check of edits let through {LetThrough}, put back {PutBack}; Spanish next to a word asked: {NextTo}", jobId, totals.EditsLetThrough, totals.EditsPutBack, check.SpanishMustBeNextTo);
             if (totals.FailedBatches > 0)
                 _logger?.LogWarning("Refine job {JobId}: {Failed} of {Total} blocks failed; their lines are in the output as they were", jobId, totals.FailedBatches, plan.Batches.Count);
-            await record.AppendOutcomeAsync(plan.Batches.Count, totals, request.RespellingOnly, cancellationToken);
+            await record.AppendOutcomeAsync(plan.Batches.Count, totals, check == null ? null : new RefineRunRecord.EditCheckReport(check.Rule, check.Kept), cancellationToken);
 
             _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Completed, ProgressPercent = 100, CurrentBatch = plan.Batches.Count, TotalBatches = plan.Batches.Count, OutputFilePath = request.OutputFilePath, Totals = totals });
             _nodeModel?.EnsureNode(jobId, null, jobId, "job", request.OutputFilePath != null ? new Dictionary<string, object?> { ["output_file_path"] = request.OutputFilePath } : null);
@@ -148,14 +172,12 @@ public sealed class RefinePipeline : IRefinePipeline
     /// that block, for context. A block whose call failed keeps its lines and is counted, the run goes on.
     /// </summary>
     private async Task<(List<string> Lines, RefineRunTotals Totals)> RefineBlocksAsync(
-        string jobId, RefineJobRequest request, RunPlan plan, RefineBatchFiles? batchFiles, CancellationToken cancellationToken)
+        string jobId, RefineJobRequest request, RunPlan plan, EditCheck? check, RefineBatchFiles? batchFiles, CancellationToken cancellationToken)
     {
         var refineParent = jobId + ":refine";
         var count = plan.Batches.Count;
         var refined = new List<string>();
         IReadOnlyList<string>? previous = null;
-        // The check of edits knows the Spanish of the transcript as it was before this run.
-        var latinWords = request.RespellingOnly ? RespellingGuard.LatinWordsOf(plan.ContentLines) : null;
         var totals = new RefineRunTotals();
 
         for (var i = 0; i < count; i++)
@@ -172,7 +194,7 @@ public sealed class RefinePipeline : IRefinePipeline
             _store.Update(jobId, new RefineJobStatusUpdate { CurrentBatch = i + 1, CurrentPhase = $"Batch {i + 1}/{count}" });
             _nodeModel?.UpdateNodeProgress(jobId, (i + 1) * 100 / count, $"Batch {i + 1}/{count}");
 
-            var block = await RefineBlockAsync(batch, request, plan, latinWords, cancellationToken);
+            var block = await RefineBlockAsync(batch, request, plan, check, cancellationToken);
             refined.AddRange(block.Lines);
             previous = block.Lines;
             if (!block.Ok)
@@ -216,17 +238,19 @@ public sealed class RefinePipeline : IRefinePipeline
     }
 
     /// <summary>One block: the call of the model and, when the run asks for it, the check of what the model changed.</summary>
-    private async Task<RefinedBlock> RefineBlockAsync(BatchInfo batch, RefineJobRequest request, RunPlan plan, IReadOnlySet<string>? latinWords, CancellationToken cancellationToken)
+    private async Task<RefinedBlock> RefineBlockAsync(BatchInfo batch, RefineJobRequest request, RunPlan plan, EditCheck? check, CancellationToken cancellationToken)
     {
         var result = await _client.RefineBatchAsync(batch, request.Model, request.Temperature, plan.SystemPrompt, plan.PromptTemplate, request.OpenAIBaseUrl, cancellationToken);
         if (!result.Success)
             return new RefinedBlock(batch.Lines, false, result.Error, result.RawAnswer ?? "", 0, 0, result.PromptTokens, result.CompletionTokens);
 
         var rawText = result.RawAnswer?.Trim() ?? JoinLines(result.FixedLines);
-        if (latinWords == null)
+        if (check == null)
             return new RefinedBlock(result.FixedLines, true, null, rawText, 0, 0, result.PromptTokens, result.CompletionTokens);
 
-        var kept = RespellingGuard.Apply(batch.Lines, result.FixedLines, latinWords);
+        var decisions = new List<RespellingGuard.Decision>();
+        var kept = RespellingGuard.Apply(batch.Lines, result.FixedLines, check.Words, check.SpanishMustBeNextTo, decisions);
+        check.Kept.AddRange(decisions.Where(d => d.Kept).Select(d => $"{d.At} «{d.Was}» → «{d.Now}»".TrimStart()));
         return new RefinedBlock(kept.Lines, true, null, rawText, kept.LetThrough, kept.PutBack, result.PromptTokens, result.CompletionTokens);
     }
 

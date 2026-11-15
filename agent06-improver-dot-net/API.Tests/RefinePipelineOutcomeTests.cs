@@ -27,7 +27,7 @@ public class RefinePipelineOutcomeTests : IDisposable
     private const string Transcript =
         ">>>>>>>\n"
         + "- 1.00 Olga: \"Vale, tengo una casa.\"\n"
-        + "- 2.00 Maria: \"Да, вале, это мой дом.\"\n"
+        + "- 2.00 Maria: \"Sí, вале, это мой дом.\"\n"
         + "- 3.00 Olga: \"Сейчас приду.\"\n"
         + "- 4.00 Maria: \"Tengo una casa.\"\n"
         + "- 5.00 Olga: \"Хорошо.\"\n"
@@ -89,7 +89,7 @@ public class RefinePipelineOutcomeTests : IDisposable
 
         // The failed block's lines are in the output as they were.
         var output = File.ReadAllText(Path.Combine(_root, "transcript_fixed_failed.md"));
-        Assert.Contains("- 2.00 Maria: \"Да, вале, это мой дом.\"", output);
+        Assert.Contains("- 2.00 Maria: \"Sí, вале, это мой дом.\"", output);
 
         Assert.Contains("## Outcome", record);
         Assert.Contains("- Blocks: 3, FAILED: 1", record);
@@ -152,8 +152,8 @@ public class RefinePipelineOutcomeTests : IDisposable
         Assert.Equal(2, job.Totals.EditsPutBack);
 
         using var block = JsonDocument.Parse(File.ReadAllText(Path.Combine(_root, "refine_batches", "batch_0001_of_0001.json")));
-        Assert.Contains("Да, vale, это mi casa.", block.RootElement.GetProperty("rawText").GetString());
-        Assert.Contains("Да, vale, это мой дом.", block.RootElement.GetProperty("refinedText").GetString());
+        Assert.Contains("Sí, vale, это mi casa.", block.RootElement.GetProperty("rawText").GetString());
+        Assert.Contains("Sí, vale, это мой дом.", block.RootElement.GetProperty("refinedText").GetString());
         Assert.Equal(1, block.RootElement.GetProperty("editsLetThrough").GetInt32());
         Assert.Equal(2, block.RootElement.GetProperty("editsPutBack").GetInt32());
         Assert.Equal(100, block.RootElement.GetProperty("promptTokens").GetInt32());

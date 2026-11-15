@@ -77,19 +77,24 @@ A block whose request failed, or whose answer has no text, keeps its lines and i
 `SubmitRefineJobRequest.respelling_only` (gRPC, field 18; REST body `respellingOnly`) turns on a check of what the model changed (`RespellingGuard`). It is meant for the built-in prompt on lesson transcripts: the prompt asks for one kind of edit, a Spanish word written in Cyrillic letters by ear respelled in Latin letters, and a small model still does more. With the flag a changed stretch of a line is kept only when all of this holds:
 
 - every word it replaces has a Cyrillic letter, and every word put in its place is of Latin letters only;
-- the two sound alike (`SoundForm` of both, similarity from 0.85; a stretch shorter than 3 sounds is not judged);
+- the two sound alike (`SoundForm` of both, similarity from 0.85; «ль» before a vowel is heard both as "li" and as the Spanish "ll", so «бомбилья» is "bombilla");
 - every new word is already written in Latin letters somewhere in the same transcript;
-- digits and punctuation of the stretch are the same (the opening `¿` and `¡` aside).
+- digits and punctuation of the stretch are the same (the opening `¿` and `¡` aside);
+- **Spanish stands next to it**: the nearest word on the left or on the right is in Latin letters, or is another word the check respells (so a phrase written in Cyrillic carries itself). A word in Cyrillic that sounds like a Spanish word of the transcript is as often a Russian word («институт» — "instituto", «история» — "historia"), and nothing but the speech around it tells the two apart. Not asked of a word written in both alphabets at once («Теngo»), nor of a word that is the whole text of its line.
+
+A word of one or two sounds («ла» — "la", «йо» — "yo") is respelled only when the sound is exactly the same, Spanish stands on every side it has a neighbour on, and it is not a Russian word («и», «но», «мы» stay: «una casa и un perro»).
+
+**When Spanish next to the word is not asked.** The rule above fits a transcript that writes its Spanish in Latin letters (participant tracks, `gpt-transcribe`). The older transcriber writes a good part of the Spanish in Cyrillic; there a word that sounds Spanish is Spanish nearly every time and its neighbours are in Cyrillic too. The run reads the habit off the transcript (`SpellingCandidates.Habit`): the words in Cyrillic that sound like a Spanish word of the transcript against the words in Latin letters. From 10 % (and at least 20 such words) the transcript counts as writing Spanish in Cyrillic, and nothing is asked of the neighbours. On 36 transcripts the share was 0.1–4.3 % for the first kind and 13–21 % for the second.
 
 Everything else is put back as it was: a translation, a Russian word written in Latin letters, a "correction" of the speaker's Spanish, a changed ending, added or dropped words. The time mark and the speaker of a line are never taken from the model, and a block that came back with another number of lines is put back whole. The next block gets the checked lines as its context, and the before/after table of a block shows them too.
 
-The run record (`<output>.prompt.md`) says `Check of edits: on` or `off` and, with the check, ends with the section `## Check of edits`: how many changes were let through and how many were put back.
+The run record (`<output>.prompt.md`) says `Check of edits: on` or `off` and, with the check, has the section `## Check of edits`: which rule about the neighbours was in force and why, how many changes were let through and how many were put back, and every change let through with the time mark of its line.
 
 Without the flag nothing changes: the lines are written as the model returned them.
 
-What the check does not catch: a Russian word that sounds like a Latin word of the same transcript. What it costs: a Spanish word in Cyrillic that occurs nowhere in the transcript in Latin letters stays in Cyrillic.
+What the check does not catch: a Russian word that sounds like a Latin word of the same transcript and has Spanish next to it («в историю, en la historia»). What it costs: a Spanish word in Cyrillic that occurs nowhere in the transcript in Latin letters stays in Cyrillic, and so does a Spanish word quoted alone inside Russian speech («что такое вале»).
 
-Measured on three stored answers of the model for one dialogue of 593 lines (no new requests): of 29, 47 and 7 lines the model changed, the check kept changes in 3, 4 and 1 — each of them a Spanish word respelled from Cyrillic.
+Measured on the stored answers of the model for 33 lesson dialogues (14,193 lines, 305 changes of the model; no new requests). Before the rule about the neighbours the check kept 24 changes: 14 right, 7 harmful (a Russian word turned Spanish), 3 doubtful. With it: 15 kept — 13 right, 1 harmful, 1 doubtful; 3 right ones are lost (a Spanish word alone in Russian speech). On 3 transcripts of the older transcriber (habit: Spanish in Cyrillic) the kept changes go from 71 to 75, all right — the 4 new ones are short words.
 
 See [docs/RENTGEN_IMPLEMENTATION.md](docs/RENTGEN_IMPLEMENTATION.md) for the virtual model (nodes, semanticKey, tag).
 

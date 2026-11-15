@@ -23,9 +23,10 @@ public class RefinePipelineEditCheckTests : IDisposable
     private const string Transcript =
         ">>>>>>>\n"
         + "- 1.00 Olga: \"Vale, tengo una casa.\"\n"
-        + "- 2.00 Maria: \"Да, вале, это мой дом.\"\n"
+        + "- 2.00 Maria: \"Sí, вале, это мой дом.\"\n"
         + "- 3.00 Olga: \"Сейчас приду.\"\n"
         + "- 4.00 Maria: \"Tengo una casa.\"\n"
+        + "- 5.00 Olga: \"Ну, вале, пошли.\"\n"
         + "<<<<<\n";
 
     /// <summary>A model that respells one word as asked and does three things nobody asked for.</summary>
@@ -76,21 +77,26 @@ public class RefinePipelineEditCheckTests : IDisposable
     {
         var (output, record, client) = await RunAsync(respellingOnly: true);
 
-        Assert.Contains("- 2.00 Maria: \"Да, vale, это мой дом.\"", output);
+        Assert.Contains("- 2.00 Maria: \"Sí, vale, это мой дом.\"", output);
         Assert.Contains("- 3.00 Olga: \"Сейчас приду.\"", output);
         Assert.Contains("- 4.00 Maria: \"Tengo una casa.\"", output);
+        // The same word among Russian words stays: there it cannot be told from a Russian word that sounds like it.
+        Assert.Contains("- 5.00 Olga: \"Ну, вале, пошли.\"", output);
         Assert.DoesNotContain("mi casa", output);
         Assert.DoesNotContain("Seichas", output);
         Assert.DoesNotContain("un casa", output);
 
         Assert.Contains("- Check of edits: on", record);
         Assert.Contains("## Check of edits", record);
+        Assert.Contains("- A respelled word must have Spanish next to it", record);
         Assert.Contains("- Changes of the model let through: 1", record);
-        // Put back: "мой" and "дом" of the translation (word for word), the Russian word in Latin letters, the "corrected" article.
-        Assert.Contains("- Changes of the model put back as they were: 4", record);
+        Assert.Contains("  - 2.00 «вале,» → «vale,»", record);
+        // Put back: "мой" and "дом" of the translation (word for word), the Russian word in Latin letters,
+        // the "corrected" article, and the word with no Spanish next to it.
+        Assert.Contains("- Changes of the model put back as they were: 5", record);
 
         // The next block gets the checked lines as its context, not what the model wrote.
-        Assert.Contains("Да, vale, это мой дом.", client.ContextsSeen[1]);
+        Assert.Contains("Sí, vale, это мой дом.", client.ContextsSeen[1]);
     }
 
     [Fact]
@@ -98,7 +104,8 @@ public class RefinePipelineEditCheckTests : IDisposable
     {
         var (output, record, _) = await RunAsync(respellingOnly: false);
 
-        Assert.Contains("- 2.00 Maria: \"Да, vale, это mi casa.\"", output);
+        Assert.Contains("- 2.00 Maria: \"Sí, vale, это mi casa.\"", output);
+        Assert.Contains("- 5.00 Olga: \"Ну, vale, пошли.\"", output);
         Assert.Contains("- 3.00 Olga: \"Seichas приду.\"", output);
         Assert.Contains("- 4.00 Maria: \"Tengo un casa.\"", output);
 
