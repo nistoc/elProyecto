@@ -124,7 +124,7 @@ Everything else of the transcript is the source to the letter: only the tokens n
 
 **Measured a second time** (the same 33 dialogues run as jobs through agent05; same prompt, model and temperature 0, token counts equal to the unit): 65 words written anew — 48 right, 7 harmful, 10 doubtful. 53 words are written in both runs (43 right, 2 harmful, 8 doubtful).
 
-**Two answers.** Both measurements were made with one answer to a request. The run now makes every request twice and writes a word anew only when the answers agree. Replayed over the stored answers of the two runs, with no request to the model, it writes those 53 words; the answers disagree on 14 of the 451. A run bills twice the tokens — about $0.06 for the 33 dialogues.
+**Two answers.** Both measurements were made with one answer to a request. The run now makes every request twice and writes a word anew only when the answers agree. Replayed over the stored answers of the two runs, with no request to the model, it writes those 53 words; the answers disagree on 14 of the 451. A run bills twice the tokens — about $0.06 for the 33 dialogues. Run live on one of the dialogues (14 words, 2 requests, 2,922 tokens in and 538 out): the two answers of one request, made one after the other, differ on 4 of its 10 words — «проблем» and «нормаль», twice each, Spanish in the first answer and Russian in the second — and those stay; 5 words are written anew, none of them harmful.
 
 **What was tried and dropped.**
 
@@ -135,7 +135,7 @@ Everything else of the transcript is the source to the letter: only the tokens n
 
 **Limits.**
 
-- The judge does not give the same answer twice. In the second run it answered 12 of the 451 words differently, and they sit in 4 of the 60 requests: an answer that changes takes several words of its request with it. Five of the twelve are harmful: with one answer to a request one run wrote 2 harmful words and the next 7. Two answers hold that back as far as it was checked — on the stored answers of two runs made three hours apart. Whether two requests made one after the other differ as often is not measured.
+- The judge does not give the same answer twice. In the second run it answered 12 of the 451 words differently, and they sit in 4 of the 60 requests: an answer that changes takes several words of its request with it. Five of the twelve are harmful: with one answer to a request one run wrote 2 harmful words and the next 7. Two answers hold that back as far as it was checked: on the stored answers of two runs made three hours apart, and live on one dialogue. The whole lesson set was not run live with two answers.
 - Any Latin word of the transcript counts as Spanish. Where the transcriber wrote a Russian word in Latin letters in one line ("grad", "problem"), the same word in Cyrillic elsewhere («град», «проблем») gets a like-sounding spelling, and when both answers call it Spanish it is written so. The code has no dictionary of Spanish to tell that "grad" is not a word.
 - The two harmful changes that both runs made are of one kind: a Russian case form that is, sound for sound, a Spanish word of the transcript («примера» — "primera", «паре» — "pare"), and the judge called it Spanish. The code has no dictionary of Russian to hold it back with.
 - The doubtful ones: a Spanish word that Russian has borrowed («гаспачо», «мате») said inside Russian speech is written in Latin letters.
