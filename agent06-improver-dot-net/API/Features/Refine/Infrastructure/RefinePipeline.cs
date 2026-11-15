@@ -93,6 +93,9 @@ public sealed class RefinePipeline : IRefinePipeline
         var fixedContent = new List<string>();
         IReadOnlyList<string>? previousContext = null;
         string? outputPathFull = null;
+        // The check of edits knows the Spanish of the transcript as it was before this run.
+        var latinWords = request.RespellingOnly ? RespellingGuard.LatinWordsOf(contentLines) : null;
+        int editsLetThrough = 0, editsPutBack = 0;
 
         try
         {
@@ -113,6 +116,14 @@ public sealed class RefinePipeline : IRefinePipeline
                 _nodeModel?.UpdateNodeProgress(jobId, percent, $"Batch {i + 1}/{batches.Count}");
 
                 var result = await _client.RefineBatchAsync(batchInfo, request.Model, request.Temperature, systemPrompt, promptTemplate, request.OpenAIBaseUrl, cancellationToken);
+
+                if (result.Success && latinWords != null)
+                {
+                    var checkedLines = RespellingGuard.Apply(batchInfo.Lines, result.FixedLines, latinWords);
+                    editsLetThrough += checkedLines.LetThrough;
+                    editsPutBack += checkedLines.PutBack;
+                    result = new BatchResult { BatchIndex = result.BatchIndex, Success = true, FixedLines = checkedLines.Lines.ToList() };
+                }
 
                 if (result.Success)
                 {
@@ -178,6 +189,12 @@ public sealed class RefinePipeline : IRefinePipeline
                 await File.WriteAllLinesAsync(outputPathFull, fullContent.Select(l => l.TrimEnd('\n')), Encoding.UTF8, cancellationToken);
             }
 
+            if (latinWords != null)
+            {
+                _logger?.LogInformation("Refine job {JobId}: check of edits let through {LetThrough}, put back {PutBack}", jobId, editsLetThrough, editsPutBack);
+                await AppendEditCheckToRunRecordAsync(request, artifactRoot, editsLetThrough, editsPutBack, cancellationToken);
+            }
+
             _store.Update(jobId, new RefineJobStatusUpdate { State = RefineJobState.Completed, ProgressPercent = 100, CurrentBatch = batches.Count, TotalBatches = batches.Count, OutputFilePath = request.OutputFilePath });
             _nodeModel?.EnsureNode(jobId, null, jobId, "job", request.OutputFilePath != null ? new Dictionary<string, object?> { ["output_file_path"] = request.OutputFilePath } : null);
             _nodeModel?.CompleteNode(jobId, RefineJobState.Completed, DateTimeOffset.UtcNow);
@@ -230,6 +247,9 @@ public sealed class RefinePipeline : IRefinePipeline
                 $"- Output: {Path.GetFileName(outFull)}",
                 $"- Model: {request.Model}, temperature {request.Temperature.ToString(inv)}",
                 $"- Lines per block: {batchSize}, context lines: {contextLines}",
+                request.RespellingOnly
+                    ? "- Check of edits: on — of what the model changes only a word in Cyrillic letters respelled in Latin letters is kept"
+                    : "- Check of edits: off — the lines are taken as the model wrote them",
                 "",
                 "## System prompt" + (request.SystemPrompt == null ? " (built-in)" : ""),
                 "",
@@ -249,6 +269,38 @@ public sealed class RefinePipeline : IRefinePipeline
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger?.LogWarning(ex, "Could not write refiner run record for {Output}", request.OutputFilePath);
+        }
+    }
+
+    /// <summary>The run record's path next to the output; null when the run has no output file.</summary>
+    private static string? RunRecordPath(RefineJobRequest request, string artifactRoot)
+    {
+        if (string.IsNullOrEmpty(request.OutputFilePath)) return null;
+        var rel = request.OutputFilePath.Trim().TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var outFull = Path.Combine(artifactRoot, rel);
+        return Path.Combine(Path.GetDirectoryName(outFull)!, Path.GetFileNameWithoutExtension(outFull) + ".prompt.md");
+    }
+
+    /// <summary>Adds to the run record what the check of edits did, once the run is through.</summary>
+    private async Task AppendEditCheckToRunRecordAsync(RefineJobRequest request, string artifactRoot, int letThrough, int putBack, CancellationToken ct)
+    {
+        var recordPath = RunRecordPath(request, artifactRoot);
+        if (recordPath == null || !File.Exists(recordPath)) return;
+        try
+        {
+            var lines = new[]
+            {
+                "## Check of edits",
+                "",
+                $"- Changes of the model let through: {letThrough}",
+                $"- Changes of the model put back as they were: {putBack}",
+                ""
+            };
+            await File.AppendAllTextAsync(recordPath, string.Join("\n", lines), new UTF8Encoding(false), ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogWarning(ex, "Could not add the check of edits to the run record of {Output}", request.OutputFilePath);
         }
     }
 

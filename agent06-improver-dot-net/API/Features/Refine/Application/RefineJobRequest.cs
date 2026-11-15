@@ -17,6 +17,11 @@ public sealed class RefineJobRequest
     public string? SystemPrompt { get; set; }
     /// <summary>Optional input transcript name, only recorded in the run's prompt file.</summary>
     public string? SourceName { get; set; }
+    /// <summary>
+    /// Of what the model changes keep only a word in Cyrillic letters respelled in Latin letters
+    /// (<c>RespellingGuard</c>); everything else of a line stays as it was.
+    /// </summary>
+    public bool RespellingOnly { get; set; }
     public string? OpenAIBaseUrl { get; set; }
     public string? OpenAIOrganization { get; set; }
     public bool SaveIntermediate { get; set; } = true;

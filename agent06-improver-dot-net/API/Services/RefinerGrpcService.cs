@@ -71,6 +71,7 @@ public class RefinerGrpcService : RefinerService.RefinerServiceBase
             PromptFile = string.IsNullOrEmpty(request.PromptFile) ? null : request.PromptFile.Trim(),
             SystemPrompt = string.IsNullOrWhiteSpace(request.SystemPrompt) ? null : request.SystemPrompt.Trim(),
             SourceName = string.IsNullOrWhiteSpace(request.SourceName) ? null : request.SourceName.Trim(),
+            RespellingOnly = request.RespellingOnly,
             OpenAIBaseUrl = string.IsNullOrEmpty(request.OpenaiBaseUrl) ? null : request.OpenaiBaseUrl.Trim(),
             OpenAIOrganization = string.IsNullOrEmpty(request.OpenaiOrganization) ? null : request.OpenaiOrganization.Trim(),
             SaveIntermediate = request.SaveIntermediate,

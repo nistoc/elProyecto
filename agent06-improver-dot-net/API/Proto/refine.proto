@@ -34,6 +34,9 @@ message SubmitRefineJobRequest {
   string job_directory_relative = 15;
   string system_prompt = 16;          // optional; empty = built-in system prompt
   string source_name = 17;           // optional; input transcript name, recorded in the run's prompt file
+  // Of what the model changes keep only a word in Cyrillic letters respelled in Latin letters (RespellingGuard);
+  // everything else of a line stays as it was. Meant for the built-in lesson prompt.
+  bool respelling_only = 18;
 }
 
 message SubmitRefineJobResponse {
