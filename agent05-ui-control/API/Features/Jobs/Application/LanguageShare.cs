@@ -119,7 +119,8 @@ public sealed class LanguageShare
 
 /// <summary>
 /// The answer of <c>GET /api/jobs/{id}/language-share</c>. A transcription job has <see cref="Total"/> only;
-/// a dialogue job has one entry per track (who spoke how much and in what language) and their sum.
+/// a dialogue job has one entry per track (who spoke how much and in what language), their sum, and
+/// <see cref="Conversation"/>.
 /// </summary>
 public sealed class JobLanguageShareReport
 {
@@ -127,6 +128,12 @@ public sealed class JobLanguageShareReport
     public LanguageShare? Total { get; set; }
 
     public List<TrackLanguageShare> Tracks { get; set; } = new();
+
+    /// <summary>
+    /// How the talk of a dialogue goes: overlaps, interruptions, pauses. Null for a transcription job and for a
+    /// dialogue whose tracks cannot all be put on the timeline of the recording.
+    /// </summary>
+    public ConversationReport? Conversation { get; set; }
 }
 
 public sealed class TrackLanguageShare

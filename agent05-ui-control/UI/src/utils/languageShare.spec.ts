@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  conversationLines,
   formatMinutes,
+  formatSeconds,
   languageShareLines,
+  type ConversationReport,
   type LanguageShare,
+  type TrackConversation,
 } from './languageShare';
 
 const words: Record<string, string> = {
@@ -15,6 +19,18 @@ const words: Record<string, string> = {
   languageShareUntimed: 'lines without time, not counted',
   languageShareOfSpeech: 'of the speech',
   languageShareNoLines: 'no lines with time',
+  conversationTitle: 'Talk',
+  conversationOverlap: 'both at once',
+  conversationSilence: 'silence',
+  conversationChanges: 'speaker changes',
+  conversationInterruptions: 'interruptions',
+  conversationBackchannels: 'short assents over the other',
+  conversationAnswerWait: 'usual wait before an answer',
+  conversationLongPauses: 'pauses from',
+  conversationBeforeAnswer: 'before an answer',
+  conversationInOwnSpeech: 'in own speech',
+  conversationUpTo: 'up to',
+  runSettingsSecUnit: 's',
   runSettingsDecimal: '.',
 };
 const t = (key: string) => words[key] ?? key;
@@ -86,5 +102,105 @@ describe('languageShareLines', () => {
     expect(languageShareLines(null, t)).toEqual([]);
     expect(languageShareLines({ total: null, tracks: [] }, t)).toEqual([]);
     expect(languageShareLines({ total: share(0, 0, 0, 3) }, t)).toEqual([]);
+  });
+});
+
+const talker = (
+  speaker: string,
+  over: Partial<TrackConversation> = {}
+): TrackConversation => ({
+  jobId: speaker.toLowerCase(),
+  speaker,
+  lines: 100,
+  interruptions: 0,
+  backchannels: 0,
+  overlapSeconds: 0,
+  longPausesBeforeAnswer: 0,
+  longestPauseBeforeAnswerSeconds: 0,
+  medianAnswerGapSeconds: null,
+  longPausesInOwnSpeech: 0,
+  longestPauseInOwnSpeechSeconds: 0,
+  ...over,
+});
+
+const talk = (tracks: TrackConversation[]): ConversationReport => ({
+  longPauseSeconds: 3,
+  spanSeconds: 2394,
+  overlapSeconds: 288,
+  silenceSeconds: 384,
+  speakerChanges: 399,
+  tracks,
+});
+
+describe('formatSeconds', () => {
+  it('gives seconds with one decimal in the sign of the locale', () => {
+    expect(formatSeconds(3.94)).toBe('3.9');
+    expect(formatSeconds(0.5, ',')).toBe('0,5');
+    expect(formatSeconds(6)).toBe('6.0');
+  });
+});
+
+describe('conversationLines', () => {
+  it('tells how the talk of a dialogue goes and a line per participant', () => {
+    const report = {
+      conversation: talk([
+        talker('Student', {
+          interruptions: 12,
+          backchannels: 28,
+          medianAnswerGapSeconds: 0.5,
+          longPausesBeforeAnswer: 9,
+          longestPauseBeforeAnswerSeconds: 6.04,
+          longPausesInOwnSpeech: 5,
+          longestPauseInOwnSpeechSeconds: 4.5,
+        }),
+        talker('Teacher', { interruptions: 3, medianAnswerGapSeconds: 0.62 }),
+      ]),
+    };
+    expect(conversationLines(report, t)).toEqual([
+      'Talk 39.9 min: both at once 4.8 min · silence 6.4 min · speaker changes 399',
+      'Student — interruptions 12 · short assents over the other 28 · usual wait before an answer 0.5 s · ' +
+        'pauses from 3 s: before an answer 9 (up to 6.0 s), in own speech 5 (up to 4.5 s)',
+      'Teacher — interruptions 3 · short assents over the other 0 · usual wait before an answer 0.6 s · ' +
+        'pauses from 3 s: before an answer 0, in own speech 0',
+    ]);
+  });
+
+  it('leaves the usual wait out for a participant who never answered', () => {
+    const lines = conversationLines(
+      { conversation: talk([talker('Guest'), talker('Host')]) },
+      t
+    );
+    expect(lines[1]).toBe(
+      'Guest — interruptions 0 · short assents over the other 0 · pauses from 3 s: before an answer 0, in own speech 0'
+    );
+  });
+
+  it('writes minutes and seconds with the decimal sign of the locale', () => {
+    const lines = conversationLines(
+      {
+        conversation: talk([
+          talker('Student', {
+            medianAnswerGapSeconds: 0.5,
+            longPausesInOwnSpeech: 1,
+            longestPauseInOwnSpeechSeconds: 3.5,
+          }),
+        ]),
+      },
+      tComma
+    );
+    expect(lines[0]).toBe(
+      'Talk 39,9 min: both at once 4,8 min · silence 6,4 min · speaker changes 399'
+    );
+    expect(lines[1]).toContain('usual wait before an answer 0,5 s');
+    expect(lines[1]).toContain('in own speech 1 (up to 3,5 s)');
+  });
+
+  it('gives nothing for a job without a talk', () => {
+    expect(conversationLines(null, t)).toEqual([]);
+    expect(conversationLines({ total: share(60, 60) }, t)).toEqual([]);
+    expect(conversationLines({ conversation: null }, t)).toEqual([]);
+    expect(
+      conversationLines({ conversation: { ...talk([]), spanSeconds: 0 } }, t)
+    ).toEqual([]);
   });
 });

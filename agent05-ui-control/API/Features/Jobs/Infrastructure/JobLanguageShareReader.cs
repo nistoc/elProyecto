@@ -10,7 +10,8 @@ namespace XtractManager.Features.Jobs.Infrastructure;
 /// answers the transcriber left in the job folder. The folder is only read.
 /// <list type="bullet">
 /// <item>The lines are the segments of every <c>chunks_json/*.json</c>; the seconds of a line are
-/// <c>end − start</c> of its segment.</item>
+/// <c>end − start</c> of its segment. A segment that starts inside the chunk's <c>emit_guard_sec</c>
+/// (<c>timeline/chunks.json</c>) repeats the previous chunk and is left out, as in the transcript.</item>
 /// <item>A chunk the operator split and merged (<c>split_chunks/chunk_N/chunk_N_merged.md</c> exists) is counted
 /// by the answers of its parts (<c>split_chunks/chunk_N/results/sub_chunk_*_result.json</c>, block
 /// <c>raw_response</c>): those are the lines the transcript holds.</item>
@@ -34,17 +35,20 @@ public static class JobLanguageShareReader
                 return null;
 
             var share = new LanguageShare();
+            var places = JobTimedLinesReader.LoadChunkPlaces(jobDirectoryPath);
             foreach (var path in Directory.EnumerateFiles(jsonDir, "*.json").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
             {
-                var parts = PartAnswersOfMergedSplit(jobDirectoryPath, Path.GetFileNameWithoutExtension(path));
+                var chunkName = Path.GetFileNameWithoutExtension(path);
+                var parts = PartAnswersOfMergedSplit(jobDirectoryPath, chunkName);
                 if (parts.Count > 0)
                 {
                     foreach (var part in parts)
-                        AddAnswerFile(share, part, wrappedIn: "raw_response");
+                        AddAnswerFile(share, part, wrappedIn: "raw_response", emitGuardSec: 0);
                 }
                 else
                 {
-                    AddAnswerFile(share, path, wrappedIn: null);
+                    var guard = places != null && places.TryGetValue(chunkName, out var place) ? place.EmitGuardSec : 0;
+                    AddAnswerFile(share, path, wrappedIn: null, emitGuardSec: guard);
                 }
             }
 
@@ -58,7 +62,9 @@ public static class JobLanguageShareReader
 
     /// <summary>
     /// The report of a job: its own share, or — for a dialogue (<c>dialogue.json</c>) — the share of each track
-    /// read from the folder of the track's job, and their sum.
+    /// read from the folder of the track's job, their sum, and how the talk goes
+    /// (<see cref="ConversationStats"/>; left out when the lines of a track cannot be put on the recording
+    /// timeline, see <see cref="JobTimedLinesReader.Read"/>).
     /// </summary>
     /// <param name="jobDirectoryOf">Folder of a job by its id (the workspace).</param>
     public static JobLanguageShareReport ReadReport(string jobDirectoryPath, Func<string, string> jobDirectoryOf)
@@ -69,18 +75,33 @@ public static class JobLanguageShareReader
 
         var report = new JobLanguageShareReport();
         var total = new LanguageShare();
+        var talk = new List<ConversationTrackInput>();
+        var everyTrackPlaced = true;
         foreach (var track in manifest.Tracks)
         {
             // The manifest is a file on disk: an id in it that is not a plain folder name is not followed.
-            var share = IsPlainFolderName(track.JobId) ? Read(jobDirectoryOf(track.JobId)) : null;
+            var trackDir = IsPlainFolderName(track.JobId) ? jobDirectoryOf(track.JobId) : null;
+            var share = trackDir != null ? Read(trackDir) : null;
             if (share != null)
                 total.Add(share);
             report.Tracks.Add(new TrackLanguageShare { JobId = track.JobId, Speaker = track.Speaker, Share = share });
+
+            var lines = trackDir != null ? JobTimedLinesReader.Read(trackDir) : null;
+            if (lines == null)
+                everyTrackPlaced = false;
+            else
+                talk.Add(new ConversationTrackInput(track.JobId, track.Speaker, lines));
         }
 
         report.Total = total.Lines > 0 ? total : null;
+        // A talk counted without one of its participants would show pauses where that participant spoke.
+        report.Conversation = everyTrackPlaced ? ConversationStats.Compute(talk) : null;
         return report;
     }
+
+    /// <summary>True for a chunk the operator split and merged: the transcript holds the lines of its parts.</summary>
+    internal static bool HasMergedSplit(string jobDir, string chunkName) =>
+        PartAnswersOfMergedSplit(jobDir, chunkName).Count > 0;
 
     private static List<string> PartAnswersOfMergedSplit(string jobDir, string chunkName)
     {
@@ -99,7 +120,7 @@ public static class JobLanguageShareReader
             .ToList();
     }
 
-    private static void AddAnswerFile(LanguageShare share, string path, string? wrappedIn)
+    private static void AddAnswerFile(LanguageShare share, string path, string? wrappedIn, double emitGuardSec)
     {
         try
         {
@@ -113,7 +134,7 @@ public static class JobLanguageShareReader
                     return;
             }
 
-            AddAnswer(share, answer);
+            AddAnswer(share, answer, emitGuardSec);
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -121,7 +142,7 @@ public static class JobLanguageShareReader
         }
     }
 
-    private static void AddAnswer(LanguageShare share, JsonElement answer)
+    private static void AddAnswer(LanguageShare share, JsonElement answer, double emitGuardSec)
     {
         if (answer.ValueKind != JsonValueKind.Object)
             return;
@@ -137,7 +158,15 @@ public static class JobLanguageShareReader
                 var text = segment.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
                 var start = Number(segment, "start");
                 var end = Number(segment, "end");
-                share.Add(text, start != null && end != null ? Math.Max(0, end.Value - start.Value) : null);
+                if (start == null || end == null || JobTimedLinesReader.IsWithoutTime(start.Value, end.Value))
+                {
+                    share.Add(text, null);
+                    continue;
+                }
+
+                if (JobTimedLinesReader.IsInsideGuard(start.Value, end.Value, emitGuardSec))
+                    continue;
+                share.Add(text, Math.Max(0, end.Value - start.Value));
             }
 
             return;

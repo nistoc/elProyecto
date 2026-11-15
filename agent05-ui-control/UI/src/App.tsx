@@ -16,7 +16,7 @@ import { ChunkControlsStats } from './components/ChunkControlsStats';
 import { RefinerProgress } from './components/RefinerProgress';
 import { RefinerSettingsPanel } from './components/RefinerSettingsPanel';
 import { runSettingsLine } from './utils/runSettings';
-import { languageShareLines } from './utils/languageShare';
+import { conversationLines, languageShareLines } from './utils/languageShare';
 
 function AppContent() {
   const { t, locale, setLocale } = useI18n();
@@ -61,7 +61,10 @@ function AppContent() {
   const jobChunkGroups = useJobChunkArtifactGroups(jobId, debouncedRevision);
   const languageShare = useJobLanguageShare(jobId, debouncedRevision);
   const languageLines = useMemo(
-    () => languageShareLines(languageShare, t),
+    () => [
+      ...languageShareLines(languageShare, t),
+      ...conversationLines(languageShare, t),
+    ],
     [languageShare, t]
   );
 

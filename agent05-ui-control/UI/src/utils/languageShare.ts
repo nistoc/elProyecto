@@ -27,6 +27,8 @@ export interface TrackLanguageShare {
 export interface JobLanguageShareReport {
   total?: LanguageShare | null;
   tracks?: TrackLanguageShare[] | null;
+  /** Overlaps, interruptions and pauses of a dialogue; null for a transcription job. */
+  conversation?: ConversationReport | null;
 }
 
 type T = (key: string) => string;
@@ -84,6 +86,88 @@ export function languageShareLines(
         ? `${track.speaker} — ${percent(track.share.speechSeconds, total.speechSeconds)} ${t('languageShareOfSpeech')}, ${text}`
         : `${track.speaker} — ${t('languageShareNoLines')}`
     );
+  }
+  return lines;
+}
+
+/** How the talk of a dialogue goes, `conversation` of the same answer; null when it cannot be counted. */
+export interface ConversationReport {
+  /** A pause is "long" from this many seconds. */
+  longPauseSeconds: number;
+  spanSeconds: number;
+  /** Seconds in which two or more participants speak at once (an upper estimate). */
+  overlapSeconds: number;
+  silenceSeconds: number;
+  speakerChanges: number;
+  tracks: TrackConversation[];
+}
+
+export interface TrackConversation {
+  jobId: string;
+  speaker: string;
+  lines: number;
+  /** Lines begun over the speech of another participant that then went on together with it. */
+  interruptions: number;
+  /** Short assents said over the speech of another participant. */
+  backchannels: number;
+  overlapSeconds: number;
+  longPausesBeforeAnswer: number;
+  longestPauseBeforeAnswerSeconds: number;
+  /** The usual wait before this participant answers another one; null when they never did. */
+  medianAnswerGapSeconds?: number | null;
+  longPausesInOwnSpeech: number;
+  longestPauseInOwnSpeechSeconds: number;
+}
+
+/** 3.94 → "3.9"; the decimal sign is the locale's. */
+export function formatSeconds(seconds: number, decimal = '.'): string {
+  return (Math.round(seconds * 10) / 10).toFixed(1).replace('.', decimal);
+}
+
+/**
+ * The lines of the job view for a dialogue:
+ * "Talk 39.9 min: both at once 4.8 min · silence 6.4 min · speaker changes 399" and one line per participant:
+ * "Student — interruptions 12 · short assents over the other 28 · usual wait before an answer 0.5 s ·
+ * pauses from 3 s: before an answer 9 (up to 6.0 s), in own speech 5 (up to 4.5 s)".
+ * Empty when there is no talk to show.
+ */
+export function conversationLines(
+  report: JobLanguageShareReport | null | undefined,
+  t: T
+): string[] {
+  const talk = report?.conversation;
+  if (!talk || !(talk.spanSeconds > 0)) return [];
+  const decimal = t('runSettingsDecimal');
+  const min = (seconds: number) =>
+    `${formatMinutes(seconds, decimal)} ${t('languageShareMin')}`;
+  const sec = (seconds: number) =>
+    `${formatSeconds(seconds, decimal)} ${t('runSettingsSecUnit')}`;
+  const pauses = (count: number, longest: number) =>
+    count > 0 ? `${count} (${t('conversationUpTo')} ${sec(longest)})` : '0';
+
+  const lines = [
+    `${t('conversationTitle')} ${min(talk.spanSeconds)}: ` +
+      [
+        `${t('conversationOverlap')} ${min(talk.overlapSeconds)}`,
+        `${t('conversationSilence')} ${min(talk.silenceSeconds)}`,
+        `${t('conversationChanges')} ${talk.speakerChanges}`,
+      ].join(' · '),
+  ];
+  for (const track of talk.tracks ?? []) {
+    const parts = [
+      `${t('conversationInterruptions')} ${track.interruptions}`,
+      `${t('conversationBackchannels')} ${track.backchannels}`,
+    ];
+    if (track.medianAnswerGapSeconds != null)
+      parts.push(
+        `${t('conversationAnswerWait')} ${sec(track.medianAnswerGapSeconds)}`
+      );
+    parts.push(
+      `${t('conversationLongPauses')} ${talk.longPauseSeconds} ${t('runSettingsSecUnit')}: ` +
+        `${t('conversationBeforeAnswer')} ${pauses(track.longPausesBeforeAnswer, track.longestPauseBeforeAnswerSeconds)}, ` +
+        `${t('conversationInOwnSpeech')} ${pauses(track.longPausesInOwnSpeech, track.longestPauseInOwnSpeechSeconds)}`
+    );
+    lines.push(`${track.speaker} — ${parts.join(' · ')}`);
   }
   return lines;
 }
