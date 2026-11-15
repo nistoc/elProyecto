@@ -144,6 +144,29 @@ public sealed class SessionsControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_run_tells_how_much_of_its_speech_is_Spanish_and_how_much_Russian()
+    {
+        // Two runs of the student's track: one with chunk answers, one that has answered nothing yet.
+        var source = JsonSerializer.Serialize(new { schema_version = 1, track = StudentTrack, file_name = "gone.m4a", size_bytes = 5 });
+        PutJobFile("jobanswered1", TrackSourceFile.FileName, source);
+        Directory.CreateDirectory(Path.Combine(_workspace, "jobanswered1", "chunks_json"));
+        PutJobFile("jobanswered1", Path.Combine("chunks_json", "audio_part_000.json"),
+            "{\"segments\":[{\"start\":0,\"end\":30,\"text\":\"Hola, buenos días.\"},{\"start\":40,\"end\":50,\"text\":\"Привет, как дела?\"}]}");
+        PutJobFile("jobwaiting01", TrackSourceFile.FileName, source);
+
+        var (controller, _, _) = Create();
+        var period = Assert.Single(Assert.Single(Listed(await controller.List()).Sessions).Periods);
+        var runs = period.Tracks.Single(t => t.Id == StudentTrack).Runs;
+
+        var answered = runs.Single(r => r.JobId == "jobanswered1").Share;
+        Assert.NotNull(answered);
+        Assert.Equal(40, answered.SpeechSeconds, 6);
+        Assert.Equal(30, answered.SpanishSeconds, 6);
+        Assert.Equal(10, answered.RussianSeconds, 6);
+        Assert.Null(runs.Single(r => r.JobId == "jobwaiting01").Share);
+    }
+
+    [Fact]
     public async Task List_shows_lessons_with_the_jobs_that_transcribed_each_track()
     {
         // A job made by a plain upload of the teacher's file: tied by the name and size of the audio.

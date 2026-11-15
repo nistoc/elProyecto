@@ -24,6 +24,7 @@ import {
   type LessonTrack,
   type LessonsResponse,
 } from '../utils/lessons';
+import { languageShareLines, languageShareShort } from '../utils/languageShare';
 import { runSettingsLine, runSettingsShort } from '../utils/runSettings';
 import { JobSettingsFields } from './JobSettingsFields';
 
@@ -193,6 +194,7 @@ export function LessonsPanel({
                 title={[
                   `${t('lessonsOpenJob')} · ${r.createdAt ?? ''}`,
                   runSettingsLine(r.settings, t),
+                  languageShareLines({ total: r.share }, t)[0],
                 ]
                   .filter(Boolean)
                   .join('\n')}
@@ -205,6 +207,15 @@ export function LessonsPanel({
                   <span className="lessons__chip-settings">
                     {' · '}
                     {runSettingsShort(r.settings, t)}
+                  </span>
+                )}
+                {languageShareShort(r.share) && (
+                  <span
+                    className="lessons__chip-settings"
+                    data-testid="lesson-run-share"
+                  >
+                    {' · '}
+                    {languageShareShort(r.share)}
                   </span>
                 )}
               </button>

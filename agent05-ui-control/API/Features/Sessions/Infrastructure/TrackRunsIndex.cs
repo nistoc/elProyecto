@@ -35,6 +35,7 @@ public sealed class TrackRunsIndex
     public static TrackRunsIndex Build(string workspaceRoot, IReadOnlyList<JobListItem> jobs, string? recordingsRoot = null)
     {
         var index = new TrackRunsIndex(recordingsRoot);
+        JobLanguageShareCache.Warm(jobs.Select(job => Path.Combine(workspaceRoot, job.Id)));
         foreach (var job in jobs)
         {
             var dir = Path.Combine(workspaceRoot, job.Id);
@@ -80,6 +81,7 @@ public sealed class TrackRunsIndex
             HasRefined: transcripts.Any(f => f.Name.Contains("_fixed", StringComparison.OrdinalIgnoreCase)))
         {
             Settings = JobRunSettingsReader.Read(dir.FullName),
+            Share = JobLanguageShareCache.Read(dir.FullName),
         };
 
         var source = TrackSourceFile.TryLoad(dir.FullName);

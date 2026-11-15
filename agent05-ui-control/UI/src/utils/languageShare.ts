@@ -60,6 +60,20 @@ function shareText(share: LanguageShare, t: T): string | null {
 }
 
 /**
+ * The short form next to a run in a list: "es 74 % · ru 18 %" — the parts of the speech said in Spanish and in
+ * Russian (what is left to 100 % are mixed lines). Empty when no timed line was counted.
+ */
+export function languageShareShort(
+  share: LanguageShare | null | undefined
+): string {
+  if (!share || !(share.speechSeconds > 0)) return '';
+  return (
+    `es ${percent(share.spanishSeconds, share.speechSeconds)} · ` +
+    `ru ${percent(share.russianSeconds, share.speechSeconds)}`
+  );
+}
+
+/**
  * The lines of the job view. A transcription job gives one:
  * "Speech 34.2 min: Spanish 69 % · Russian 26 % · mixed lines 5 %".
  * A dialogue gives its total and one line per track with the track's part of all speech:

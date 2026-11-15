@@ -4,6 +4,7 @@ import {
   formatMinutes,
   formatSeconds,
   languageShareLines,
+  languageShareShort,
   type ConversationReport,
   type LanguageShare,
   type TrackConversation,
@@ -202,5 +203,18 @@ describe('conversationLines', () => {
     expect(
       conversationLines({ conversation: { ...talk([]), spanSeconds: 0 } }, t)
     ).toEqual([]);
+  });
+});
+
+describe('languageShareShort', () => {
+  it('gives the parts said in Spanish and in Russian', () => {
+    expect(languageShareShort(share(740, 180, 80))).toBe('es 74 % · ru 18 %');
+    expect(languageShareShort(share(60, 0))).toBe('es 100 % · ru 0 %');
+  });
+
+  it('gives nothing when no timed line was counted', () => {
+    expect(languageShareShort(null)).toBe('');
+    expect(languageShareShort(undefined)).toBe('');
+    expect(languageShareShort(share(0, 0, 0, 3))).toBe('');
   });
 });

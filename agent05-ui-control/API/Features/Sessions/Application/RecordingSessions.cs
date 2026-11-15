@@ -68,6 +68,9 @@ public sealed record TrackRun(
 {
     /// <summary>What the job was transcribed with; null when its folder does not tell.</summary>
     public JobRunSettings? Settings { get; init; }
+
+    /// <summary>How much of the run's speech is Spanish and how much Russian; null when no chunk is answered yet.</summary>
+    public LanguageShare? Share { get; init; }
 }
 
 /// <summary>A dialogue job built from runs of the tracks of one period.</summary>
