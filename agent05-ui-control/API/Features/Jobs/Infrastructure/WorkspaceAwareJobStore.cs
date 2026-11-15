@@ -137,8 +137,28 @@ public sealed class WorkspaceAwareJobStore : Application.IJobStore
     public Task<string> CreateAsync(Application.JobCreateInput input, CancellationToken ct = default)
         => _inner.CreateAsync(input, ct);
 
-    public Task<bool> UpdateAsync(string jobId, Action<Application.JobSnapshot> update, CancellationToken ct = default)
-        => _inner.UpdateAsync(jobId, update, ct);
+    /// <summary>
+    /// An update of a job this process did not create (its folder was found on disk — every job after a restart)
+    /// takes the job into the store first, as its folder describes it, and is then applied. Before, such an
+    /// update was dropped: the phase of the job did not follow a refine run, the run button stayed on and a
+    /// second start was not refused.
+    /// </summary>
+    public async Task<bool> UpdateAsync(string jobId, Action<Application.JobSnapshot> update, CancellationToken ct = default)
+    {
+        if (await _inner.UpdateAsync(jobId, update, ct))
+            return true;
+        if (_inner is not Application.IAdoptingJobStore adopting)
+            return false;
+
+        var snap = TryBuildArchiveSnapshot(jobId);
+        if (snap == null)
+            return false;
+        // Phase and status only: chunks stay out, so they are still read from the folder on every request.
+        JobSnapshotDiskEnricher.TryApplyUiState(snap, snap.JobDirectoryPath!, _logger);
+        snap.OriginalFilename ??= jobId; // the name the list shows for a folder that names nothing
+        adopting.TryAdopt(snap); // false: another update took the job in meanwhile, and ours lands on that one
+        return await _inner.UpdateAsync(jobId, update, ct);
+    }
 
     public async Task<bool> DeleteAsync(string jobId, CancellationToken ct = default)
     {

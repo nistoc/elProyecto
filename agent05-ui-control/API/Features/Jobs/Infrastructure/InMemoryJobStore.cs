@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 
 namespace XtractManager.Features.Jobs.Infrastructure;
 
-public sealed class InMemoryJobStore : Application.IJobStore
+public sealed class InMemoryJobStore : Application.IAdoptingJobStore
 {
     private readonly ConcurrentDictionary<string, Application.JobSnapshot> _jobs = new();
     private readonly ConcurrentDictionary<string, object> _locks = new();
@@ -92,6 +92,8 @@ public sealed class InMemoryJobStore : Application.IJobStore
         }
         return Task.FromResult(true);
     }
+
+    public bool TryAdopt(Application.JobSnapshot snapshot) => _jobs.TryAdd(snapshot.Id, snapshot);
 
     public Task<bool> DeleteAsync(string jobId, CancellationToken ct = default)
     {

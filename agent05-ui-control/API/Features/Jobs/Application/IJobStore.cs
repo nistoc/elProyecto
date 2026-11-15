@@ -1,5 +1,12 @@
 namespace XtractManager.Features.Jobs.Application;
 
+/// <summary>A store that can take in a job it did not create: a job found on disk that gets its first update.</summary>
+public interface IAdoptingJobStore : IJobStore
+{
+    /// <summary>Takes the snapshot in under its own id. False when the store already holds a job with that id.</summary>
+    bool TryAdopt(JobSnapshot snapshot);
+}
+
 public interface IJobStore
 {
     Task<JobSnapshot?> GetAsync(string jobId, CancellationToken ct = default);

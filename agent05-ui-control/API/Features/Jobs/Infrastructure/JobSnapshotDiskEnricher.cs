@@ -35,7 +35,7 @@ public static class JobSnapshotDiskEnricher
 
         try
         {
-            TryApplyUiStateFile(snap, jobDirectoryPath, logger);
+            TryApplyUiState(snap, jobDirectoryPath, logger);
 
             var needsChunks =
                 snap.Chunks == null
@@ -110,7 +110,13 @@ public static class JobSnapshotDiskEnricher
         }
     }
 
-    private static void TryApplyUiStateFile(JobSnapshot snap, string jobDirectoryPath, ILogger logger)
+    /// <summary>
+    /// Puts the phase and status kept in <see cref="XtractUiStateFileName"/> onto a snapshot that looks like a job
+    /// read from disk (idle/completed). A kept phase <c>refiner</c> is read as a refine that did not finish:
+    /// a refine runs inside this process and sets its phase in the store, so a job that still looks read from
+    /// disk is not in one — the file was left by a service stopped in the middle of a run.
+    /// </summary>
+    public static void TryApplyUiState(JobSnapshot snap, string jobDirectoryPath, ILogger logger)
     {
         var path = Path.Combine(jobDirectoryPath, XtractUiStateFileName);
         if (!File.Exists(path)) return;
@@ -127,6 +133,11 @@ public static class JobSnapshotDiskEnricher
                 snap.Phase = ui.Phase;
             if (!string.IsNullOrEmpty(ui.Status))
                 snap.Status = ui.Status;
+            if (string.Equals(ui.Phase, "refiner", StringComparison.OrdinalIgnoreCase))
+            {
+                snap.Phase = "awaiting_refiner";
+                snap.Status = "failed";
+            }
             if (!string.IsNullOrEmpty(ui.Agent04JobId))
                 snap.Agent04JobId = ui.Agent04JobId;
         }
