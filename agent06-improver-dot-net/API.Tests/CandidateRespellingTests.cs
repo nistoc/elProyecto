@@ -153,6 +153,28 @@ public class CandidateRespellingTests
     }
 
     [Fact]
+    public void Only_a_word_that_sounds_Spanish_is_named_by_the_stronger_model_alone_with_a_twin_next_to_it()
+    {
+        var (lines, asks, _) = Planned();
+        var ask = asks.Single();
+        var everyone = Enumerable.Range(1, ask.Words.Count).ToHashSet();
+
+        var named = CandidateRespelling.NamedNextTo(lines, ask, Answers(ask, _ => Spanish), everyone);
+
+        // «Теngo» (both alphabets) and «эн» (short) have "tengo" and "en" in the same or the next line and are left out;
+        // «тема» has "tema" only in the first line, three lines away; the second «вале» has no "vale" in its lines.
+        Assert.Equal(new[] { "вале@1", "Каса@2" }, named.OrderBy(n => n).Select(n => $"{ask.Words[n - 1].Word}@{ask.Words[n - 1].Line}"));
+        Assert.Contains(ask.Words, w => w.Word == "Теngo" && w.Kind == SpellingCandidates.Kind.BothAlphabets);
+        Assert.Contains(ask.Words, w => w.Word == "эн" && w.Kind == SpellingCandidates.Kind.ShortInSpanish);
+
+        // Not the smaller model alone: with no Spanish from the stronger one nothing is named; nor a word the answers agree on.
+        Assert.Empty(CandidateRespelling.NamedNextTo(lines, ask, Answers(ask, _ => Russian), everyone));
+        Assert.Empty(CandidateRespelling.NamedNextTo(lines, ask, Answers(ask, _ => Spanish), new HashSet<int>()));
+        // A number the model was not asked about names no word.
+        Assert.Empty(CandidateRespelling.NamedNextTo(lines, ask, Answers(ask, _ => Spanish), new HashSet<int> { 0, ask.Words.Count + 1 }));
+    }
+
+    [Fact]
     public void One_answer_alone_is_taken_as_it_is()
     {
         var (_, asks, _) = Planned();

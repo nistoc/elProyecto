@@ -20,8 +20,9 @@ namespace TranslationImprover.Features.Refine.Infrastructure;
 /// <item>a word of one or two sounds said in Spanish is respelled only when, after all of the above, Spanish
 /// stands on every side it has a neighbour on;</item>
 /// <item>everything else stays as it was: a word said in Russian, a word made of both languages on purpose,
-/// a word without an answer, a word the answers disagree on (<see cref="Agreed"/>), a word no rule above can
-/// spell.</item>
+/// a word without an answer, a word the answers disagree on (<see cref="Agreed"/>) unless the stronger model
+/// calls it Spanish and the transcript has its Latin twin next to it (<see cref="NamedNextTo"/>), a word no rule
+/// above can spell.</item>
 /// </list>
 /// Nothing of a line but the words asked about can change: the model returns no text.
 /// </summary>
@@ -161,6 +162,47 @@ public static class CandidateRespelling
         }
 
         return agreed;
+    }
+
+    /// <summary>
+    /// The words the models differ on that are written in Spanish all the same: a word in Cyrillic letters with
+    /// exactly the sound of a Spanish word of the transcript, which the stronger model (<paramref name="stronger"/>,
+    /// the answers of <see cref="RefineJobRequestMapper.SecondJudgeModel"/>) calls Spanish, and whose Latin twin
+    /// stands in the same line or in the line before or after it. On 33 lesson dialogues the rule of two models
+    /// held back 9 right words that gpt-4.1 alone called Spanish — words a teacher names and explains. 6 of them
+    /// stand in Latin letters in the same line or the line next to it, and on two stored sets of answers every
+    /// word this rule lets through was right (6 of 6, 5 of 5). The same rule for the smaller model would write
+    /// Russian words (2 of its 5 such words were Russian), so it follows the model, not the place in the list.
+    /// </summary>
+    /// <param name="lines">The lines as they were before the run wrote anything: a twin is looked for there.</param>
+    /// <param name="stronger">The answers of the stronger model by the number of the word.</param>
+    /// <param name="differ">The numbers of the words the answers disagree on (<see cref="Agreed"/>).</param>
+    /// <returns>The numbers of the words the rule holds for, a part of <paramref name="differ"/>.</returns>
+    public static HashSet<int> NamedNextTo(IReadOnlyList<string> lines, Ask ask, IReadOnlyDictionary<int, SaidIn> stronger, IReadOnlySet<int> differ)
+    {
+        var named = new HashSet<int>();
+        foreach (var number in differ)
+        {
+            // A model may answer for a number it was not asked about; such a number names no word.
+            if (number < 1 || number > ask.Words.Count)
+                continue;
+            var word = ask.Words[number - 1];
+            if (word.Kind != Kind.SoundsSpanish || word.Spanish == null || stronger.GetValueOrDefault(number, SaidIn.Unknown) != SaidIn.Spanish)
+                continue;
+
+            var twin = LettersOf(word.Spanish.Spelling);
+            for (var l = Math.Max(0, word.Line - 1); l <= Math.Min(lines.Count - 1, word.Line + 1); l++)
+            {
+                var tokens = Tokens(TextOf(lines[l]));
+                if (tokens.Where((t, k) => (l != word.Line || k != word.Token) && LettersOf(t) == twin).Any())
+                {
+                    named.Add(number);
+                    break;
+                }
+            }
+        }
+
+        return named;
     }
 
     /// <summary>Writes into <paramref name="lines"/> what the answers of the judge come to for the words of one request.</summary>

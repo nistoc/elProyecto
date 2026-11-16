@@ -81,7 +81,31 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
         }
     }
 
-    private async Task<(RefineJobStatus Job, string Output, string Record)> RunAsync(ISpellingJudge? judge, string output, string? model = null)
+    /// <summary>Answers by the model asked: what the smaller and the stronger model say about the one word «Каса».</summary>
+    private sealed class PerModelJudge(SaidIn? smaller, SaidIn? stronger) : ISpellingJudge
+    {
+        public string SystemPrompt => "Say what each word is.";
+
+        public Task<SpellingAnswers> AskAsync(IReadOnlyList<SpellingQuestion> questions, string model, float temperature,
+            string? baseUrlOverride = null, CancellationToken cancellationToken = default)
+        {
+            var answer = string.Equals(model, RefineJobRequestMapper.SecondJudgeModel, StringComparison.OrdinalIgnoreCase) ? stronger : smaller;
+            var said = new Dictionary<int, SaidIn>();
+            foreach (var q in questions)
+            {
+                if (answer is { } language)
+                    said[q.Id] = language;
+            }
+
+            return Task.FromResult(new SpellingAnswers(said, "{\"answers\":[]}", PromptTokens: 1, CompletionTokens: 1));
+        }
+    }
+
+    private static string Lines(params string[] texts) =>
+        ">>>>>>>\n" + string.Concat(texts.Select((t, i) => $"- {i + 1}.00 Olga: \"{t}\"\n")) + "<<<<<\n";
+
+    private async Task<(RefineJobStatus Job, string Output, string Record)> RunAsync(ISpellingJudge? judge, string output, string? model = null,
+        string? transcript = null)
     {
         var store = new InMemoryRefineJobStore();
         var pipeline = new RefinePipeline(store, new NoLinesClient(), new FilePromptLoader(), judge: judge);
@@ -89,7 +113,7 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
 
         await pipeline.RunAsync(jobId, RefineJobRequestMapper.Normalize(new RefineJobRequest
         {
-            InputContent = Transcript,
+            InputContent = transcript ?? Transcript,
             OutputFilePath = output,
             CandidatesOnly = true,
             Model = model ?? "",
@@ -137,7 +161,7 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
 
         Assert.Contains("- Models: gpt-4.1-mini and gpt-4.1, temperature 0", record);
         Assert.Contains("- Mode: words in doubt", record);
-        Assert.Contains("a word is written anew only when every model names the same language for it", record);
+        Assert.Contains("; a word is written anew when every model names the same language for it, or when gpt-4.1 alone says Spanish and the transcript has the word in Latin letters in the same line or the one next to it", record);
         Assert.Contains("- Words in doubt: 9 in 4 of 5 lines — 4 in Cyrillic letters that sound like a Spanish word of the transcript, 4 of both alphabets, 1 short ones inside Spanish speech; requests: 1, each put to 2 models", record);
         Assert.Contains("Say what each word is.", record);
         Assert.Contains("- Written anew: 5\n  - 2.00 «вале,» → «vale,»\n  - 3.00 «Каса» → «Casa»\n  - 3.00 «Теngo» → «Tengo»\n  - 3.00 «Nет.» → «Нет.»\n  - 4.00 «эн» → «en»\n", record);
@@ -173,6 +197,63 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
         Assert.Equal(new RefineRunTotals { PromptTokens = 1410, CompletionTokens = 185, EditsLetThrough = 3, EditsPutBack = 6 }, job.Totals);
         Assert.Contains("- Written anew: 3\n", record);
         Assert.Contains("  - the models do not name the same language: 2\n", record);
+    }
+
+    [Fact]
+    public async Task A_word_only_the_stronger_model_calls_Spanish_is_written_when_its_Latin_twin_is_in_the_next_line()
+    {
+        var transcript = Lines("Una casa grande.", "Да, Каса большая.");
+
+        var (job, output, record) = await RunAsync(new PerModelJudge(SaidIn.Russian, SaidIn.Spanish), "transcript_fixed_next.md", transcript: transcript);
+
+        Assert.Equal(Lines("Una casa grande.", "Да, Casa большая."), output);
+        Assert.Equal(1, job.Totals.EditsLetThrough);
+        Assert.Contains("  - 2.00 «Каса» → «Casa» — gpt-4.1 alone, the word stands in Latin letters next to it\n", record);
+        Assert.DoesNotContain("the models do not name the same language", record);
+    }
+
+    [Fact]
+    public async Task A_word_only_the_stronger_model_calls_Spanish_is_written_when_its_Latin_twin_is_in_the_same_line()
+    {
+        var transcript = Lines("Да.", "Una casa y Каса большая.", "Нет.");
+
+        var (_, output, _) = await RunAsync(new PerModelJudge(SaidIn.Russian, SaidIn.Spanish), "transcript_fixed_same.md", transcript: transcript);
+
+        Assert.Equal(Lines("Да.", "Una casa y Casa большая.", "Нет."), output);
+    }
+
+    [Fact]
+    public async Task A_twin_three_lines_away_is_not_next_to_the_word()
+    {
+        var transcript = Lines("Una casa grande.", "Да.", "Нет.", "Да, Каса большая.");
+
+        var (job, output, record) = await RunAsync(new PerModelJudge(SaidIn.Russian, SaidIn.Spanish), "transcript_fixed_far.md", transcript: transcript);
+
+        Assert.Equal(transcript, output);
+        Assert.Equal(0, job.Totals.EditsLetThrough);
+        Assert.Contains("  - the models do not name the same language: 1\n", record);
+    }
+
+    [Fact]
+    public async Task A_word_only_the_smaller_model_calls_Spanish_stays_also_with_a_twin_next_to_it()
+    {
+        var transcript = Lines("Una casa grande.", "Да, Каса большая.");
+
+        var (_, output, record) = await RunAsync(new PerModelJudge(SaidIn.Spanish, SaidIn.Russian), "transcript_fixed_mirror.md", transcript: transcript);
+
+        Assert.Equal(transcript, output);
+        Assert.Contains("  - the models do not name the same language: 1\n", record);
+    }
+
+    [Fact]
+    public async Task The_stronger_model_is_found_by_name_when_the_request_names_it_first()
+    {
+        var transcript = Lines("Una casa grande.", "Да, Каса большая.");
+
+        var (_, output, _) = await RunAsync(new PerModelJudge(SaidIn.Russian, SaidIn.Spanish), "transcript_fixed_named.md",
+            RefineJobRequestMapper.SecondJudgeModel, transcript);
+
+        Assert.Equal(Lines("Una casa grande.", "Да, Casa большая."), output);
     }
 
     [Fact]

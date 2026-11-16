@@ -8,9 +8,12 @@ namespace TranslationImprover.Features.Refine.Infrastructure;
 /// The run that asks about the words in doubt only (<see cref="RefineJobRequest.CandidatesOnly"/>). The code finds
 /// the words (<see cref="SpellingCandidates"/>), the judge says for each in which language it was said
 /// (<see cref="ISpellingJudge"/>), the code writes the spelling (<see cref="CandidateRespelling"/>). Every request
-/// is put to two models (<see cref="RefineJobRequestMapper.JudgesOf"/>), and a word is written anew only when
-/// both name the same language for it. A request to the judge is to the job store and to the block files what a
-/// block is to the other run: its lines before and after, the answers as they came, the tokens of all of them.
+/// is put to two models (<see cref="RefineJobRequestMapper.JudgesOf"/>), and a word is written anew when
+/// both name the same language for it, or when <see cref="RefineJobRequestMapper.SecondJudgeModel"/> alone says
+/// Spanish and the transcript has the word in Latin letters next to it
+/// (<see cref="CandidateRespelling.NamedNextTo"/>). A request to the judge is to the job store and to the block
+/// files what a block is to the other run: its lines before and after, the answers as they came, the tokens of
+/// all of them.
 /// </summary>
 public sealed partial class RefinePipeline
 {
@@ -91,8 +94,21 @@ public sealed partial class RefinePipeline
                 }
 
                 var said = CandidateRespelling.Agreed(answers.Select(a => a.Said).ToList(), out var differ);
+                // The stronger model is found by its name: a request that names it has it first.
+                var strongerAt = judges.ToList().FindIndex(m => string.Equals(m, RefineJobRequestMapper.SecondJudgeModel, StringComparison.OrdinalIgnoreCase));
+                var named = strongerAt < 0
+                    ? new HashSet<int>()
+                    : CandidateRespelling.NamedNextTo(source.Content, ask, answers[strongerAt].Said, differ);
+                foreach (var number in named)
+                {
+                    said[number] = SaidIn.Spanish;
+                    differ.Remove(number);
+                }
+
+                var namedPlaces = named.Select(n => (ask.Words[n - 1].Line, ask.Words[n - 1].Token)).ToHashSet();
                 var applied = CandidateRespelling.Apply(lines, ask, said, cyrillicWords, differ);
-                changes.AddRange(applied.Changes.Select(c => $"{c.At} «{c.Was}» → «{c.Now}»".TrimStart()));
+                changes.AddRange(applied.Changes.Select(c => $"{c.At} «{c.Was}» → «{c.Now}»".TrimStart()
+                    + (namedPlaces.Contains((c.Line, c.Token)) ? $" — {RefineJobRequestMapper.SecondJudgeModel} alone, the word stands in Latin letters next to it" : "")));
                 foreach (var (why, count) in applied.LeftAsTheyWere)
                     left[why] = left.GetValueOrDefault(why) + count;
                 written = applied.Changes.Count;

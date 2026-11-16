@@ -108,7 +108,7 @@ public sealed class RefineRunRecord
                 $"- Output: {_outputName}",
                 $"- {(judges.Count > 1 ? "Models" : "Model")}: {string.Join(" and ", judges)}, temperature {request.Temperature.ToString(inv)}",
                 "- Mode: words in doubt — the code finds them, the model says for each in which language it was said, the code writes the spelling; no line is sent to be rewritten"
-                + (judges.Count > 1 ? "; a word is written anew only when every model names the same language for it" : ""),
+                + (judges.Count > 1 ? $"; a word is written anew when every model names the same language for it, or when {RefineJobRequestMapper.SecondJudgeModel} alone says Spanish and the transcript has the word in Latin letters in the same line or the one next to it" : ""),
                 $"- Words in doubt: {words.Summary}",
                 "",
                 "## System prompt (built-in)",
