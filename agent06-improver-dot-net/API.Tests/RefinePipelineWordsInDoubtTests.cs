@@ -43,11 +43,11 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
         /// <summary>The number of the request that fails, as does every one after it; 0 — none fails.</summary>
         public int FailsFrom { get; init; }
 
-        /// <summary>What a request made again answers otherwise for a word: a language, or null for no answer.</summary>
-        public Dictionary<string, SaidIn?> AgainSays { get; } = new();
+        /// <summary>What the second model answers otherwise for a word: a language, or null for no answer.</summary>
+        public Dictionary<string, SaidIn?> SecondSays { get; } = new();
 
         public List<IReadOnlyList<SpellingQuestion>> Asked { get; } = new();
-        public string? ModelSeen { get; private set; }
+        public List<string> Models { get; } = new();
 
         public string SystemPrompt => "Say what each word is.";
 
@@ -55,11 +55,11 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
             string? baseUrlOverride = null, CancellationToken cancellationToken = default)
         {
             Asked.Add(questions);
-            ModelSeen = model;
+            Models.Add(model);
             if (FailsFrom > 0 && Asked.Count >= FailsFrom)
                 throw new InvalidOperationException("HTTP 500");
 
-            var again = Asked.Count % 2 == 0;
+            var second = Models.Count % 2 == 0;
             var said = new Dictionary<int, SaidIn>();
             foreach (var q in questions)
             {
@@ -71,17 +71,17 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
                     "casaчка" => SaidIn.Both,
                     _ => null
                 };
-                if (again && AgainSays.TryGetValue(q.Word, out var other))
+                if (second && SecondSays.TryGetValue(q.Word, out var other))
                     answer = other;
                 if (answer is { } language)
                     said[q.Id] = language;
             }
 
-            return Task.FromResult(new SpellingAnswers(said, "{\"answers\":[]}", PromptTokens: 700, CompletionTokens: 90));
+            return Task.FromResult(new SpellingAnswers(said, "{\"answers\":[]}", PromptTokens: second ? 710 : 700, CompletionTokens: second ? 95 : 90));
         }
     }
 
-    private async Task<(RefineJobStatus Job, string Output, string Record)> RunAsync(ISpellingJudge? judge, string output)
+    private async Task<(RefineJobStatus Job, string Output, string Record)> RunAsync(ISpellingJudge? judge, string output, string? model = null)
     {
         var store = new InMemoryRefineJobStore();
         var pipeline = new RefinePipeline(store, new NoLinesClient(), new FilePromptLoader(), judge: judge);
@@ -92,6 +92,7 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
             InputContent = Transcript,
             OutputFilePath = output,
             CandidatesOnly = true,
+            Model = model ?? "",
             IntermediateDir = "refine_batches",
         }), _root, _root);
 
@@ -118,15 +119,14 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
             + "<<<<<\n",
             output);
 
-        // One request with the nine words, made twice; the judge sees the text of a line, never its time mark or speaker.
-        Assert.Equal(CandidateRespelling.TimesAsked, judge.Asked.Count);
+        // One request with the nine words, put to two models; the judge sees the text of a line, never its time mark or speaker.
+        Assert.Equal(new[] { RefineJobRequestMapper.DefaultJudgeModel, RefineJobRequestMapper.SecondJudgeModel }, judge.Models);
         var questions = judge.Asked[0];
         Assert.Equal(questions, judge.Asked[1]);
         Assert.Equal(new[] { "вале", "Каса", "Теngo", "Nет", "эн", "тема", "вале", "Кiero", "casaчка" }, questions.Select(q => q.Word));
         Assert.All(questions, q => Assert.DoesNotContain("Olga", q.Text));
-        Assert.Equal(RefineJobRequestMapper.DefaultJudgeModel, judge.ModelSeen);
 
-        Assert.Equal(new RefineRunTotals { PromptTokens = 1400, CompletionTokens = 180, EditsLetThrough = 5, EditsPutBack = 4 }, job.Totals);
+        Assert.Equal(new RefineRunTotals { PromptTokens = 1410, CompletionTokens = 185, EditsLetThrough = 5, EditsPutBack = 4 }, job.Totals);
         var block = Assert.Single(job.Batches);
         Assert.Equal((2, 5), (block.StartLine, block.EndLine));
         Assert.Contains("Да, вале, это мой дом.", block.OriginalText);
@@ -135,28 +135,29 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
         Assert.Equal("вале — vale\nКаса — casa\nТеngo — tengo\nNет\nэн — en\nтема — tema\nвале — vale\nКiero\ncasaчка", block.AskedWords);
         Assert.Equal("", block.ContextText);
 
+        Assert.Contains("- Models: gpt-4.1-mini and gpt-4.1, temperature 0", record);
         Assert.Contains("- Mode: words in doubt", record);
-        Assert.Contains("a word is written anew only when every answer to its request names the same language", record);
-        Assert.Contains("- Words in doubt: 9 in 4 of 5 lines — 4 in Cyrillic letters that sound like a Spanish word of the transcript, 4 of both alphabets, 1 short ones inside Spanish speech; requests: 1, each made 2 times", record);
+        Assert.Contains("a word is written anew only when every model names the same language for it", record);
+        Assert.Contains("- Words in doubt: 9 in 4 of 5 lines — 4 in Cyrillic letters that sound like a Spanish word of the transcript, 4 of both alphabets, 1 short ones inside Spanish speech; requests: 1, each put to 2 models", record);
         Assert.Contains("Say what each word is.", record);
         Assert.Contains("- Written anew: 5\n  - 2.00 «вале,» → «vale,»\n  - 3.00 «Каса» → «Casa»\n  - 3.00 «Теngo» → «Tengo»\n  - 3.00 «Nет.» → «Нет.»\n  - 4.00 «эн» → «en»\n", record);
         Assert.Contains("- Left as they were: 4\n", record);
         Assert.Contains("  - said in Russian: 2\n", record);
         Assert.Contains("  - made of both languages, or the judge could not tell: 1\n", record);
         Assert.Contains("  - no spelling the code can vouch for: 1\n", record);
-        Assert.Contains("- Requests: 1, each made 2 times, none failed", record);
-        Assert.Contains("- Tokens billed: 1400 in, 180 out", record);
+        Assert.Contains("- Requests: 1, each put to 2 models, none failed", record);
+        Assert.Contains("- Tokens billed: 1410 in, 185 out — gpt-4.1-mini: 700 in, 90 out; gpt-4.1: 710 in, 95 out\n", record);
 
         var stored = JsonDocument.Parse(File.ReadAllText(Path.Combine(_root, "refine_batches", "batch_0001_of_0001.json"))).RootElement;
-        Assert.Equal("[answer 1]\n{\"answers\":[]}\n\n[answer 2]\n{\"answers\":[]}", stored.GetProperty("rawText").GetString());
+        Assert.Equal("[gpt-4.1-mini]\n{\"answers\":[]}\n\n[gpt-4.1]\n{\"answers\":[]}", stored.GetProperty("rawText").GetString());
         Assert.Equal(5, stored.GetProperty("editsLetThrough").GetInt32());
     }
 
     [Fact]
-    public async Task A_word_the_two_answers_disagree_on_stays_as_it_was()
+    public async Task A_word_the_two_models_disagree_on_stays_as_it_was()
     {
-        // Made again, the request gets «Каса» called Russian and no answer for «эн».
-        var judge = new FakeJudge { AgainSays = { ["Каса"] = SaidIn.Russian, ["эн"] = null } };
+        // The second model calls «Каса» Russian and has no answer for «эн».
+        var judge = new FakeJudge { SecondSays = { ["Каса"] = SaidIn.Russian, ["эн"] = null } };
 
         var (job, output, record) = await RunAsync(judge, "transcript_fixed_differ.md");
 
@@ -169,13 +170,24 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
             + "- 5.00 Olga: \"Ну, вале, пошли. Кiero casaчка.\"\n"
             + "<<<<<\n",
             output);
-        Assert.Equal(new RefineRunTotals { PromptTokens = 1400, CompletionTokens = 180, EditsLetThrough = 3, EditsPutBack = 6 }, job.Totals);
+        Assert.Equal(new RefineRunTotals { PromptTokens = 1410, CompletionTokens = 185, EditsLetThrough = 3, EditsPutBack = 6 }, job.Totals);
         Assert.Contains("- Written anew: 3\n", record);
-        Assert.Contains("  - the answers of the judge differ: 2\n", record);
+        Assert.Contains("  - the models do not name the same language: 2\n", record);
     }
 
     [Fact]
-    public async Task When_the_request_fails_the_second_time_its_words_stay_and_the_first_answer_is_billed()
+    public async Task A_request_that_names_the_second_judge_gets_the_default_one_as_the_other()
+    {
+        var judge = new FakeJudge();
+
+        var (_, _, record) = await RunAsync(judge, "transcript_fixed_other.md", RefineJobRequestMapper.SecondJudgeModel);
+
+        Assert.Equal(new[] { RefineJobRequestMapper.SecondJudgeModel, RefineJobRequestMapper.DefaultJudgeModel }, judge.Models);
+        Assert.Contains("- Models: gpt-4.1 and gpt-4.1-mini, temperature 0", record);
+    }
+
+    [Fact]
+    public async Task When_the_second_model_fails_the_words_stay_and_the_first_answer_is_billed()
     {
         var (job, output, record) = await RunAsync(new FakeJudge { FailsFrom = 2 }, "transcript_fixed_failed_again.md");
 
@@ -183,8 +195,9 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
         Assert.Equal(new RefineRunTotals { FailedBatches = 1, PromptTokens = 700, CompletionTokens = 90, EditsPutBack = 9 }, job.Totals);
         var block = Assert.Single(job.Batches);
         Assert.False(block.Ok);
-        Assert.Equal("[answer 1]\n{\"answers\":[]}", block.RawText);
+        Assert.Equal("[gpt-4.1-mini]\n{\"answers\":[]}", block.RawText);
         Assert.Contains("  - the request failed: 9\n", record);
+        Assert.Contains("- Tokens billed: 700 in, 90 out — gpt-4.1-mini: 700 in, 90 out; gpt-4.1: 0 in, 0 out\n", record);
     }
 
     [Fact]
@@ -200,7 +213,7 @@ public class RefinePipelineWordsInDoubtTests : IDisposable
         Assert.Equal("HTTP 500", block.Error);
         Assert.Contains("- Written anew: 0\n", record);
         Assert.Contains("  - the request failed: 9\n", record);
-        Assert.Contains("- Requests: 1, each made 2 times, FAILED: 1", record);
+        Assert.Contains("- Requests: 1, each put to 2 models, FAILED: 1", record);
     }
 
     [Fact]

@@ -74,13 +74,16 @@ public sealed class RefineRunRecord
     /// <param name="Lines">The lines of the transcript.</param>
     /// <param name="LinesWithWords">The lines that have a word in doubt.</param>
     /// <param name="Requests">The requests the words are parted into.</param>
-    /// <param name="TimesAsked">How many times each request is made.</param>
-    public sealed record WordsInDoubt(int Lines, int LinesWithWords, int OfBothAlphabets, int SoundingSpanish, int ShortInSpanish, int Requests, int TimesAsked = 1)
+    /// <param name="Judges">The models every request is put to; none named — the model of the request alone.</param>
+    public sealed record WordsInDoubt(int Lines, int LinesWithWords, int OfBothAlphabets, int SoundingSpanish, int ShortInSpanish, int Requests,
+        IReadOnlyList<string>? Judges = null)
     {
         public int Words => OfBothAlphabets + SoundingSpanish + ShortInSpanish;
 
-        /// <summary>«3, each made 2 times» — what is billed is the product.</summary>
-        public string RequestsText => Requests > 0 && TimesAsked > 1 ? $"{Requests}, each made {TimesAsked} times" : Requests.ToString(CultureInfo.InvariantCulture);
+        /// <summary>«3, each put to 2 models» — what is billed is the product.</summary>
+        public string RequestsText => Requests > 0 && Judges is { Count: > 1 }
+            ? $"{Requests}, each put to {Judges.Count} models"
+            : Requests.ToString(CultureInfo.InvariantCulture);
 
         public string Summary =>
             $"{Words} in {LinesWithWords} of {Lines} lines — {SoundingSpanish} in Cyrillic letters that sound like a Spanish word of the transcript, "
@@ -95,6 +98,7 @@ public sealed class RefineRunRecord
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             var inv = CultureInfo.InvariantCulture;
+            var judges = words.Judges is { Count: > 0 } ? words.Judges : new[] { request.Model };
             var lines = new[]
             {
                 "# Refiner run",
@@ -102,9 +106,9 @@ public sealed class RefineRunRecord
                 $"- Started: {DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss", inv)} UTC",
                 $"- Source: {request.SourceName ?? "(inline content)"}",
                 $"- Output: {_outputName}",
-                $"- Model: {request.Model}, temperature {request.Temperature.ToString(inv)}",
+                $"- {(judges.Count > 1 ? "Models" : "Model")}: {string.Join(" and ", judges)}, temperature {request.Temperature.ToString(inv)}",
                 "- Mode: words in doubt — the code finds them, the model says for each in which language it was said, the code writes the spelling; no line is sent to be rewritten"
-                + (words.TimesAsked > 1 ? "; a word is written anew only when every answer to its request names the same language" : ""),
+                + (judges.Count > 1 ? "; a word is written anew only when every model names the same language for it" : ""),
                 $"- Words in doubt: {words.Summary}",
                 "",
                 "## System prompt (built-in)",
@@ -125,7 +129,9 @@ public sealed class RefineRunRecord
     /// <summary>What a run about the words in doubt came to.</summary>
     /// <param name="Changes">Every word written anew: the time mark of its line, the word before and after.</param>
     /// <param name="Left">Why the other words stayed, with how many for each reason.</param>
-    public sealed record WordsOutcome(IReadOnlyList<string> Changes, IReadOnlyList<(string Why, int Words)> Left);
+    /// <param name="Tokens">The tokens of each model apart — they are billed at different prices.</param>
+    public sealed record WordsOutcome(IReadOnlyList<string> Changes, IReadOnlyList<(string Why, int Words)> Left,
+        IReadOnlyList<(string Model, int In, int Out)>? Tokens = null);
 
     public async Task AppendWordsOutcomeAsync(WordsInDoubt words, RefineRunTotals totals, WordsOutcome outcome, CancellationToken ct)
     {
@@ -151,6 +157,7 @@ public sealed class RefineRunRecord
                     : $"- Requests: {words.RequestsText}, FAILED: {totals.FailedBatches} — their words are in the output as they were",
                 totals.PromptTokens + totals.CompletionTokens > 0
                     ? $"- Tokens billed: {totals.PromptTokens} in, {totals.CompletionTokens} out"
+                      + (outcome.Tokens is { Count: > 1 } ? " — " + string.Join("; ", outcome.Tokens.Select(t => $"{t.Model}: {t.In} in, {t.Out} out")) : "")
                     : "- Tokens billed: not reported by the API",
                 ""
             });

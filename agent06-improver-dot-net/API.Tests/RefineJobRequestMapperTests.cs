@@ -146,6 +146,15 @@ public class RefineJobRequestMapperTests : IDisposable
     }
 
     [Fact]
+    public void A_run_about_the_words_in_doubt_has_two_judges_that_are_never_one_model()
+    {
+        Assert.Equal(new[] { "gpt-4.1-mini", "gpt-4.1" }, RefineJobRequestMapper.JudgesOf(RefineJobRequestMapper.DefaultJudgeModel));
+        Assert.Equal(new[] { "gpt-4.1", "gpt-4.1-mini" }, RefineJobRequestMapper.JudgesOf("gpt-4.1"));
+        Assert.Equal(new[] { "GPT-4.1", "gpt-4.1-mini" }, RefineJobRequestMapper.JudgesOf("GPT-4.1"));
+        Assert.Equal(new[] { "gpt-4o-mini", "gpt-4.1" }, RefineJobRequestMapper.JudgesOf("gpt-4o-mini"));
+    }
+
+    [Fact]
     public void Validate_NamesWhatIsWrong()
     {
         File.WriteAllText(Path.Combine(_root, "there.md"), "- 1.00 Olga: \"vale\"\n");

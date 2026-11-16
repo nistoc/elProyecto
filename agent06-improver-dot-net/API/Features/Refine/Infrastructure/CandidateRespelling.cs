@@ -30,14 +30,6 @@ public static class CandidateRespelling
     /// <summary>How many words one request to the judge holds; the words of one line are never parted.</summary>
     public const int WordsPerRequest = 10;
 
-    /// <summary>
-    /// How many times one request is made. One answer is one draw: on 33 lesson dialogues the judge, asked again
-    /// with the same prompt at temperature 0, named another language for 12 words of 451, and five of them were
-    /// Russian words it now called Spanish. A word is written anew only when every answer names the same
-    /// language for it (<see cref="Agreed"/>).
-    /// </summary>
-    public const int TimesAsked = 2;
-
     /// <summary>How many words of the line are sent on each side of the word asked about.</summary>
     private const int WordsAround = 14;
 
@@ -148,8 +140,10 @@ public static class CandidateRespelling
     }
 
     /// <summary>
-    /// What the answers to one request come to when it was made more than once: a word has a language only when
-    /// every answer names that language for it.
+    /// What the answers to one request come to when it was put to more than one model: a word has a language
+    /// only when every answer names that language for it. One answer is one draw — on 33 lesson dialogues the
+    /// same model, asked again with the same prompt at temperature 0, named another language for 12 words of
+    /// 451 — and one model asked twice in a row repeats its wrong answers too; two models seldom share one.
     /// </summary>
     /// <param name="answers">Each answer by the number of the word.</param>
     /// <param name="differ">The numbers of the words the answers disagree on, or that only some of them answer.</param>

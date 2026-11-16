@@ -8,9 +8,9 @@ namespace TranslationImprover.Features.Refine.Infrastructure;
 /// The run that asks about the words in doubt only (<see cref="RefineJobRequest.CandidatesOnly"/>). The code finds
 /// the words (<see cref="SpellingCandidates"/>), the judge says for each in which language it was said
 /// (<see cref="ISpellingJudge"/>), the code writes the spelling (<see cref="CandidateRespelling"/>). Every request
-/// is made <see cref="CandidateRespelling.TimesAsked"/> times, and a word is written anew only when the answers
-/// agree on it. A request to the judge is to the job store and to the block files what a block is to the other
-/// run: its lines before and after, the answers as they came, the tokens of all of them.
+/// is put to two models (<see cref="RefineJobRequestMapper.JudgesOf"/>), and a word is written anew only when
+/// both name the same language for it. A request to the judge is to the job store and to the block files what a
+/// block is to the other run: its lines before and after, the answers as they came, the tokens of all of them.
 /// </summary>
 public sealed partial class RefinePipeline
 {
@@ -18,7 +18,7 @@ public sealed partial class RefinePipeline
     {
         (CandidateRespelling.Left.SaidInRussian, "said in Russian"),
         (CandidateRespelling.Left.OfBothLanguages, "made of both languages, or the judge could not tell"),
-        (CandidateRespelling.Left.AnswersDiffer, "the answers of the judge differ"),
+        (CandidateRespelling.Left.AnswersDiffer, "the models do not name the same language"),
         (CandidateRespelling.Left.NoSpanishNextTo, "a short word without Spanish on every side"),
         (CandidateRespelling.Left.NoSafeSpelling, "no spelling the code can vouch for"),
         (CandidateRespelling.Left.NoAnswer, "no answer of the judge"),
@@ -37,6 +37,7 @@ public sealed partial class RefinePipeline
         var candidates = SpellingCandidates.Find(lines, lexicon).Where(CandidateRespelling.IsAsked).ToList();
         var asks = CandidateRespelling.Plan(candidates);
         var cyrillicWords = CandidateRespelling.CyrillicWordsOf(lines);
+        var judges = RefineJobRequestMapper.JudgesOf(request.Model);
         var words = new RefineRunRecord.WordsInDoubt(
             lines.Count,
             candidates.Select(c => c.Line).Distinct().Count(),
@@ -44,7 +45,7 @@ public sealed partial class RefinePipeline
             candidates.Count(c => c.Kind == SpellingCandidates.Kind.SoundsSpanish),
             candidates.Count(c => c.Kind == SpellingCandidates.Kind.ShortInSpanish),
             asks.Count,
-            CandidateRespelling.TimesAsked);
+            judges);
         var promptPreview = $"[system]\n{_judge.SystemPrompt.Trim()}\n\n[words in doubt]\n{words.Summary}";
 
         _store.Update(jobId, new RefineJobStatusUpdate { TotalBatches = asks.Count });
@@ -61,6 +62,8 @@ public sealed partial class RefinePipeline
         var totals = new RefineRunTotals();
         var changes = new List<string>();
         var left = new Dictionary<CandidateRespelling.Left, int>();
+        // The models are billed at different prices, so the record keeps the tokens of each apart.
+        var tokens = judges.Select(_ => (In: 0, Out: 0)).ToArray();
         for (var i = 0; i < asks.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -73,15 +76,20 @@ public sealed partial class RefinePipeline
             _nodeModel?.UpdateNodeProgress(jobId, (i + 1) * 100 / asks.Count, $"Words in doubt {i + 1}/{asks.Count}");
 
             var before = JoinLines(ask.Lines.Select(l => lines[l]).ToList());
-            // An answer that came is billed and kept, also when a later request of the same words fails.
-            var answers = new List<SpellingAnswers>(CandidateRespelling.TimesAsked);
+            // An answer that came is billed and kept, also when the request to the next model fails.
+            var answers = new List<SpellingAnswers>(judges.Count);
             string? error = null;
             int written = 0, stayed = ask.Words.Count;
             try
             {
                 var questions = CandidateRespelling.QuestionsOf(lines, ask);
-                for (var time = 0; time < CandidateRespelling.TimesAsked; time++)
-                    answers.Add(await _judge.AskAsync(questions, request.Model, request.Temperature, request.OpenAIBaseUrl, cancellationToken));
+                foreach (var model in judges)
+                {
+                    var answer = await _judge.AskAsync(questions, model, request.Temperature, request.OpenAIBaseUrl, cancellationToken);
+                    tokens[answers.Count] = (tokens[answers.Count].In + answer.PromptTokens, tokens[answers.Count].Out + answer.CompletionTokens);
+                    answers.Add(answer);
+                }
+
                 var said = CandidateRespelling.Agreed(answers.Select(a => a.Said).ToList(), out var differ);
                 var applied = CandidateRespelling.Apply(lines, ask, said, cyrillicWords, differ);
                 changes.AddRange(applied.Changes.Select(c => $"{c.At} «{c.Was}» → «{c.Now}»".TrimStart()));
@@ -117,7 +125,7 @@ public sealed partial class RefinePipeline
                 AskedWords = string.Join("\n", ask.Words.Select(w => w.Spanish == null ? w.Word : $"{w.Word} — {w.Spanish.Spelling}")),
                 StartLine = ask.Lines[0] + 1,
                 EndLine = ask.Lines[^1] + 1,
-                RawText = string.Join("\n\n", answers.Select((a, n) => $"[answer {n + 1}]\n{a.RawText}")),
+                RawText = string.Join("\n\n", answers.Select((a, n) => $"[{judges[n]}]\n{a.RawText}")),
                 EditsLetThrough = written,
                 EditsPutBack = stayed,
                 PromptTokens = answers.Sum(a => a.PromptTokens),
@@ -137,7 +145,8 @@ public sealed partial class RefinePipeline
         if (totals.FailedBatches > 0)
             _logger?.LogWarning("Refine job {JobId}: {Failed} of {Total} requests failed; their words are in the output as they were", jobId, totals.FailedBatches, asks.Count);
         await record.AppendWordsOutcomeAsync(words, totals,
-            new RefineRunRecord.WordsOutcome(changes, WhyLeft.Select(w => (w.Text, left.GetValueOrDefault(w.Why))).ToList()), cancellationToken);
+            new RefineRunRecord.WordsOutcome(changes, WhyLeft.Select(w => (w.Text, left.GetValueOrDefault(w.Why))).ToList(),
+                judges.Select((model, n) => (model, tokens[n].In, tokens[n].Out)).ToList()), cancellationToken);
         return (totals, asks.Count);
     }
 }

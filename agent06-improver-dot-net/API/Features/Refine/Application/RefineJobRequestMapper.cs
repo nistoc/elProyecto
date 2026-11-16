@@ -21,6 +21,14 @@ public static class RefineJobRequestMapper
     /// the words, called Russian words Spanish (measured on 33 lesson dialogues, see the README).
     /// </summary>
     public const string DefaultJudgeModel = "gpt-4.1-mini";
+
+    /// <summary>
+    /// The second judge of a run about the words in doubt. One model asked twice agrees with itself also where it
+    /// is wrong; two models err on different words. On 33 lesson dialogues, asked at the same hour,
+    /// <c>gpt-4.1-mini</c> called 6 Russian words Spanish and <c>gpt-4.1</c> 4, and one word was the same
+    /// (see the README, "Two models").
+    /// </summary>
+    public const string SecondJudgeModel = "gpt-4.1";
     public const int DefaultBatchSize = 10;
     public const int DefaultContextLines = 3;
 
@@ -46,6 +54,17 @@ public static class RefineJobRequestMapper
         CallbackUrl = TrimOrNull(request.CallbackUrl),
         Tags = request.Tags is { Count: > 0 } ? request.Tags.ToList() : null,
         JobDirectoryRelative = TrimOrNull(request.JobDirectoryRelative),
+    };
+
+    /// <summary>
+    /// The models a run about the words in doubt puts every request to: the model of the request and a second
+    /// one that is not it — <see cref="SecondJudgeModel"/>, or <see cref="DefaultJudgeModel"/> when the request
+    /// names the second judge itself.
+    /// </summary>
+    public static IReadOnlyList<string> JudgesOf(string model) => new[]
+    {
+        model,
+        string.Equals(model, SecondJudgeModel, StringComparison.OrdinalIgnoreCase) ? DefaultJudgeModel : SecondJudgeModel
     };
 
     /// <summary>Checks a normalized request against the folder its paths are read from; null when it can run.</summary>
