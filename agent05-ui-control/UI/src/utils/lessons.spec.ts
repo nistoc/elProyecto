@@ -8,6 +8,9 @@ import {
   formatDuration,
   formatUsd,
   indexLessonJobs,
+  lessonPageHref,
+  lessonPageLabel,
+  openablePages,
   periodDurationSec,
   periodTimeLabel,
   runUsdPerMinute,
@@ -353,5 +356,65 @@ describe('indexLessonJobs', () => {
       indexLessonJobs({ enabled: false, estimateUsdPerMinute: 0, sessions: [] })
         .size
     ).toBe(0);
+  });
+});
+
+describe('pages of a lesson', () => {
+  const pkg = { url: 'https://pages.example.org/lesson/a1', title: ' v3 ' };
+  const bare = { url: 'http://pages.example.org/lesson/b2', title: '  ' };
+
+  it('makes a link only of a plain web address', () => {
+    expect(lessonPageHref(pkg)).toBe('https://pages.example.org/lesson/a1');
+    expect(lessonPageHref(bare)).toBe('http://pages.example.org/lesson/b2');
+    expect(lessonPageHref({ url: 'javascript:alert(1)' })).toBeNull();
+    expect(lessonPageHref({ url: 'file:///C:/lesson.html' })).toBeNull();
+    expect(lessonPageHref({ url: 'pages.example.org/lesson' })).toBeNull();
+    expect(lessonPageHref({ url: '' })).toBeNull();
+  });
+
+  it('keeps the pages a link can open, in the order they came', () => {
+    expect(
+      openablePages([bare, { url: 'javascript:alert(1)' }, pkg]).map(
+        (p) => p.url
+      )
+    ).toEqual([bare.url, pkg.url]);
+    expect(openablePages(null)).toEqual([]);
+    expect(openablePages(undefined)).toEqual([]);
+  });
+
+  it('calls a link by its title, else by the common name', () => {
+    expect(lessonPageLabel(pkg, 'Lesson package')).toBe('v3');
+    expect(lessonPageLabel(bare, 'Lesson package')).toBe('Lesson package');
+    expect(lessonPageLabel({}, 'Lesson package')).toBe('Lesson package');
+  });
+
+  it('gives every job of the lesson the pages of that lesson', () => {
+    const withPage: LessonSession = {
+      ...session([
+        period({
+          tracks: [track('mixed', null, 2400, [run('aaa')])],
+          dialogues: [
+            { jobId: 'ddd', title: 'Talk', trackJobIds: [], merges: 1 },
+          ],
+        }),
+      ]),
+      pages: [pkg, { url: 'javascript:alert(1)' }],
+    };
+    const other: LessonSession = {
+      ...session([
+        period({ tracks: [track('mixed', null, 600, [run('zzzz')])] }),
+      ]),
+      id: '2026.10.30',
+      date: '2026-10-30',
+    };
+    const index = indexLessonJobs({
+      enabled: true,
+      estimateUsdPerMinute: 0.006,
+      sessions: [withPage, other],
+    });
+
+    expect(index.get('aaa')?.pages).toEqual([pkg]);
+    expect(index.get('ddd')?.pages).toEqual([pkg]);
+    expect(index.get('zzzz')).not.toHaveProperty('pages');
   });
 });

@@ -1,4 +1,4 @@
-import type { LessonJobInfo } from './lessons';
+import type { LessonJobInfo, LessonPage } from './lessons';
 
 /** What the jobs list is ordered by: the lesson a job belongs to, or the day the job itself was made. */
 export type JobsSortKey = 'lesson' | 'created';
@@ -90,11 +90,14 @@ export interface JobsLessonGroup {
   /** YYYY-MM-DD of the lesson; null for the jobs the lessons list does not know. */
   date: string | null;
   count: number;
+  /** Pages made of the lesson (the lesson package); absent when it has none. */
+  pages?: LessonPage[];
 }
 
 /**
  * Where a new lesson begins in a list ordered by lesson: the id of the first job of every lesson, with
- * the day of the lesson and the number of its jobs. The list puts a heading above such a job.
+ * the day of the lesson, the number of its jobs and the pages made of it. The list puts a heading above
+ * such a job.
  */
 export function lessonGroupHeads(
   jobs: readonly SortableJob[],
@@ -103,9 +106,11 @@ export function lessonGroupHeads(
   const heads = new Map<string, JobsLessonGroup>();
   let current: JobsLessonGroup | null = null;
   for (const job of jobs) {
-    const date = lessonJobs.get(job.id)?.date ?? null;
+    const info = lessonJobs.get(job.id);
+    const date = info?.date ?? null;
     if (!current || current.date !== date) {
       current = { date, count: 0 };
+      if (info?.pages?.length) current.pages = info.pages;
       heads.set(job.id, current);
     }
     current.count += 1;

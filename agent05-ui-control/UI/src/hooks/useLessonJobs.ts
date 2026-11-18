@@ -4,8 +4,9 @@ import { indexLessonJobs, type LessonJobInfo } from '../utils/lessons';
 
 /**
  * What the lessons list knows of each job (lesson, recording, track or dialogue, model, share of the
- * languages), by job id. Read only while `enabled` — the jobs list asks for it when it is wide enough to
- * show it — and read again when `signature` changes (a job appeared or moved to another phase).
+ * languages, the pages made of the lesson), by job id. The jobs list orders and describes the jobs by
+ * it, and an open job shows its lesson. Read while `enabled`, and read again when `signature` changes
+ * (a job appeared or moved to another phase, or the page of a lesson was changed).
  * Null until the first answer; a failed read leaves what was read before.
  */
 export function useLessonJobs(

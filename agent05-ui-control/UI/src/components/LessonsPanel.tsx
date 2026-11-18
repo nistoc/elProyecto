@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { createDialogue, fetchLessons, startTrackRun } from '../api';
+import {
+  createDialogue,
+  fetchLessons,
+  putLessonPage,
+  removeLessonPage,
+  startTrackRun,
+} from '../api';
 import {
   buildJobSettings,
   emptyJobSettingsForm,
@@ -13,12 +19,14 @@ import {
   formatBytes,
   formatDuration,
   formatUsd,
+  lessonPageLabel,
   periodDurationSec,
   periodTimeLabel,
   runUsdPerMinute,
   sessionCounts,
   sessionDurationSec,
   trackDefaultModel,
+  type LessonPage,
   type LessonPeriod,
   type LessonSession,
   type LessonTrack,
@@ -27,6 +35,7 @@ import {
 import { languageShareLines, languageShareShort } from '../utils/languageShare';
 import { runSettingsLine, runSettingsShort } from '../utils/runSettings';
 import { JobSettingsFields } from './JobSettingsFields';
+import { LessonPageLinks } from './LessonPageLinks';
 
 interface LessonsPanelProps {
   t: (key: string) => string;
@@ -34,6 +43,15 @@ interface LessonsPanelProps {
   onOpenJob: (jobId: string) => void;
   /** A job was created from here: the jobs list has to be read again. */
   onJobsChanged: () => void;
+  /** The page of a lesson was put or removed here: whoever shows lessons has to read them again. */
+  onLessonsChanged?: () => void;
+}
+
+/** What the operator typed for the page of one lesson. */
+interface PageForm {
+  sessionId: string;
+  url: string;
+  title: string;
 }
 
 /** What the operator typed for the dialogue of one period. */
@@ -60,6 +78,7 @@ export function LessonsPanel({
   t,
   onOpenJob,
   onJobsChanged,
+  onLessonsChanged,
 }: LessonsPanelProps) {
   const [data, setData] = useState<LessonsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -70,6 +89,8 @@ export function LessonsPanel({
   const [settingsForm, setSettingsForm] =
     useState<JobSettingsForm>(emptyJobSettingsForm);
   const [dialogueForm, setDialogueForm] = useState<DialogueForm | null>(null);
+  // The lesson whose page link is being put or removed.
+  const [pageForm, setPageForm] = useState<PageForm | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -101,8 +122,72 @@ export function LessonsPanel({
   const askRun = (track: LessonTrack) => {
     setActionError(null);
     setDialogueForm(null);
+    setPageForm(null);
     setSettingsForm(emptyJobSettingsForm);
     setConfirmTrack(track.id);
+  };
+
+  const askPage = (session: LessonSession) => {
+    setActionError(null);
+    setConfirmTrack(null);
+    setDialogueForm(null);
+    setPageForm((prev) =>
+      prev?.sessionId === session.id
+        ? null
+        : { sessionId: session.id, url: '', title: '' }
+    );
+  };
+
+  /** The pages go by the date of the lesson: every lesson of that date shows the same ones. */
+  const showPages = (date: string, pages: LessonPage[]) => {
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            sessions: prev.sessions.map((s) =>
+              s.date === date ? { ...s, pages } : s
+            ),
+          }
+        : prev
+    );
+    onLessonsChanged?.();
+  };
+
+  const savePage = async (session: LessonSession) => {
+    if (!pageForm || busy || !pageForm.url.trim()) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const saved = await putLessonPage(
+        session.date,
+        pageForm.url.trim(),
+        pageForm.title
+      );
+      showPages(saved.date, saved.pages);
+      setPageForm(null);
+    } catch (e) {
+      setActionError(
+        `${t('lessonPageFailed')}: ${e instanceof Error ? e.message : String(e)}`
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removePage = async (session: LessonSession, page: LessonPage) => {
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const left = await removeLessonPage(session.date, page.url);
+      showPages(left.date, left.pages);
+    } catch (e) {
+      setActionError(
+        `${t('lessonPageFailed')}: ${e instanceof Error ? e.message : String(e)}`
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const startRun = async (track: LessonTrack) => {
@@ -126,6 +211,7 @@ export function LessonsPanel({
   const askDialogue = (session: LessonSession, period: LessonPeriod) => {
     setActionError(null);
     setConfirmTrack(null);
+    setPageForm(null);
     const tracks: DialogueForm['tracks'] = {};
     for (const c of dialogueCandidates(period))
       tracks[c.trackId] = { speaker: c.speaker, jobId: c.jobId };
@@ -450,6 +536,78 @@ export function LessonsPanel({
     </li>
   );
 
+  const renderPageForm = (session: LessonSession) => {
+    if (pageForm?.sessionId !== session.id) return null;
+    return (
+      <div
+        className="lessons__confirm lessons__page-form"
+        role="group"
+        data-testid="lesson-page-form"
+      >
+        <p className="lessons__confirm-text">{t('lessonPageHint')}</p>
+        {(session.pages ?? []).map((page) => (
+          <div key={page.url} className="lessons__field">
+            <span>{lessonPageLabel(page, t('lessonPage'))}</span>
+            <code className="lessons__page-url">{page.url}</code>
+            <button
+              type="button"
+              className="lessons__btn"
+              onClick={() => void removePage(session, page)}
+              disabled={busy}
+              data-testid="lesson-page-remove"
+            >
+              {t('lessonPageRemove')}
+            </button>
+          </div>
+        ))}
+        <label className="lessons__field">
+          <span>{t('lessonPageUrl')}</span>
+          <input
+            type="url"
+            className="lessons__page-input"
+            value={pageForm.url}
+            placeholder="https://…"
+            onChange={(e) => setPageForm({ ...pageForm, url: e.target.value })}
+            data-testid="lesson-page-url"
+          />
+        </label>
+        <label className="lessons__field">
+          <span>{t('lessonPageTitle')}</span>
+          <input
+            type="text"
+            value={pageForm.title}
+            placeholder={t('lessonPage')}
+            maxLength={120}
+            onChange={(e) =>
+              setPageForm({ ...pageForm, title: e.target.value })
+            }
+            data-testid="lesson-page-title"
+          />
+        </label>
+        {actionError && <p className="lessons__error">{actionError}</p>}
+        <div className="lessons__confirm-actions">
+          <button
+            type="button"
+            className="lessons__btn lessons__btn--primary"
+            onClick={() => void savePage(session)}
+            disabled={busy || !pageForm.url.trim()}
+            data-testid="lesson-page-save"
+          >
+            {t('lessonPageSave')}
+          </button>
+          <button
+            type="button"
+            className="lessons__btn"
+            onClick={() => setPageForm(null)}
+            disabled={busy}
+          >
+            {t('lessonsCancel')}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const renderSession = (session: LessonSession) => {
     const counts = sessionCounts(session);
     const isOpen = !!open[session.id];
@@ -459,42 +617,59 @@ export function LessonsPanel({
         className="lessons__session"
         data-testid="lesson-session"
       >
-        <button
-          type="button"
-          className="lessons__session-head"
-          onClick={() =>
-            setOpen((prev) => ({ ...prev, [session.id]: !isOpen }))
-          }
-          aria-expanded={isOpen}
-        >
-          <span className="lessons__caret">{isOpen ? '▾' : '▸'}</span>
-          <strong>{session.date}</strong>
-          {session.title && <span>{session.title}</span>}
-          <span className="lessons__muted">
-            {counts.periods} {t('lessonsPeriods')} ·{' '}
-            {formatDuration(sessionDurationSec(session))}
-          </span>
-          {session.loose && (
-            <span
-              className="lessons__badge lessons__badge--warn"
-              title={t('lessonsLooseHint')}
-            >
-              {t('lessonsLoose')}
+        <div className="lessons__session-row">
+          <button
+            type="button"
+            className="lessons__session-head"
+            onClick={() =>
+              setOpen((prev) => ({ ...prev, [session.id]: !isOpen }))
+            }
+            aria-expanded={isOpen}
+          >
+            <span className="lessons__caret">{isOpen ? '▾' : '▸'}</span>
+            <strong>{session.date}</strong>
+            {session.title && <span>{session.title}</span>}
+            <span className="lessons__muted">
+              {counts.periods} {t('lessonsPeriods')} ·{' '}
+              {formatDuration(sessionDurationSec(session))}
             </span>
-          )}
-          {counts.unconverted > 0 && (
-            <span
-              className="lessons__badge lessons__badge--warn"
-              title={t('lessonsStateUnconvertedHint')}
-            >
-              {t('lessonsStateUnconverted')}: {counts.unconverted}
+            {session.loose && (
+              <span
+                className="lessons__badge lessons__badge--warn"
+                title={t('lessonsLooseHint')}
+              >
+                {t('lessonsLoose')}
+              </span>
+            )}
+            {counts.unconverted > 0 && (
+              <span
+                className="lessons__badge lessons__badge--warn"
+                title={t('lessonsStateUnconvertedHint')}
+              >
+                {t('lessonsStateUnconverted')}: {counts.unconverted}
+              </span>
+            )}
+            <span className="lessons__muted lessons__session-counts">
+              {t('lessonsRuns')}: {counts.runs} ({counts.tracksWithRuns}/
+              {counts.tracks}) · {t('lessonsDialogues')}: {counts.dialogues}
             </span>
-          )}
-          <span className="lessons__muted lessons__session-counts">
-            {t('lessonsRuns')}: {counts.runs} ({counts.tracksWithRuns}/
-            {counts.tracks}) · {t('lessonsDialogues')}: {counts.dialogues}
+          </button>
+          {/* Next to the head, not in it: a link cannot stand inside a button. */}
+          <span className="lessons__session-pages">
+            <LessonPageLinks pages={session.pages} t={t} />
+            <button
+              type="button"
+              className="lessons__btn"
+              onClick={() => askPage(session)}
+              title={t('lessonPageHint')}
+              aria-expanded={pageForm?.sessionId === session.id}
+              data-testid="lesson-page-edit"
+            >
+              {t('lessonPageEdit')}
+            </button>
           </span>
-        </button>
+        </div>
+        {renderPageForm(session)}
         {isOpen && (
           <ul className="lessons__periods">
             {session.periods.length === 0 && (
@@ -558,8 +733,14 @@ export function LessonsPanel({
         .lessons__error { color: var(--color-error); font-size: 0.875rem; margin: 0.5rem 0; }
         .lessons__sessions, .lessons__periods, .lessons__tracks { list-style: none; margin: 0; padding: 0; }
         .lessons__session { border-top: 1px solid var(--color-border); }
+        .lessons__session-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.6rem; }
+        .lessons__session-pages { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding-right: 0.25rem; }
+        .lessons__page-form { margin: 0 0 0.6rem 1.5rem; }
+        .lessons__page-url { flex: 1; min-width: 12rem; font-size: 0.8rem; color: var(--color-text-secondary); overflow-wrap: anywhere; }
+        .lessons__field input.lessons__page-input { flex: 1; min-width: min(100%, 28rem); }
         .lessons__session-head {
-          width: 100%;
+          flex: 1;
+          min-width: min(100%, 24rem);
           display: flex;
           flex-wrap: wrap;
           align-items: baseline;

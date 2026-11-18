@@ -15,7 +15,14 @@ public sealed record RecordingSession(
     string Date,
     string? Title,
     bool Loose,
-    IReadOnlyList<RecordingPeriod> Periods);
+    IReadOnlyList<RecordingPeriod> Periods)
+{
+    /// <summary>
+    /// Pages made of this lesson outside the service (the lesson package), the one put last first.
+    /// They go by the date of the lesson, see <see cref="ILessonPagesStore"/>.
+    /// </summary>
+    public IReadOnlyList<LessonPage> Pages { get; init; } = Array.Empty<LessonPage>();
+}
 
 /// <summary>One recording of a lesson (Zoom cuts a lesson into periods of about 40 minutes).</summary>
 /// <param name="Id">Path of the period folder (or of the audio file of an old flat recording) from the root, with '/'.</param>

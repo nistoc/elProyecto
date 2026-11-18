@@ -37,6 +37,7 @@ builder.Services.AddSingleton<XtractManager.Features.Jobs.Application.IJobWorksp
 builder.Services.AddSingleton<XtractManager.Features.Jobs.Application.IRefinerSettingsStore, FileRefinerSettingsStore>();
 builder.Services.AddSingleton<IDialogueBuilder, DialogueBuilder>();
 builder.Services.AddSingleton<XtractManager.Features.Sessions.Application.IRecordingsCatalog, XtractManager.Features.Sessions.Infrastructure.RecordingsCatalog>();
+builder.Services.AddSingleton<XtractManager.Features.Sessions.Application.ILessonPagesStore, XtractManager.Features.Sessions.Infrastructure.FileLessonPagesStore>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();

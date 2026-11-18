@@ -43,6 +43,7 @@ public class SessionsController : ControllerBase
     private readonly IJobStore _store;
     private readonly IJobWorkspace _workspace;
     private readonly IPipelineQueue _pipelineQueue;
+    private readonly ILessonPagesStore _pages;
     private readonly IConfiguration _configuration;
     private readonly ILogger<SessionsController> _logger;
 
@@ -51,6 +52,7 @@ public class SessionsController : ControllerBase
         IJobStore store,
         IJobWorkspace workspace,
         IPipelineQueue pipelineQueue,
+        ILessonPagesStore pages,
         IConfiguration configuration,
         ILogger<SessionsController> logger)
     {
@@ -58,6 +60,7 @@ public class SessionsController : ControllerBase
         _store = store;
         _workspace = workspace;
         _pipelineQueue = pipelineQueue;
+        _pages = pages;
         _configuration = configuration;
         _logger = logger;
     }
@@ -84,14 +87,84 @@ public class SessionsController : ControllerBase
         var sessions = _catalog.Scan();
         var jobs = await _store.ListAsync(new JobListFilter(Limit: int.MaxValue), ct);
         var index = TrackRunsIndex.Build(_workspace.WorkspaceRootPath, jobs, _catalog.RootPath);
+        var pages = _pages.Load();
         var withRuns = sessions
-            .Select(s => s with { Periods = s.Periods.Select(index.Attach).ToList() })
+            .Select(s => s with
+            {
+                Periods = s.Periods.Select(index.Attach).ToList(),
+                Pages = pages.TryGetValue(s.Date, out var ofLesson) ? ofLesson : Array.Empty<LessonPage>(),
+            })
             .ToList();
         return Ok(new SessionsResponse(true, _catalog.RootPath, estimate, withRuns)
         {
             ParticipantTrackModel = participantModel,
             ParticipantTrackEstimateUsdPerMinute = participantEstimate,
         });
+    }
+
+    /// <summary>
+    /// Puts the address of a page made of the lesson of this date (the lesson package), so the lesson shows
+    /// it as a link. Body: <c>{ "url": string, "title"?: string }</c>. A page with this address that the
+    /// lesson already has only gets the new title. The page itself lives elsewhere: nothing is fetched from
+    /// the address, and the recordings folder is not written — the addresses are kept in the jobs folder.
+    /// </summary>
+    [HttpPut("api/sessions/{date}/pages")]
+    public ActionResult<LessonPagesResponse> PutPage(string date, [FromBody] LessonPageBody? body)
+    {
+        if (!LessonPageRules.TryDate(date, out var day))
+            return BadRequest(ProblemOf(400, "The date of the lesson must be written YYYY-MM-DD."));
+        if (!LessonPageRules.TryUrl(body?.Url, out var url, out var urlError))
+            return BadRequest(ProblemOf(400, urlError ?? "url is not valid."));
+        if (!LessonPageRules.TryTitle(body?.Title, out var title, out var titleError))
+            return BadRequest(ProblemOf(400, titleError ?? "title is not valid."));
+        if (!_catalog.Enabled || _catalog.Scan().All(s => s.Date != day))
+            return NotFound(ProblemOf(404, $"No lesson of {day} is in the recordings folder."));
+
+        try
+        {
+            var pages = _pages.Put(day, url, title);
+            _logger.LogInformation("Page put for the lesson of {Date}; it has {Count} now", day, pages.Count);
+            return Ok(new LessonPagesResponse(day, pages));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ProblemOf(409, ex.Message));
+        }
+        catch (IOException ex)
+        {
+            _logger.LogError(ex, "The page of the lesson of {Date} was not saved", day);
+            return StatusCode(500, ProblemOf(500, ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Takes the page with this address off the lesson. Only the link is removed; the page stays where it is.
+    /// </summary>
+    [HttpDelete("api/sessions/{date}/pages")]
+    public ActionResult<LessonPagesResponse> RemovePage(string date, [FromQuery] string? url)
+    {
+        if (!LessonPageRules.TryDate(date, out var day))
+            return BadRequest(ProblemOf(400, "The date of the lesson must be written YYYY-MM-DD."));
+        if (!LessonPageRules.TryUrl(url, out var address, out var urlError))
+            return BadRequest(ProblemOf(400, urlError ?? "url is not valid."));
+
+        try
+        {
+            var left = _pages.Remove(day, address);
+            if (left == null)
+                return NotFound(ProblemOf(404, $"The lesson of {day} has no page with this address."));
+            _logger.LogInformation("Page taken off the lesson of {Date}; {Count} left", day, left.Count);
+            return Ok(new LessonPagesResponse(day, left));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ProblemOf(409, ex.Message));
+        }
+        catch (IOException ex)
+        {
+            _logger.LogError(ex, "The page of the lesson of {Date} was not taken off", day);
+            return StatusCode(500, ProblemOf(500, ex.Message));
+        }
     }
 
     /// <summary>
@@ -206,10 +279,21 @@ public class SessionsController : ControllerBase
 
     private static ProblemDetails ProblemOf(int status, string detail) => new()
     {
-        Title = status switch { 400 => "Bad Request", 404 => "Not Found", _ => "Error" },
+        Title = status switch { 400 => "Bad Request", 404 => "Not Found", 409 => "Conflict", _ => "Error" },
         Status = status,
         Detail = detail,
     };
+}
+
+/// <summary>The pages of the lesson of one date after a change.</summary>
+public sealed record LessonPagesResponse(string Date, IReadOnlyList<LessonPage> Pages);
+
+public sealed class LessonPageBody
+{
+    public string? Url { get; set; }
+
+    /// <summary>What the link is called; the UI names it itself when this is empty.</summary>
+    public string? Title { get; set; }
 }
 
 /// <param name="Enabled">False when <c>Recordings:RootPath</c> is empty or the folder does not exist.</param>

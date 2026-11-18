@@ -11,7 +11,7 @@ import type {
 } from './types';
 import type { ChunkArtifactGroup } from './utils/chunkArtifactGroups';
 import type { JobSettings } from './utils/jobSettings';
-import type { LessonsResponse } from './utils/lessons';
+import type { LessonPage, LessonsResponse } from './utils/lessons';
 import type { JobLanguageShareReport } from './utils/languageShare';
 import type { RefinePrompt } from './utils/refinePrompt';
 import {
@@ -566,4 +566,44 @@ export async function createDialogue(
   });
   if (!r.ok) throw new Error(await problemText(r));
   return r.json() as Promise<DialogueBuildResponse>;
+}
+
+export interface LessonPagesResponse {
+  /** YYYY-MM-DD of the lesson. */
+  date: string;
+  pages: LessonPage[];
+}
+
+/**
+ * Puts the address of a page made of the lesson of this date (the lesson package). A page with this
+ * address that the lesson already has only gets the new title. Returns the pages of the lesson.
+ */
+export async function putLessonPage(
+  date: string,
+  url: string,
+  title?: string
+): Promise<LessonPagesResponse> {
+  const r = await fetch(
+    `${API_BASE}/api/sessions/${encodeURIComponent(date)}/pages`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, title: title?.trim() || null }),
+    }
+  );
+  if (!r.ok) throw new Error(await problemText(r));
+  return r.json() as Promise<LessonPagesResponse>;
+}
+
+/** Takes the page with this address off the lesson; the page itself stays where it is. */
+export async function removeLessonPage(
+  date: string,
+  url: string
+): Promise<LessonPagesResponse> {
+  const r = await fetch(
+    `${API_BASE}/api/sessions/${encodeURIComponent(date)}/pages?url=${encodeURIComponent(url)}`,
+    { method: 'DELETE' }
+  );
+  if (!r.ok) throw new Error(await problemText(r));
+  return r.json() as Promise<LessonPagesResponse>;
 }

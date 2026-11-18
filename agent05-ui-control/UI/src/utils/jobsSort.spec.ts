@@ -134,6 +134,25 @@ describe('lessonGroupHeads', () => {
   it('has nothing to mark in an empty list', () => {
     expect(lessonGroupHeads([], lessons).size).toBe(0);
   });
+
+  it('carries the pages made of a lesson to its heading', () => {
+    const page = { url: 'https://pages.example.org/lesson/a1', title: 'v3' };
+    const withPage = new Map(lessons);
+    for (const [id, known] of lessons)
+      if (known.date === '2026-10-23')
+        withPage.set(id, { ...known, pages: [page] });
+    const sorted = sortJobs(jobs, { key: 'lesson', dir: 'desc' }, withPage);
+
+    const heads = lessonGroupHeads(sorted, withPage);
+
+    expect(heads.get('oct-talk')).toEqual({
+      date: '2026-10-23',
+      count: 5,
+      pages: [page],
+    });
+    expect(heads.get('nov-mixed')).toEqual({ date: '2026-11-13', count: 1 });
+    expect(heads.get('upload-new')).toEqual({ date: null, count: 2 });
+  });
 });
 
 describe('stored order', () => {

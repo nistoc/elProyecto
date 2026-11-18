@@ -5,9 +5,11 @@ import { useJob, type StepId } from './hooks/useJob';
 import { useJobChunkArtifactGroups } from './hooks/useJobChunkArtifactGroups';
 import { useJobProjectFiles } from './hooks/useJobProjectFiles';
 import { useJobLanguageShare } from './hooks/useJobLanguageShare';
+import { useLessonJobs } from './hooks/useLessonJobs';
 import { useDebouncedValue } from './hooks/useDebouncedValue';
 import { StepCard } from './components/StepCard';
 import { UploadCard } from './components/UploadCard';
+import { LessonPageLinks } from './components/LessonPageLinks';
 import { LessonsPanel } from './components/LessonsPanel';
 import { JobsSidebar } from './components/JobsSidebar';
 import { JobStats } from './components/JobStats';
@@ -60,6 +62,22 @@ function AppContent() {
     },
     [handleSelectJob]
   );
+
+  // What the lessons list knows of the jobs: the jobs list is ordered and described by it, and an open
+  // job shows the lesson it belongs to with the page made of that lesson. Read again when a job appears
+  // or moves to another phase, and when the page of a lesson is changed in the lessons list.
+  const [lessonsRevision, setLessonsRevision] = useState(0);
+  const lessonsChanged = useCallback(
+    () => setLessonsRevision((n) => n + 1),
+    []
+  );
+  const lessonsSignature = useMemo(
+    () =>
+      `${jobsList.map((j) => `${j.id}:${j.phase}`).join('|')}#${lessonsRevision}`,
+    [jobsList, lessonsRevision]
+  );
+  const lessonJobs = useLessonJobs(true, lessonsSignature);
+  const jobLesson = jobId ? lessonJobs?.get(jobId) : undefined;
 
   // The prompt of a refine run: the lesson prompt is offered first for a job that holds a lesson;
   // what the operator picks holds for the job it was picked for.
@@ -155,6 +173,7 @@ function AppContent() {
           onDelete={handleDeleteJob}
           loading={loadingList}
           t={t}
+          lessonJobs={lessonJobs}
         />
 
         <main className="content">
@@ -163,6 +182,7 @@ function AppContent() {
               t={t}
               onOpenJob={openJob}
               onJobsChanged={refreshList}
+              onLessonsChanged={lessonsChanged}
             />
           )}
           <div
@@ -185,6 +205,15 @@ function AppContent() {
             style={showLessons ? { display: 'none' } : undefined}
           >
             {/* Scrolled with the step: in a low window they must not take the room of the step itself. */}
+            {activeStep !== 'upload' && jobLesson && (
+              <p className="job-lesson" data-testid="job-lesson">
+                <span>
+                  {t('jobLesson')} {jobLesson.date} · {t('jobLessonRecording')}{' '}
+                  {jobLesson.time}
+                </span>
+                <LessonPageLinks pages={jobLesson.pages} t={t} />
+              </p>
+            )}
             {activeStep !== 'upload' &&
               runSettingsLine(job?.runSettings, t) && (
                 <p className="job-run-settings" data-testid="job-run-settings">
@@ -588,6 +617,7 @@ function AppContent() {
         }
         .step-panel { padding: 1rem; }
         .step-panel__meta { margin: 0 0 0.5rem 0; font-size: 0.875rem; color: var(--color-text-secondary); }
+        .job-lesson { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 0 0 0.4rem 0; font-size: 0.875rem; color: var(--color-heading); font-variant-numeric: tabular-nums; }
         .job-run-settings { margin: 0 0 0.75rem 0; font-size: 0.875rem; color: var(--color-text-secondary); }
         .step-panel__files-heading { margin: 1rem 0 0.35rem 0; font-size: 0.9rem; color: var(--color-heading); }
         .step-panel__empty { color: var(--color-text-muted); margin: 0; }

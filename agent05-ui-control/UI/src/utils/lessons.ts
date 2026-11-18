@@ -54,6 +54,17 @@ export interface LessonPeriod {
   dialogues: LessonDialogue[];
 }
 
+/**
+ * A page made of a lesson outside XtractManager — the lesson package with its vocabulary, topics,
+ * grammar and new words. Only the address is kept; the lesson shows it as a link.
+ */
+export interface LessonPage {
+  url: string;
+  /** What the link is called; empty when no name was given. */
+  title?: string | null;
+  addedAt?: string | null;
+}
+
 export interface LessonSession {
   id: string;
   /** YYYY-MM-DD */
@@ -62,6 +73,35 @@ export interface LessonSession {
   /** The period folders lie in the root, not in a day folder. */
   loose: boolean;
   periods: LessonPeriod[];
+  /** Pages made of this lesson, the one put last first. They go by the date of the lesson. */
+  pages?: LessonPage[] | null;
+}
+
+/** The address as a link may open it: http(s) only. Null for anything else, which is never made a link. */
+export function lessonPageHref(page: Pick<LessonPage, 'url'>): string | null {
+  try {
+    const url = new URL(page.url);
+    return url.protocol === 'https:' || url.protocol === 'http:'
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The pages of a lesson a link can open, in the order they came. */
+export function openablePages(
+  pages: readonly LessonPage[] | null | undefined
+): LessonPage[] {
+  return (pages ?? []).filter((p) => lessonPageHref(p) !== null);
+}
+
+/** What the link of a page is called: its own title, else the common name of such a page. */
+export function lessonPageLabel(
+  page: Pick<LessonPage, 'title'>,
+  commonName: string
+): string {
+  return page.title?.trim() || commonName;
 }
 
 export interface LessonsResponse {
@@ -257,6 +297,8 @@ export interface LessonJobInfo {
   /** Unknown (undefined) for a dialogue: the lessons list does not tell it. */
   hasTranscript?: boolean;
   hasRefined?: boolean;
+  /** Pages made of the lesson this job belongs to; absent when the lesson has none. */
+  pages?: LessonPage[];
 }
 
 /**
@@ -268,11 +310,13 @@ export function indexLessonJobs(
 ): Map<string, LessonJobInfo> {
   const index = new Map<string, LessonJobInfo>();
   for (const session of response?.sessions ?? []) {
+    const pages = openablePages(session.pages);
     for (const period of session.periods) {
       const place = {
         date: session.date,
         time: periodTimeLabel(period),
         startedAt: period.startedAt ?? '',
+        ...(pages.length > 0 ? { pages } : {}),
       };
       for (const track of period.tracks) {
         const kind = track.kind === 'mixed' ? 'mixed' : 'participant';

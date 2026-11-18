@@ -82,8 +82,9 @@ public sealed class SessionsControllerTests : IDisposable
         var store = new WorkspaceAwareJobStore(memory, workspace, NullLogger<WorkspaceAwareJobStore>.Instance);
         var queue = new QueueSpy(_workspace);
         var catalog = new RecordingsCatalog(config, env, NullLogger<RecordingsCatalog>.Instance);
+        var pages = new FileLessonPagesStore(workspace, NullLogger<FileLessonPagesStore>.Instance);
         var controller = new SessionsController(
-            catalog, store, workspace, queue, config, NullLogger<SessionsController>.Instance);
+            catalog, store, workspace, queue, pages, config, NullLogger<SessionsController>.Instance);
         return (controller, memory, queue);
     }
 

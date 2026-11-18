@@ -10,6 +10,7 @@ import { languageShareShort } from '../utils/languageShare';
 import type { LessonJobInfo } from '../utils/lessons';
 import { runSettingsShort } from '../utils/runSettings';
 import type { SidebarDetail } from '../utils/sidebarWidth';
+import { LessonPageLinks } from './LessonPageLinks';
 
 // Made once: the list prints two dates for every job, and a format made for each of them is slow.
 const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
@@ -194,6 +195,7 @@ function JobsListView({
                 <li className="jobs-list__group" data-testid="jobs-list-group">
                   <span>{head.date ?? t('jobsNoLesson')}</span>
                   <span className="jobs-list__group-count">{head.count}</span>
+                  <LessonPageLinks pages={head.pages} t={t} />
                 </li>
               )}
               <li className="jobs-list__li">
@@ -315,6 +317,11 @@ function JobsListView({
         .jobs-list__group::after { content: ''; flex: 1; height: 1px; background: var(--color-border); }
         .jobs-list__group-count { font-weight: 400; color: var(--color-text-secondary); }
         .jobs-list__group-count::before { content: '· '; }
+        .jobs-list__group > span { flex-shrink: 0; }
+        /* The page of the lesson stands next to its day, before the line; in a narrow list its name is cut. */
+        .jobs-list__group > .lesson-pages { flex: 0 1 auto; flex-wrap: nowrap; overflow: hidden; }
+        .jobs-list__group .lesson-pages__link { min-width: 0; }
+        .jobs-list--d0 .jobs-list__group .lesson-pages__link > span:last-child { display: none; }
         .jobs-list__li { display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.25rem; }
         .jobs-list__item {
           flex: 1;
