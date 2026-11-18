@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using XtractManager.Features.Jobs.Application;
+using XtractManager.Features.LessonPackages.Application;
 using XtractManager.Features.Sessions.Application;
 using XtractManager.Features.Sessions.Infrastructure;
 
@@ -44,6 +45,7 @@ public class SessionsController : ControllerBase
     private readonly IJobWorkspace _workspace;
     private readonly IPipelineQueue _pipelineQueue;
     private readonly ILessonPagesStore _pages;
+    private readonly ILessonPackageStore _packages;
     private readonly IConfiguration _configuration;
     private readonly ILogger<SessionsController> _logger;
 
@@ -53,6 +55,7 @@ public class SessionsController : ControllerBase
         IJobWorkspace workspace,
         IPipelineQueue pipelineQueue,
         ILessonPagesStore pages,
+        ILessonPackageStore packages,
         IConfiguration configuration,
         ILogger<SessionsController> logger)
     {
@@ -61,6 +64,7 @@ public class SessionsController : ControllerBase
         _workspace = workspace;
         _pipelineQueue = pipelineQueue;
         _pages = pages;
+        _packages = packages;
         _configuration = configuration;
         _logger = logger;
     }
@@ -84,15 +88,13 @@ public class SessionsController : ControllerBase
             });
         }
 
-        var sessions = _catalog.Scan();
-        var jobs = await _store.ListAsync(new JobListFilter(Limit: int.MaxValue), ct);
-        var index = TrackRunsIndex.Build(_workspace.WorkspaceRootPath, jobs, _catalog.RootPath);
         var pages = _pages.Load();
-        var withRuns = sessions
+        var packages = _packages.List();
+        var withRuns = (await LessonSessions.WithRunsAsync(_catalog, _store, _workspace, ct))
             .Select(s => s with
             {
-                Periods = s.Periods.Select(index.Attach).ToList(),
                 Pages = pages.TryGetValue(s.Date, out var ofLesson) ? ofLesson : Array.Empty<LessonPage>(),
+                Package = packages.TryGetValue(s.Date, out var package) ? package : null,
             })
             .ToList();
         return Ok(new SessionsResponse(true, _catalog.RootPath, estimate, withRuns)

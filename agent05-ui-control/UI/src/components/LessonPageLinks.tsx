@@ -8,18 +8,44 @@ import {
 interface LessonPageLinksProps {
   pages: readonly LessonPage[] | null | undefined;
   t: (key: string) => string;
+  /** YYYY-MM-DD of the lesson when it has a package the app itself shows; nothing otherwise. */
+  packageDate?: string | null;
+  /** Opens the package of a lesson inside the app. */
+  onOpenPackage?: (date: string) => void;
 }
 
 /**
- * The pages made of a lesson (the lesson package) as links that open in a new tab. Renders nothing for
- * a lesson without a page. An address that is not http(s) is never made a link.
+ * What was made of a lesson: its package inside the app (a button) and the pages made of it elsewhere
+ * (links that open in a new tab). Renders nothing for a lesson that has neither. An address that is not
+ * http(s) is never made a link.
  * Its styles are in index.css: the jobs list draws one of these for every lesson.
  */
-export function LessonPageLinks({ pages, t }: LessonPageLinksProps) {
+export function LessonPageLinks({
+  pages,
+  t,
+  packageDate,
+  onOpenPackage,
+}: LessonPageLinksProps) {
   const links = openablePages(pages);
-  if (links.length === 0) return null;
+  const inApp = packageDate && onOpenPackage ? packageDate : null;
+  if (links.length === 0 && !inApp) return null;
   return (
     <span className="lesson-pages" data-testid="lesson-pages">
+      {inApp && (
+        <button
+          type="button"
+          className="lesson-pages__link lesson-pages__link--app"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenPackage?.(inApp);
+          }}
+          title={t('lessonPackageOpenHint')}
+          data-testid="lesson-package-open"
+        >
+          <span aria-hidden="true">📗</span>
+          <span className="lesson-pages__name">{t('lessonPackage')}</span>
+        </button>
+      )}
       {links.map((page) => (
         <a
           key={page.url}

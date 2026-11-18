@@ -417,4 +417,29 @@ describe('pages of a lesson', () => {
     expect(index.get('ddd')?.pages).toEqual([pkg]);
     expect(index.get('zzzz')).not.toHaveProperty('pages');
   });
+
+  it('tells every job of a lesson that the lesson has a package the app shows', () => {
+    const withPackage: LessonSession = {
+      ...session([
+        period({ tracks: [track('mixed', null, 600, [run('aaa')])] }),
+      ]),
+      package: { builtAt: '2026-10-24T09:00:00Z' },
+    };
+    const without: LessonSession = {
+      ...session([
+        period({ tracks: [track('mixed', null, 600, [run('zzzz')])] }),
+      ]),
+      id: '2026.10.30',
+      date: '2026-10-30',
+      package: null,
+    };
+    const index = indexLessonJobs({
+      enabled: true,
+      estimateUsdPerMinute: 0.006,
+      sessions: [withPackage, without],
+    });
+
+    expect(index.get('aaa')?.hasPackage).toBe(true);
+    expect(index.get('zzzz')).not.toHaveProperty('hasPackage');
+  });
 });

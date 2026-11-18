@@ -45,6 +45,8 @@ interface LessonsPanelProps {
   onJobsChanged: () => void;
   /** The page of a lesson was put or removed here: whoever shows lessons has to read them again. */
   onLessonsChanged?: () => void;
+  /** Opens the package of a lesson (by its date) inside the app. */
+  onOpenPackage?: (date: string) => void;
 }
 
 /** What the operator typed for the page of one lesson. */
@@ -79,6 +81,7 @@ export function LessonsPanel({
   onOpenJob,
   onJobsChanged,
   onLessonsChanged,
+  onOpenPackage,
 }: LessonsPanelProps) {
   const [data, setData] = useState<LessonsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -656,7 +659,12 @@ export function LessonsPanel({
           </button>
           {/* Next to the head, not in it: a link cannot stand inside a button. */}
           <span className="lessons__session-pages">
-            <LessonPageLinks pages={session.pages} t={t} />
+            <LessonPageLinks
+              pages={session.pages}
+              t={t}
+              packageDate={session.package ? session.date : null}
+              onOpenPackage={onOpenPackage}
+            />
             <button
               type="button"
               className="lessons__btn"

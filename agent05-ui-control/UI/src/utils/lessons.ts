@@ -75,6 +75,8 @@ export interface LessonSession {
   periods: LessonPeriod[];
   /** Pages made of this lesson, the one put last first. They go by the date of the lesson. */
   pages?: LessonPage[] | null;
+  /** The lesson has a package the app itself shows (words, grammar, topics); null when it has none. */
+  package?: { builtAt?: string | null } | null;
 }
 
 /** The address as a link may open it: http(s) only. Null for anything else, which is never made a link. */
@@ -299,6 +301,8 @@ export interface LessonJobInfo {
   hasRefined?: boolean;
   /** Pages made of the lesson this job belongs to; absent when the lesson has none. */
   pages?: LessonPage[];
+  /** The lesson this job belongs to has a package the app itself shows. */
+  hasPackage?: boolean;
 }
 
 /**
@@ -317,6 +321,7 @@ export function indexLessonJobs(
         time: periodTimeLabel(period),
         startedAt: period.startedAt ?? '',
         ...(pages.length > 0 ? { pages } : {}),
+        ...(session.package ? { hasPackage: true } : {}),
       };
       for (const track of period.tracks) {
         const kind = track.kind === 'mixed' ? 'mixed' : 'participant';

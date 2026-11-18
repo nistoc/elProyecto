@@ -45,6 +45,8 @@ interface JobsListProps {
   /** The order `jobs` came in; with `onSort` the list offers to change it. */
   sort?: JobsSort;
   onSort?: (sort: JobsSort) => void;
+  /** Opens the package of a lesson (by its date) inside the app; the heading of a lesson offers it. */
+  onOpenPackage?: (date: string) => void;
 }
 
 /**
@@ -90,6 +92,7 @@ function JobsListView({
   lessonJobs = null,
   sort,
   onSort,
+  onOpenPackage,
 }: JobsListProps) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
@@ -195,7 +198,12 @@ function JobsListView({
                 <li className="jobs-list__group" data-testid="jobs-list-group">
                   <span>{head.date ?? t('jobsNoLesson')}</span>
                   <span className="jobs-list__group-count">{head.count}</span>
-                  <LessonPageLinks pages={head.pages} t={t} />
+                  <LessonPageLinks
+                    pages={head.pages}
+                    t={t}
+                    packageDate={head.hasPackage ? head.date : null}
+                    onOpenPackage={onOpenPackage}
+                  />
                 </li>
               )}
               <li className="jobs-list__li">
@@ -321,7 +329,7 @@ function JobsListView({
         /* The page of the lesson stands next to its day, before the line; in a narrow list its name is cut. */
         .jobs-list__group > .lesson-pages { flex: 0 1 auto; flex-wrap: nowrap; overflow: hidden; }
         .jobs-list__group .lesson-pages__link { min-width: 0; }
-        .jobs-list--d0 .jobs-list__group .lesson-pages__link > span:last-child { display: none; }
+        .jobs-list--d0 .jobs-list__group a.lesson-pages__link > span:last-child { display: none; }
         .jobs-list__li { display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.25rem; }
         .jobs-list__item {
           flex: 1;

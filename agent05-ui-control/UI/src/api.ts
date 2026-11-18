@@ -12,6 +12,7 @@ import type {
 import type { ChunkArtifactGroup } from './utils/chunkArtifactGroups';
 import type { JobSettings } from './utils/jobSettings';
 import type { LessonPage, LessonsResponse } from './utils/lessons';
+import type { LessonPackageView, PackageEdit } from './utils/lessonPackage';
 import type { JobLanguageShareReport } from './utils/languageShare';
 import type { RefinePrompt } from './utils/refinePrompt';
 import {
@@ -606,4 +607,39 @@ export async function removeLessonPage(
   );
   if (!r.ok) throw new Error(await problemText(r));
   return r.json() as Promise<LessonPagesResponse>;
+}
+
+/**
+ * The package of the lesson of this date (GET /api/sessions/{date}/package): its lists with the owner's
+ * edits put on and every word counted against the lessons before it.
+ */
+export async function fetchLessonPackage(
+  date: string
+): Promise<LessonPackageView> {
+  const r = await fetch(
+    `${API_BASE}/api/sessions/${encodeURIComponent(date)}/package`
+  );
+  if (!r.ok) throw new Error(await problemText(r));
+  return r.json() as Promise<LessonPackageView>;
+}
+
+/**
+ * Writes fields of one item of a package anew, or takes the item out of the lists. The package file is
+ * not changed: the edit is kept next to it. Returns the package as it reads now.
+ */
+export async function putLessonPackageEdit(
+  date: string,
+  id: string,
+  change: PackageEdit
+): Promise<LessonPackageView> {
+  const r = await fetch(
+    `${API_BASE}/api/sessions/${encodeURIComponent(date)}/package/marks/${encodeURIComponent(id)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(change),
+    }
+  );
+  if (!r.ok) throw new Error(await problemText(r));
+  return r.json() as Promise<LessonPackageView>;
 }

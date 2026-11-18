@@ -129,6 +129,14 @@ body {
   text-decoration: underline;
 }
 
+/* The package the app itself shows: a button among the links. */
+.lesson-pages__link--app {
+  border-color: var(--color-primary);
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
 .lesson-pages__name {
   min-width: 0;
   overflow: hidden;

@@ -10,6 +10,7 @@ import { useDebouncedValue } from './hooks/useDebouncedValue';
 import { StepCard } from './components/StepCard';
 import { UploadCard } from './components/UploadCard';
 import { LessonPageLinks } from './components/LessonPageLinks';
+import { LessonPackageView } from './components/LessonPackageView';
 import { LessonsPanel } from './components/LessonsPanel';
 import { JobsSidebar } from './components/JobsSidebar';
 import { JobStats } from './components/JobStats';
@@ -52,12 +53,16 @@ function AppContent() {
   // stay instant (both hooks key on jobId) and manual reloads bypass this via .reload().
   // Lessons of the recordings folder take the place of the job view while they are open.
   const [showLessons, setShowLessons] = useState(false);
+  // The package of a lesson (by its date) takes the place of whatever is open; closing it shows that again.
+  const [packageDate, setPackageDate] = useState<string | null>(null);
+  const openPackage = useCallback((date: string) => setPackageDate(date), []);
   // A job picked in the sidebar or in a lesson is shown itself, not the upload form that was open
   // (or that the job remembers as its last step).
   // Kept the same between renders: the jobs list is not drawn anew for every status event of a job.
   const openJob = useCallback(
     (id: string) => {
       setShowLessons(false);
+      setPackageDate(null);
       handleSelectJob(id, 'transcriber');
     },
     [handleSelectJob]
@@ -119,6 +124,7 @@ function AppContent() {
             className="topbar__upload"
             onClick={() => {
               setShowLessons(false);
+              setPackageDate(null);
               setActiveStep('upload');
             }}
           >
@@ -127,12 +133,16 @@ function AppContent() {
           <button
             type="button"
             className={
-              showLessons
+              showLessons && !packageDate
                 ? 'topbar__lessons topbar__lessons--on'
                 : 'topbar__lessons'
             }
-            onClick={() => setShowLessons((v) => !v)}
-            aria-pressed={showLessons}
+            onClick={() => {
+              // From an open package the button leads to the lessons, whatever was under the package.
+              setShowLessons((v) => (packageDate ? true : !v));
+              setPackageDate(null);
+            }}
+            aria-pressed={showLessons && !packageDate}
             data-testid="topbar-lessons"
           >
             {t('lessons')}
@@ -174,20 +184,33 @@ function AppContent() {
           loading={loadingList}
           t={t}
           lessonJobs={lessonJobs}
+          onOpenPackage={openPackage}
         />
 
         <main className="content">
-          {showLessons && (
-            <LessonsPanel
+          {packageDate && (
+            <LessonPackageView
+              date={packageDate}
               t={t}
+              onClose={() => setPackageDate(null)}
               onOpenJob={openJob}
-              onJobsChanged={refreshList}
-              onLessonsChanged={lessonsChanged}
             />
+          )}
+          {/* Kept under an open package, so closing the package shows the lessons as they were left. */}
+          {showLessons && (
+            <div style={{ display: packageDate ? 'none' : 'contents' }}>
+              <LessonsPanel
+                t={t}
+                onOpenJob={openJob}
+                onJobsChanged={refreshList}
+                onLessonsChanged={lessonsChanged}
+                onOpenPackage={openPackage}
+              />
+            </div>
           )}
           <div
             className="steps-row"
-            style={showLessons ? { display: 'none' } : undefined}
+            style={showLessons || packageDate ? { display: 'none' } : undefined}
           >
             {steps.map(({ id, title }) => (
               <StepCard
@@ -202,7 +225,7 @@ function AppContent() {
 
           <div
             className="step-content"
-            style={showLessons ? { display: 'none' } : undefined}
+            style={showLessons || packageDate ? { display: 'none' } : undefined}
           >
             {/* Scrolled with the step: in a low window they must not take the room of the step itself. */}
             {activeStep !== 'upload' && jobLesson && (
@@ -211,7 +234,12 @@ function AppContent() {
                   {t('jobLesson')} {jobLesson.date} · {t('jobLessonRecording')}{' '}
                   {jobLesson.time}
                 </span>
-                <LessonPageLinks pages={jobLesson.pages} t={t} />
+                <LessonPageLinks
+                  pages={jobLesson.pages}
+                  t={t}
+                  packageDate={jobLesson.hasPackage ? jobLesson.date : null}
+                  onOpenPackage={openPackage}
+                />
               </p>
             )}
             {activeStep !== 'upload' &&

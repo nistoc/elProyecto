@@ -83,8 +83,11 @@ public sealed class SessionsControllerTests : IDisposable
         var queue = new QueueSpy(_workspace);
         var catalog = new RecordingsCatalog(config, env, NullLogger<RecordingsCatalog>.Instance);
         var pages = new FileLessonPagesStore(workspace, NullLogger<FileLessonPagesStore>.Instance);
+        var packages = new XtractManager.Features.LessonPackages.Infrastructure.FileLessonPackageStore(
+            config, env, workspace,
+            NullLogger<XtractManager.Features.LessonPackages.Infrastructure.FileLessonPackageStore>.Instance);
         var controller = new SessionsController(
-            catalog, store, workspace, queue, pages, config, NullLogger<SessionsController>.Instance);
+            catalog, store, workspace, queue, pages, packages, config, NullLogger<SessionsController>.Instance);
         return (controller, memory, queue);
     }
 

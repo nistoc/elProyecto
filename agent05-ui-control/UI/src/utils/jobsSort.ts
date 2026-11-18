@@ -92,6 +92,8 @@ export interface JobsLessonGroup {
   count: number;
   /** Pages made of the lesson (the lesson package); absent when it has none. */
   pages?: LessonPage[];
+  /** The lesson has a package the app itself shows. */
+  hasPackage?: boolean;
 }
 
 /**
@@ -111,6 +113,7 @@ export function lessonGroupHeads(
     if (!current || current.date !== date) {
       current = { date, count: 0 };
       if (info?.pages?.length) current.pages = info.pages;
+      if (info?.hasPackage) current.hasPackage = true;
       heads.set(job.id, current);
     }
     current.count += 1;

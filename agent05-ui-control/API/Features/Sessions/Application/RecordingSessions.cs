@@ -22,6 +22,12 @@ public sealed record RecordingSession(
     /// They go by the date of the lesson, see <see cref="ILessonPagesStore"/>.
     /// </summary>
     public IReadOnlyList<LessonPage> Pages { get; init; } = Array.Empty<LessonPage>();
+
+    /// <summary>
+    /// That the lesson has a package the service itself shows (topics, grammar, words; see
+    /// <see cref="LessonPackages.Application.ILessonPackageStore"/>); null when it has none.
+    /// </summary>
+    public LessonPackages.Application.LessonPackageInfo? Package { get; init; }
 }
 
 /// <summary>One recording of a lesson (Zoom cuts a lesson into periods of about 40 minutes).</summary>

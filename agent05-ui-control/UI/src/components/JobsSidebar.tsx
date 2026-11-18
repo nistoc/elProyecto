@@ -17,6 +17,8 @@ interface JobsSidebarProps {
   t: (key: string) => string;
   /** What the lessons list knows of the jobs, by job id; null until it is read. */
   lessonJobs: Map<string, LessonJobInfo> | null;
+  /** Opens the package of a lesson (by its date) inside the app. */
+  onOpenPackage?: (date: string) => void;
 }
 
 /**

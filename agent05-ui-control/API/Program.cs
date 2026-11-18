@@ -38,6 +38,8 @@ builder.Services.AddSingleton<XtractManager.Features.Jobs.Application.IRefinerSe
 builder.Services.AddSingleton<IDialogueBuilder, DialogueBuilder>();
 builder.Services.AddSingleton<XtractManager.Features.Sessions.Application.IRecordingsCatalog, XtractManager.Features.Sessions.Infrastructure.RecordingsCatalog>();
 builder.Services.AddSingleton<XtractManager.Features.Sessions.Application.ILessonPagesStore, XtractManager.Features.Sessions.Infrastructure.FileLessonPagesStore>();
+builder.Services.AddSingleton<XtractManager.Features.LessonPackages.Application.ILessonPackageStore, XtractManager.Features.LessonPackages.Infrastructure.FileLessonPackageStore>();
+builder.Services.AddSingleton<XtractManager.Features.LessonPackages.Application.ILessonWordIndex, XtractManager.Features.LessonPackages.Infrastructure.LessonWordIndex>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();

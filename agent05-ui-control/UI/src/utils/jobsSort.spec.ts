@@ -153,6 +153,23 @@ describe('lessonGroupHeads', () => {
     expect(heads.get('nov-mixed')).toEqual({ date: '2026-11-13', count: 1 });
     expect(heads.get('upload-new')).toEqual({ date: null, count: 2 });
   });
+
+  it('tells which lesson has a package the app itself shows', () => {
+    const withPackage = new Map(lessons);
+    for (const [id, known] of lessons)
+      if (known.date === '2026-11-13')
+        withPackage.set(id, { ...known, hasPackage: true });
+    const sorted = sortJobs(jobs, { key: 'lesson', dir: 'desc' }, withPackage);
+
+    const heads = lessonGroupHeads(sorted, withPackage);
+
+    expect(heads.get('nov-mixed')).toEqual({
+      date: '2026-11-13',
+      count: 1,
+      hasPackage: true,
+    });
+    expect(heads.get('oct-talk')).toEqual({ date: '2026-10-23', count: 5 });
+  });
 });
 
 describe('stored order', () => {

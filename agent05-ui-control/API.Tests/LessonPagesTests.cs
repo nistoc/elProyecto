@@ -67,6 +67,9 @@ public sealed class LessonPagesTests : IDisposable
             workspace,
             new NoQueue(),
             new FileLessonPagesStore(workspace, NullLogger<FileLessonPagesStore>.Instance),
+            new XtractManager.Features.LessonPackages.Infrastructure.FileLessonPackageStore(
+                config, env, workspace,
+                NullLogger<XtractManager.Features.LessonPackages.Infrastructure.FileLessonPackageStore>.Instance),
             config,
             NullLogger<SessionsController>.Instance);
         return (controller, store);
