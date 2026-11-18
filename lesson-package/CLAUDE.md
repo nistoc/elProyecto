@@ -125,7 +125,7 @@ same work the lessons list does), the transcripts themselves are read in about 2
 
 Done: the screen with four tabs; the words table (only new by default, lists, search, recording, sorting,
 columns dragged and remembered); every text edited in place and put back; a row taken out and returned; a
-phrase played from the recording; "said before" counted against all earlier lessons; three lessons have a
+phrase played from the recording; "said before" counted against all earlier lessons; four lessons have a
 package.
 
 Not done, in the order it is worth doing:

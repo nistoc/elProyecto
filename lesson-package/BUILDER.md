@@ -15,9 +15,9 @@ them that picks what to ask and checks what comes back. This file tells how; the
   carry their own copy.
 - **Next step**: the builder moves into the repository — cleaned of lesson text and names, reading its
   prompts from `prompts/`, writing `package.json` itself. From then on a prompt is changed in one place.
-- Three lessons have a package: two built by the third form described here, one by the first form (one
-  pass for all lists and a second pass "what is missing"; its words found by code have no `kind`, and its
-  grammar is not merged into themes).
+- Four lessons have a package: three built by the third form described here, one by the first form alone
+  (its lists and a request "what is missing"; its words found by code have no `kind`, and its grammar is
+  not merged into themes).
 
 ## What is read
 
@@ -37,11 +37,30 @@ folder.
 | 5 | grammar notes of the whole lesson merged into themes | once per lesson | gpt-4.1 | [05](prompts/05-grammar-merge.md) |
 | 6 | filter of the words pass 3 marked as taught | 20 words to a request | gpt-4.1-mini | [06](prompts/06-word-filter.md) |
 | 7 | what the words found only by code are | 25 words to a request | gpt-4.1-mini, the doubtful ones again by gpt-4.1 | [07](prompts/07-words-by-code.md) |
+| A, B, C | **the first form**, still run before all of the above: its own lists and "what is missing" | three requests per recording | gpt-4.1 | [08](prompts/08-first-form-topics-grammar-examples.md), [09](prompts/09-first-form-words.md), [10](prompts/10-first-form-what-is-missing.md) |
 
 All requests: the chat completions API, temperature 0, a strict JSON schema for the answer (every field
 required, no other fields), the system message [00](prompts/00-system.md) unless the prompt file names its
 own. Every answer is stored as it came; an answer that is stored is not asked again, so a build that
 stopped goes on from where it was and a rebuild after a change of code costs nothing.
+
+### The order of a build
+
+The passes grew one on another, so a build runs them in this order (the scripts as they are today, each
+with a dry run that asks nothing and prints the estimate of what is left):
+
+1. the first form — requests A, B, C for every recording;
+2. passes 1 and 2 for every recording;
+3. pass 3 — the code picks the words in doubt from the lists of step 2 and the earlier lessons;
+4. pass 4 for every recording;
+5. pass 5 — once, over the grammar notes of passes 1 and 4 **and of the first form**;
+6. pass 6 — over the words pass 3 marked as taught **and the new words only the first form has**;
+7. the assembling step (free) — it also writes the list of the words found only by code;
+8. pass 7 over that list, then the assembling step once more (free): `package.json`.
+
+What the first form still gives a build: on the three lessons 7 to 14 of the new words (the ones no later
+list has and the filter lets in) and 24–25 of the 39 to 53 grammar notes that go into the merge. It is 9
+of the 61–68 requests and 35–39 % of the price (see "What is weak", 6).
 
 ## What the code does around the models
 
@@ -65,8 +84,17 @@ stopped goes on from where it was and a rebuild after a change of code costs not
 
 ## Price and time
 
-Measured on two lessons of three recordings each: 61 and 67 requests, $0.73 and $0.86. Most of it is passes 1, 2 and 4, which send the whole dialogue of a recording.
-A lesson of the first form took 9 requests and $0.33.
+Measured on three lessons of three recordings each:
+
+| Lines of the lesson | Requests | Price | First form | Passes 1–2 | Pass 3 | Pass 4 | Passes 5–7 |
+|---|---|---|---|---|---|---|---|
+| 999 | 61 | $0.73 | $0.29 | $0.17 | $0.19 | $0.05 | $0.03 |
+| 1219 | 68 | $0.92 | $0.35 | $0.24 | $0.23 | $0.06 | $0.04 |
+| 1390 | 67 | $0.86 | $0.30 | $0.23 | $0.23 | $0.06 | $0.04 |
+
+The price follows the words of the answers more than the lines of the lesson (the middle lesson has fewer
+lines and costs more): before a build name the estimate with a margin of a quarter. A build takes under
+ten minutes. A lesson built by the first form alone took 9 requests and $0.33.
 
 A build is a paid action: the owner is told the estimate before it starts and the cost after
 ([CLAUDE.md](CLAUDE.md), rule 7). Every script has a dry run that prints the estimate of what is not asked yet.
@@ -75,7 +103,7 @@ A build is a paid action: the owner is told the estimate before it starts and th
 
 | What | Result |
 |---|---|
-| quotes found in the named line | 96–98 % |
+| quotes found in the named line | 95–97 % (three lessons of the third form) |
 | translations with a real defect (checked by a second reader) | about 2 % |
 | twelve misses a person found in one lesson of the first form | first form with its second pass caught 3; the passes here catch 9 |
 | words pass 3 marks as taught that really were | about 61 %; after the filter of pass 6 — 73 % |
@@ -97,6 +125,10 @@ A build is a paid action: the owner is told the estimate before it starts and th
    them out — look at `word_notes` after a build.
 5. **Themes are named by the model** (`theme`, Spanish, as in a textbook's contents); the same theme may
    get two names in two lessons. Nothing ties the themes of different lessons together yet.
+6. **The first form is still paid for in every build** — 35–39 % of the price for a handful of new
+   words and a half of the grammar notes of the merge. Whether the lists lose anything without it was not
+   measured: build one lesson both ways from its stored answers (the merge and the filter are asked again,
+   a few cents) and compare before it is taken out.
 
 ## Changing a prompt
 
