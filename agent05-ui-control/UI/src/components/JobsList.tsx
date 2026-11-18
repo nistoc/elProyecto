@@ -1,21 +1,29 @@
-import { useState } from 'react';
+import { Fragment, memo, useMemo, useState } from 'react';
 import type { JobListItem } from '../types';
+import {
+  lessonGroupHeads,
+  nextJobsSort,
+  type JobsSort,
+  type JobsSortKey,
+} from '../utils/jobsSort';
 import { languageShareShort } from '../utils/languageShare';
 import type { LessonJobInfo } from '../utils/lessons';
 import { runSettingsShort } from '../utils/runSettings';
 import type { SidebarDetail } from '../utils/sidebarWidth';
 
+// Made once: the list prints two dates for every job, and a format made for each of them is slow.
+const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return '';
   try {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return dateTimeFormat.format(new Date(iso));
   } catch {
     return iso;
   }
@@ -33,6 +41,9 @@ interface JobsListProps {
   detail?: SidebarDetail;
   /** What the lessons list knows of the jobs, by job id; shown from detail 2. */
   lessonJobs?: Map<string, LessonJobInfo> | null;
+  /** The order `jobs` came in; with `onSort` the list offers to change it. */
+  sort?: JobsSort;
+  onSort?: (sort: JobsSort) => void;
 }
 
 /**
@@ -66,7 +77,7 @@ function lessonFacts(info: LessonJobInfo, t: (key: string) => string): string {
     .join(' · ');
 }
 
-export function JobsList({
+function JobsListView({
   jobs,
   currentJobId,
   onSelectJob,
@@ -76,8 +87,40 @@ export function JobsList({
   t,
   detail = 0,
   lessonJobs = null,
+  sort,
+  onSort,
 }: JobsListProps) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  // A list ordered by lesson gets a heading above the first job of every lesson.
+  const byLesson = sort?.key === 'lesson';
+  const groupHeads = useMemo(
+    () => (byLesson && lessonJobs ? lessonGroupHeads(jobs, lessonJobs) : null),
+    [byLesson, jobs, lessonJobs]
+  );
+
+  const arrow = sort?.dir === 'asc' ? '↑' : '↓';
+  const dirWord = t(sort?.dir === 'asc' ? 'jobsSortOldest' : 'jobsSortNewest');
+  /** The name of a column the list can be ordered by: a click orders by it, a second one turns it over. */
+  const columnName = (key: JobsSortKey, label: string) =>
+    sort && onSort ? (
+      <button
+        type="button"
+        className={
+          sort.key === key
+            ? 'jobs-list__col-sort jobs-list__col-sort--on'
+            : 'jobs-list__col-sort'
+        }
+        onClick={() => onSort(nextJobsSort(sort, key))}
+        title={t(key === 'lesson' ? 'jobsSortLesson' : 'jobsSortCreated')}
+        aria-pressed={sort.key === key}
+      >
+        {label}
+        {sort.key === key && <span aria-hidden="true"> {arrow}</span>}
+      </button>
+    ) : (
+      <span>{label}</span>
+    );
 
   return (
     <div
@@ -101,13 +144,40 @@ export function JobsList({
           {t('refresh')}
         </button>
       </div>
+      {sort && onSort && jobs.length > 0 && (
+        <div className="jobs-list__sort" data-testid="jobs-list-sort">
+          <select
+            className="jobs-list__sort-key"
+            value={sort.key}
+            onChange={(e) =>
+              onSort({ ...sort, key: e.target.value as JobsSortKey })
+            }
+            aria-label={t('jobsSort')}
+            title={t('jobsSort')}
+          >
+            <option value="lesson">{t('jobsSortLesson')}</option>
+            <option value="created">{t('jobsSortCreated')}</option>
+          </select>
+          <button
+            type="button"
+            className="jobs-list__sort-dir"
+            onClick={() => onSort(nextJobsSort(sort, sort.key))}
+            title={t('jobsSortTurn')}
+            aria-label={`${dirWord}. ${t('jobsSortTurn')}`}
+            data-dir={sort.dir}
+          >
+            <span aria-hidden="true">{arrow}</span>
+            <span className="jobs-list__sort-word">{dirWord}</span>
+          </button>
+        </div>
+      )}
       {loading && <p className="jobs-list__loading">…</p>}
       {detail >= 3 && jobs.length > 0 && (
-        <div className="jobs-list__columns" aria-hidden="true">
+        <div className="jobs-list__columns">
           <span>{t('jobsColJob')}</span>
-          <span>{t('jobsColLesson')}</span>
+          {columnName('lesson', t('jobsColLesson'))}
           <span>{t('jobsColState')}</span>
-          <span>{t('jobsColDates')}</span>
+          {columnName('created', t('jobsColDates'))}
           <span>{t('jobId')}</span>
         </div>
       )}
@@ -117,97 +187,108 @@ export function JobsList({
           const facts = info ? lessonFacts(info, t) : '';
           const created = formatDate(j.createdAt);
           const completed = formatDate(j.completedAt);
+          const head = groupHeads?.get(j.id);
           return (
-            <li key={j.id} className="jobs-list__li">
-              <button
-                type="button"
-                onClick={() => onSelectJob(j.id)}
-                className={`jobs-list__item ${currentJobId === j.id ? 'active' : ''}`}
-                title={j.id}
-              >
-                <span className="jobs-list__name">
-                  {j.originalFilename || j.id}
-                </span>
-                {detail >= 2 && (info || detail >= 3) && (
-                  <span
-                    className="jobs-list__lesson"
-                    data-testid="jobs-list-lesson"
-                  >
-                    {info ? (
-                      <>
-                        <span className="jobs-list__lesson-place">
-                          {lessonPlace(info, j.originalFilename ?? '', t)}
-                        </span>
-                        {facts && (
-                          <span className="jobs-list__lesson-facts">
-                            {facts}
+            <Fragment key={j.id}>
+              {head && (
+                <li className="jobs-list__group" data-testid="jobs-list-group">
+                  <span>{head.date ?? t('jobsNoLesson')}</span>
+                  <span className="jobs-list__group-count">{head.count}</span>
+                </li>
+              )}
+              <li className="jobs-list__li">
+                <button
+                  type="button"
+                  onClick={() => onSelectJob(j.id)}
+                  className={`jobs-list__item ${currentJobId === j.id ? 'active' : ''}`}
+                  title={j.id}
+                >
+                  <span className="jobs-list__name">
+                    {j.originalFilename || j.id}
+                  </span>
+                  {detail >= 2 && (info || detail >= 3) && (
+                    <span
+                      className="jobs-list__lesson"
+                      data-testid="jobs-list-lesson"
+                    >
+                      {info ? (
+                        <>
+                          <span className="jobs-list__lesson-place">
+                            {lessonPlace(info, j.originalFilename ?? '', t)}
                           </span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="jobs-list__none">—</span>
-                    )}
-                  </span>
-                )}
-                <span className="jobs-list__facts">
-                  <span className="jobs-list__meta">
-                    <span className="jobs-list__status">{j.status}</span>
-                    {detail >= 1 && j.phase && (
-                      <span className="jobs-list__phase">{j.phase}</span>
-                    )}
-                    {detail < 2 && (completed || created) && (
-                      <span className="jobs-list__date">
-                        {completed || created}
-                      </span>
-                    )}
-                    {detail >= 2 &&
-                      (j.tags ?? []).map((tag) => (
-                        <span key={tag} className="jobs-list__tag">
-                          {tag}
-                        </span>
-                      ))}
-                  </span>
-                  {detail >= 2 && (
-                    <span className="jobs-list__dates">
-                      {created && (
-                        <span>
-                          {t('jobsCreated')} {created}
-                        </span>
-                      )}
-                      {completed && (
-                        <span>
-                          {t('jobsCompleted')} {completed}
-                        </span>
-                      )}
-                      {!created && !completed && (
+                          {facts && (
+                            <span className="jobs-list__lesson-facts">
+                              {facts}
+                            </span>
+                          )}
+                        </>
+                      ) : (
                         <span className="jobs-list__none">—</span>
                       )}
                     </span>
                   )}
-                  {detail >= 2 && <span className="jobs-list__id">{j.id}</span>}
-                </span>
-              </button>
-              {confirmId === j.id ? (
-                <span className="jobs-list__confirm">
-                  {t('confirmDelete')}{' '}
-                  <button type="button" onClick={() => onDelete(j.id)}>
-                    {t('delete')}
-                  </button>
-                  <button type="button" onClick={() => setConfirmId(null)}>
-                    {t('cancel')}
-                  </button>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setConfirmId(j.id)}
-                  className="jobs-list__del"
-                  title={t('deleteJob')}
-                >
-                  ×
+                  <span className="jobs-list__facts">
+                    <span className="jobs-list__meta">
+                      <span className="jobs-list__status">{j.status}</span>
+                      {detail >= 1 && j.phase && (
+                        <span className="jobs-list__phase">{j.phase}</span>
+                      )}
+                      {detail < 2 && (completed || created) && (
+                        <span className="jobs-list__date">
+                          {completed || created}
+                        </span>
+                      )}
+                      {detail >= 2 &&
+                        (j.tags ?? []).map((tag) => (
+                          <span key={tag} className="jobs-list__tag">
+                            {tag}
+                          </span>
+                        ))}
+                    </span>
+                    {detail >= 2 && (
+                      <span className="jobs-list__dates">
+                        {created && (
+                          <span>
+                            {t('jobsCreated')} {created}
+                          </span>
+                        )}
+                        {completed && (
+                          <span>
+                            {t('jobsCompleted')} {completed}
+                          </span>
+                        )}
+                        {!created && !completed && (
+                          <span className="jobs-list__none">—</span>
+                        )}
+                      </span>
+                    )}
+                    {detail >= 2 && (
+                      <span className="jobs-list__id">{j.id}</span>
+                    )}
+                  </span>
                 </button>
-              )}
-            </li>
+                {confirmId === j.id ? (
+                  <span className="jobs-list__confirm">
+                    {t('confirmDelete')}{' '}
+                    <button type="button" onClick={() => onDelete(j.id)}>
+                      {t('delete')}
+                    </button>
+                    <button type="button" onClick={() => setConfirmId(null)}>
+                      {t('cancel')}
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmId(j.id)}
+                    className="jobs-list__del"
+                    title={t('deleteJob')}
+                  >
+                    ×
+                  </button>
+                )}
+              </li>
+            </Fragment>
           );
         })}
       </ul>
@@ -220,7 +301,20 @@ export function JobsList({
         .jobs-list__title { font-size: 1rem; margin: 0; color: var(--color-text); }
         .jobs-list__count { font-weight: 400; color: var(--color-text-secondary); }
         .jobs-list__refresh { padding: 0.25rem 0.5rem; font-size: 0.875rem; border-radius: 4px; border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
+        .jobs-list__sort { display: flex; align-items: stretch; gap: 0.25rem; margin-bottom: 0.5rem; }
+        .jobs-list__sort-key,
+        .jobs-list__sort-dir { padding: 0.2rem 0.4rem; font: inherit; font-size: 0.8rem; border-radius: 4px; border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
+        .jobs-list__sort-key { flex: 0 1 14rem; min-width: 0; }
+        .jobs-list__sort-dir { flex: 0 0 auto; display: inline-flex; align-items: baseline; gap: 0.3rem; white-space: nowrap; }
+        /* The narrowest list has room for the arrow only; its meaning stays in the hint. */
+        .jobs-list--d0 .jobs-list__sort-word { display: none; }
         .jobs-list__ul { list-style: none; margin: 0; padding: 0; }
+        /* The day of a lesson above its jobs, in a list ordered by lesson. */
+        .jobs-list__group { display: flex; align-items: center; gap: 0.4rem; margin: 0.75rem 0 0.3rem; padding: 0 0.15rem; font-size: 0.75rem; font-weight: 600; color: var(--color-heading); font-variant-numeric: tabular-nums; }
+        .jobs-list__group:first-child { margin-top: 0.25rem; }
+        .jobs-list__group::after { content: ''; flex: 1; height: 1px; background: var(--color-border); }
+        .jobs-list__group-count { font-weight: 400; color: var(--color-text-secondary); }
+        .jobs-list__group-count::before { content: '· '; }
         .jobs-list__li { display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.25rem; }
         .jobs-list__item {
           flex: 1;
@@ -284,6 +378,9 @@ export function JobsList({
           letter-spacing: 0.03em;
           color: var(--color-label);
         }
+        .jobs-list__col-sort { padding: 0; border: 0; background: none; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; text-align: left; cursor: pointer; }
+        .jobs-list__col-sort:hover { text-decoration: underline; }
+        .jobs-list__col-sort--on { color: var(--color-text); font-weight: 600; }
         .jobs-list--d3 .jobs-list__li { align-items: stretch; }
         .jobs-list--d3 .jobs-list__item {
           display: grid;
@@ -301,3 +398,6 @@ export function JobsList({
     </div>
   );
 }
+
+/** Drawn anew only when what it shows changes — not for every pixel of a dragged edge. */
+export const JobsList = memo(JobsListView);

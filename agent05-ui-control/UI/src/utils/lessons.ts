@@ -246,6 +246,8 @@ export interface LessonJobInfo {
   date: string;
   /** "19:03" of the recording; its title when the name of the recording has no time. */
   time: string;
+  /** "2026-10-23T19:03:12" — the start of the recording, to order jobs by; empty when unknown. */
+  startedAt: string;
   /** mixed | participant — a run of such a track; dialogue — a merge of participant tracks. */
   kind: 'mixed' | 'participant' | 'dialogue';
   /** The participant of a track or the title of a dialogue; empty for the mixed track. */
@@ -267,7 +269,11 @@ export function indexLessonJobs(
   const index = new Map<string, LessonJobInfo>();
   for (const session of response?.sessions ?? []) {
     for (const period of session.periods) {
-      const place = { date: session.date, time: periodTimeLabel(period) };
+      const place = {
+        date: session.date,
+        time: periodTimeLabel(period),
+        startedAt: period.startedAt ?? '',
+      };
       for (const track of period.tracks) {
         const kind = track.kind === 'mixed' ? 'mixed' : 'participant';
         const label =

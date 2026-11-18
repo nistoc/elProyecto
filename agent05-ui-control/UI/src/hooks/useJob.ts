@@ -55,6 +55,8 @@ function getStepStatus(step: StepId, job: JobSnapshot | null): StepStatus {
 
 const ACTIVE_STEP_KEY = 'xtract-manager-active-step';
 const LAST_JOB_KEY = 'xtract-manager-last-job-id';
+/** How many jobs the list asks for at once: far above what a jobs folder holds. */
+const JOBS_LIST_LIMIT = 1000;
 
 function readLastJobId(): string | null {
   try {
@@ -157,7 +159,9 @@ export function useJob(): {
   const refreshList = useCallback(async () => {
     setLoadingList(true);
     try {
-      const list = await fetchJobsList();
+      // All jobs, not the newest 50 the API gives when no limit is named: the list can be ordered
+      // by lesson, and a lesson whose jobs are old would be missing from it.
+      const list = await fetchJobsList({ limit: JOBS_LIST_LIMIT });
       const sorted = [...list].sort((a, b) =>
         (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
       );

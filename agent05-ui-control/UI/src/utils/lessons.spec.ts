@@ -320,8 +320,30 @@ describe('indexLessonJobs', () => {
     expect(index.get('ddd')).toEqual({
       date: '2026-10-23',
       time: '20:21',
+      startedAt: '2026-10-23T20:21:45',
       kind: 'dialogue',
       label: 'Evening talk',
+    });
+  });
+
+  it('has no start for a recording whose name tells no time', () => {
+    const index = indexLessonJobs({
+      enabled: true,
+      estimateUsdPerMinute: 0.006,
+      sessions: [
+        session([
+          period({
+            startedAt: null,
+            title: 'Guest.m4a',
+            tracks: [track('mixed', null, 600, [run('aaa')])],
+          }),
+        ]),
+      ],
+    });
+    expect(index.get('aaa')).toMatchObject({
+      date: '2026-10-23',
+      time: 'Guest.m4a',
+      startedAt: '',
     });
   });
 

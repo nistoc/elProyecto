@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { I18nProvider, useI18n } from './contexts/I18nContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { useJob, type StepId } from './hooks/useJob';
@@ -52,10 +52,14 @@ function AppContent() {
   const [showLessons, setShowLessons] = useState(false);
   // A job picked in the sidebar or in a lesson is shown itself, not the upload form that was open
   // (or that the job remembers as its last step).
-  const openJob = (id: string) => {
-    setShowLessons(false);
-    handleSelectJob(id, 'transcriber');
-  };
+  // Kept the same between renders: the jobs list is not drawn anew for every status event of a job.
+  const openJob = useCallback(
+    (id: string) => {
+      setShowLessons(false);
+      handleSelectJob(id, 'transcriber');
+    },
+    [handleSelectJob]
+  );
 
   // The prompt of a refine run: the lesson prompt is offered first for a job that holds a lesson;
   // what the operator picks holds for the job it was picked for.

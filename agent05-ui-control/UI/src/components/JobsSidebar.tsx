@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import type { JobListItem } from '../types';
+import { useJobsSort } from '../hooks/useJobsSort';
 import { useLessonJobs } from '../hooks/useLessonJobs';
 import { useSidebarWidth } from '../hooks/useSidebarWidth';
+import { sortJobs } from '../utils/jobsSort';
 import { sidebarDetail } from '../utils/sidebarWidth';
 import { JobsList } from './JobsList';
 
@@ -24,13 +26,22 @@ export function JobsSidebar(props: JobsSidebarProps) {
   const { jobs, t } = props;
   const size = useSidebarWidth();
   const detail = sidebarDetail(size.width);
-  // What the lessons list knows is read only for a list wide enough to show it, and again when a job
-  // appears or moves to another phase.
+  // What the lessons list knows is read only for a list that shows it or is ordered by it, and again
+  // when a job appears or moves to another phase.
   const signature = useMemo(
     () => jobs.map((j) => `${j.id}:${j.phase}`).join('|'),
     [jobs]
   );
-  const lessonJobs = useLessonJobs(detail >= 2, signature);
+  const [sort, setSort] = useJobsSort();
+  // The order by lesson needs the lessons list at any width.
+  const lessonJobs = useLessonJobs(
+    detail >= 2 || sort.key === 'lesson',
+    signature
+  );
+  const sorted = useMemo(
+    () => sortJobs(jobs, sort, lessonJobs),
+    [jobs, sort, lessonJobs]
+  );
 
   return (
     <>
@@ -39,7 +50,14 @@ export function JobsSidebar(props: JobsSidebarProps) {
         style={{ width: size.width }}
         data-testid="jobs-sidebar"
       >
-        <JobsList {...props} detail={detail} lessonJobs={lessonJobs} />
+        <JobsList
+          {...props}
+          jobs={sorted}
+          detail={detail}
+          lessonJobs={lessonJobs}
+          sort={sort}
+          onSort={setSort}
+        />
       </aside>
       <div
         className={
