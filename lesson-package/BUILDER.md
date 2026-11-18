@@ -109,6 +109,33 @@ A build is a paid action: the owner is told the estimate before it starts and th
 | words pass 3 marks as taught that really were | about 61 %; after the filter of pass 6 — 73 % |
 | grammar themes | with pass 4 the section got back the rules a single pass lost: 20 and 11 themes on the two lessons |
 
+### The first form taken out (2026-11-18)
+
+The three lessons of the third form were assembled again from their stored answers in two other ways:
+without the first form, and with its request A alone. Only what the change touches was asked again — the
+merge, the last requests of the filter, the few more words found by code: 12 requests, $0.09. Sums over the
+three lessons:
+
+| | With the first form | Without it | Request A alone |
+|---|---|---|---|
+| Price of a build | $0.73–0.92 | $0.43–0.57 | $0.52–0.69 |
+| New words | 413 | 381 | 381 |
+| Notes in the grammar themes | 117 | 67 | 98 |
+| Examples of the grammar themes | 142 | 93 | 127 |
+| Notes about words (`word_notes`) | 26 | 2 | 23 |
+
+- **Words.** Of the 32 entries lost, five are words no earlier lesson has, and three of the five come back
+  in the list of the words found by code: the default view of the screen loses two rows in three lessons.
+  Of the twelve known misses of one lesson the lists catch 8 instead of 9; the ninth is one of the three.
+  Vocabulary, topics and examples do not change — the first form gives them nothing.
+- **Grammar.** Nine themes (three a lesson) stood on notes of the first form alone — four from request A,
+  five from request C. Request A alone keeps those four, two as themes and two among the notes about
+  words. The count of themes is no measure: the merge groups the same notes differently from one run to
+  another (20, 18 and 16 themes of one lesson in the three builds) — count notes and examples.
+- **The price of the first form by request:** A $0.08–0.12, B (words) $0.15–0.17, C $0.06–0.07. Request B
+  is half of it and gives the least. Request C is asked with the lists of B, so as it is written it cannot
+  stay without B.
+
 ## What is weak
 
 1. **Pass 3 is right about three words of four.** A word standing inside a phrase that was translated
@@ -125,10 +152,10 @@ A build is a paid action: the owner is told the estimate before it starts and th
    them out — look at `word_notes` after a build.
 5. **Themes are named by the model** (`theme`, Spanish, as in a textbook's contents); the same theme may
    get two names in two lessons. Nothing ties the themes of different lessons together yet.
-6. **The first form is still paid for in every build** — 35–39 % of the price for a handful of new
-   words and a half of the grammar notes of the merge. Whether the lists lose anything without it was not
-   measured: build one lesson both ways from its stored answers (the merge and the filter are asked again,
-   a few cents) and compare before it is taken out.
+6. **The first form is still paid for in every build** — 35–39 % of the price. Measured (see "The first
+   form taken out"): its request about words is half of that and adds about ten entries a lesson, nearly
+   all of them words said before; its request A adds most of what the grammar gains from it. Which of its
+   requests stay is the owner's decision — it changes what a package holds.
 
 ## Changing a prompt
 
