@@ -18,7 +18,10 @@ interface ResultSectionProps {
   filesRefreshKey?: number;
 }
 
-function findByName(files: { name: string; relativePath: string }[], name: string) {
+function findByName(
+  files: { name: string; relativePath: string }[],
+  name: string
+) {
   return files.find((f) => f.name === name);
 }
 
@@ -31,7 +34,8 @@ function transcriptFixedVariantSortKey(name: string): number {
 }
 
 /** Per-run refiner output: `transcript_fixed_20261005_112233_444.md` (one file per Run Refiner). */
-const TRANSCRIPT_FIXED_RUN_RE = /^transcript_fixed_(\d{8})_(\d{6})_(\d{3})\.md$/i;
+const TRANSCRIPT_FIXED_RUN_RE =
+  /^transcript_fixed_(\d{8})_(\d{6})_(\d{3})\.md$/i;
 
 /** `20261005`, `112233` → `2026-10-05 11:22:33 UTC`. */
 function formatRunStamp(d: string, t: string): string {
@@ -44,7 +48,9 @@ function hasAnyTranscriptFixedOnDisk(
   if (!transcripts?.length) return false;
   if (transcripts.some((f) => f.name === 'transcript_fixed.md')) return true;
   return transcripts.some(
-    (f) => TRANSCRIPT_FIXED_VARIANT_RE.test(f.name) || TRANSCRIPT_FIXED_RUN_RE.test(f.name)
+    (f) =>
+      TRANSCRIPT_FIXED_VARIANT_RE.test(f.name) ||
+      TRANSCRIPT_FIXED_RUN_RE.test(f.name)
   );
 }
 
@@ -62,20 +68,29 @@ function buildKeyLinks(
     .sort((a, b) => b.name.localeCompare(a.name));
   for (const f of runs) {
     const m = f.name.match(TRANSCRIPT_FIXED_RUN_RE)!;
-    entries.push({ label: `${t('linkTranscriptFixed')} · ${formatRunStamp(m[1], m[2])}`, path: f.relativePath });
+    entries.push({
+      label: `${t('linkTranscriptFixed')} · ${formatRunStamp(m[1], m[2])}`,
+      path: f.relativePath,
+    });
     const promptName = f.name.replace(/\.md$/i, '.prompt.md');
     const pf = findByName(transcripts, promptName);
-    if (pf) entries.push({ label: `${t('linkRefinerRunPrompt')} · ${formatRunStamp(m[1], m[2])}`, path: pf.relativePath });
+    if (pf)
+      entries.push({
+        label: `${t('linkRefinerRunPrompt')} · ${formatRunStamp(m[1], m[2])}`,
+        path: pf.relativePath,
+      });
   }
 
   const tf = findByName(transcripts, 'transcript_fixed.md');
-  if (tf) entries.push({ label: t('linkTranscriptFixed'), path: tf.relativePath });
+  if (tf)
+    entries.push({ label: t('linkTranscriptFixed'), path: tf.relativePath });
 
   const numbered = transcripts
     .filter((f) => TRANSCRIPT_FIXED_VARIANT_RE.test(f.name))
     .sort(
       (a, b) =>
-        transcriptFixedVariantSortKey(a.name) - transcriptFixedVariantSortKey(b.name)
+        transcriptFixedVariantSortKey(a.name) -
+        transcriptFixedVariantSortKey(b.name)
     );
   for (const f of numbered) {
     const n = transcriptFixedVariantSortKey(f.name);
@@ -104,7 +119,9 @@ export function ResultSection({
     }
   };
 
-  const [projectFiles, setProjectFiles] = useState<JobProjectFiles | null>(null);
+  const [projectFiles, setProjectFiles] = useState<JobProjectFiles | null>(
+    null
+  );
   const [jobDirFromFilesApi, setJobDirFromFilesApi] = useState<string | null>(
     null
   );
@@ -158,89 +175,104 @@ export function ResultSection({
       <h3 className="result-section__title">
         {variant === 'refiner' ? t('refiner') : t('result')}
       </h3>
-      <dl className="result-section__meta">
-        <dt>{t('jobId')}</dt>
-        <dd>{jobId}</dd>
-        <dt>{t('filename')}</dt>
-        <dd>
-          {job?.originalFilename ?? '—'}
-          {job?.originalFilename && (
-            <button
-              type="button"
-              onClick={copyFilename}
-              className="result-section__copy"
-            >
-              {t('copyFilename')}
-            </button>
-          )}
-        </dd>
-        <dt>{t('status')}</dt>
-        <dd>{job?.status ?? '—'}</dd>
-        <dt>{t('phase')}</dt>
-        <dd>{job?.phase ?? '—'}</dd>
-        {displayJobDir && (
-          <>
-            <dt>{t('jobDirectoryPath')}</dt>
-            <dd className="result-section__path">{displayJobDir}</dd>
-          </>
-        )}
-      </dl>
-
-      {keyLinks.length > 0 && (
-        <div className="result-section__key-links">
-          <h4 className="result-section__files-title">{t('resultQuickLinks')}</h4>
-          <ul className="result-section__links-list">
-            {keyLinks.map(({ label, path }) => (
-              <li key={path}>
-                <a
-                  href={jobProjectFileContentUrl(jobId, path)}
-                  target="_blank"
-                  rel="noreferrer"
+      <div className="result-section__dock">
+        <div className="result-section__panel">
+          <dl className="result-section__meta">
+            <dt>{t('jobId')}</dt>
+            <dd>{jobId}</dd>
+            <dt>{t('filename')}</dt>
+            <dd>
+              {job?.originalFilename ?? '—'}
+              {job?.originalFilename && (
+                <button
+                  type="button"
+                  onClick={copyFilename}
+                  className="result-section__copy"
                 >
-                  {label}
-                </a>
-              </li>
-            ))}
-          </ul>
+                  {t('copyFilename')}
+                </button>
+              )}
+            </dd>
+            <dt>{t('status')}</dt>
+            <dd>{job?.status ?? '—'}</dd>
+            <dt>{t('phase')}</dt>
+            <dd>{job?.phase ?? '—'}</dd>
+            {displayJobDir && (
+              <>
+                <dt>{t('jobDirectoryPath')}</dt>
+                <dd className="result-section__path">{displayJobDir}</dd>
+              </>
+            )}
+          </dl>
         </div>
-      )}
 
-      {filesLoading && (
-        <p className="result-section__hint">{t('loadingFiles')}</p>
-      )}
-      {filesErr && (
-        <p className="result-section__hint result-section__hint--err">{filesErr}</p>
-      )}
-      {projectFiles && (
-        <ProjectFilesView
-          jobId={jobId}
-          data={projectFiles}
-          mode="transcripts"
-          t={t}
-          onFilesMutated={reloadProjectFiles}
-          chunkArtifactGroups={chunkArtifactGroups}
-        />
-      )}
+        {keyLinks.length > 0 && (
+          <div className="result-section__panel result-section__key-links">
+            <h4 className="result-section__files-title">
+              {t('resultQuickLinks')}
+            </h4>
+            <ul className="result-section__links-list">
+              {keyLinks.map(({ label, path }) => (
+                <li key={path}>
+                  <a
+                    href={jobProjectFileContentUrl(jobId, path)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-      {!projectFiles && !filesLoading && !filesErr && (
-        <p className="result-section__hint">{t('noProjectFiles')}</p>
-      )}
-
-      {job?.result && (
-        <div className="result-section__links">
-          {job.result.transcript && !findByName(projectFiles?.transcripts ?? [], 'transcript.md') && (
-            <p>
-              <strong>{t('linkTranscript')}:</strong> {t('inWorkspace')}
+        <div className="result-section__panel result-section__panel--files">
+          {filesLoading && (
+            <p className="result-section__hint">{t('loadingFiles')}</p>
+          )}
+          {filesErr && (
+            <p className="result-section__hint result-section__hint--err">
+              {filesErr}
             </p>
           )}
-          {job.result.transcriptFixed &&
-            !hasAnyTranscriptFixedOnDisk(projectFiles?.transcripts) && (
-            <p>
-              <strong>{t('linkTranscriptFixed')}:</strong> {t('inWorkspace')}
-            </p>
+          {projectFiles && (
+            <ProjectFilesView
+              jobId={jobId}
+              data={projectFiles}
+              mode="transcripts"
+              t={t}
+              onFilesMutated={reloadProjectFiles}
+              chunkArtifactGroups={chunkArtifactGroups}
+            />
+          )}
+
+          {!projectFiles && !filesLoading && !filesErr && (
+            <p className="result-section__hint">{t('noProjectFiles')}</p>
+          )}
+
+          {job?.result && (
+            <div className="result-section__links">
+              {job.result.transcript &&
+                !findByName(
+                  projectFiles?.transcripts ?? [],
+                  'transcript.md'
+                ) && (
+                  <p>
+                    <strong>{t('linkTranscript')}:</strong> {t('inWorkspace')}
+                  </p>
+                )}
+              {job.result.transcriptFixed &&
+                !hasAnyTranscriptFixedOnDisk(projectFiles?.transcripts) && (
+                  <p>
+                    <strong>{t('linkTranscriptFixed')}:</strong>{' '}
+                    {t('inWorkspace')}
+                  </p>
+                )}
+            </div>
           )}
         </div>
-      )}
+      </div>
       <style>{`
         .result-section { padding: 1rem; color: var(--color-text); }
         .result-section__title { margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--color-text); }
@@ -249,9 +281,13 @@ export function ResultSection({
         .result-section__meta dd { margin: 0; }
         .result-section__path { word-break: break-all; font-size: 0.8rem; color: var(--color-text-secondary); }
         .result-section__copy { margin-left: 0.5rem; font-size: 0.75rem; padding: 0.125rem 0.25rem; border-radius: 4px; border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
-        .result-section__files-title { margin: 0.75rem 0 0.5rem 0; font-size: 0.9rem; color: var(--color-heading); }
+        /* What the job is, its quick links and its files: side by side while there is room. */
+        .result-section__dock { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 1rem 2.5rem; }
+        .result-section__panel { flex: 1 1 340px; min-width: 0; }
+        .result-section__panel--files { flex: 2.5 1 520px; }
+        .result-section__panel--files > .project-files { margin-top: 0; }
+        .result-section__files-title { margin: 0 0 0.5rem 0; font-size: 0.9rem; color: var(--color-heading); }
         .result-section__links { margin-top: 1rem; font-size: 0.875rem; }
-        .result-section__key-links { margin-top: 1rem; }
         .result-section__links-list { margin: 0; padding-left: 1.25rem; font-size: 0.875rem; }
         .result-section__links-list a { color: var(--color-link); }
         .result-section__hint { margin: 0.5rem 0; font-size: 0.875rem; color: var(--color-text-secondary); }

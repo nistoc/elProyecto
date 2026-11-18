@@ -239,3 +239,61 @@ export function defaultDialogueTitle(
   const m = /T(\d{2}:\d{2})/.exec(period.startedAt ?? '');
   return m ? `${session.date} ${m[1]}` : session.date;
 }
+
+/** What the lessons list knows of one job: the lesson and recording it belongs to and what it holds. */
+export interface LessonJobInfo {
+  /** YYYY-MM-DD of the lesson. */
+  date: string;
+  /** "19:03" of the recording; its title when the name of the recording has no time. */
+  time: string;
+  /** mixed | participant — a run of such a track; dialogue — a merge of participant tracks. */
+  kind: 'mixed' | 'participant' | 'dialogue';
+  /** The participant of a track or the title of a dialogue; empty for the mixed track. */
+  label: string;
+  settings?: JobRunSettings | null;
+  share?: LanguageShare | null;
+  /** Unknown (undefined) for a dialogue: the lessons list does not tell it. */
+  hasTranscript?: boolean;
+  hasRefined?: boolean;
+}
+
+/**
+ * Every job the lessons list ties to a recording, by job id: the runs of the tracks and the dialogues.
+ * The jobs list uses it to tell more about a job than its file name.
+ */
+export function indexLessonJobs(
+  response: LessonsResponse | null | undefined
+): Map<string, LessonJobInfo> {
+  const index = new Map<string, LessonJobInfo>();
+  for (const session of response?.sessions ?? []) {
+    for (const period of session.periods) {
+      const place = { date: session.date, time: periodTimeLabel(period) };
+      for (const track of period.tracks) {
+        const kind = track.kind === 'mixed' ? 'mixed' : 'participant';
+        const label =
+          kind === 'mixed' ? '' : track.participant?.trim() || track.fileName;
+        for (const run of track.runs) {
+          if (index.has(run.jobId)) continue;
+          index.set(run.jobId, {
+            ...place,
+            kind,
+            label,
+            settings: run.settings,
+            share: run.share,
+            hasTranscript: run.hasTranscript,
+            hasRefined: run.hasRefined,
+          });
+        }
+      }
+      for (const dialogue of period.dialogues) {
+        if (index.has(dialogue.jobId)) continue;
+        index.set(dialogue.jobId, {
+          ...place,
+          kind: 'dialogue',
+          label: dialogue.title?.trim() || '',
+        });
+      }
+    }
+  }
+  return index;
+}

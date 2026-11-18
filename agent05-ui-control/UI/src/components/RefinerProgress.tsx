@@ -205,8 +205,9 @@ export function RefinerProgress({ progress, t }: Props) {
           overflow: auto;
           color: var(--color-text);
         }
+        /* A tall screen shows more of the table at once. */
         .refine-progress__table-wrap {
-          max-height: 460px;
+          max-height: max(460px, 60vh);
           overflow: auto;
           border: 1px solid var(--color-border);
           border-radius: 6px;

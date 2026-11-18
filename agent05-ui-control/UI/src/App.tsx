@@ -9,14 +9,14 @@ import { useDebouncedValue } from './hooks/useDebouncedValue';
 import { StepCard } from './components/StepCard';
 import { UploadCard } from './components/UploadCard';
 import { LessonsPanel } from './components/LessonsPanel';
-import { JobsList } from './components/JobsList';
+import { JobsSidebar } from './components/JobsSidebar';
+import { JobStats } from './components/JobStats';
 import { ResultSection } from './components/ResultSection';
 import { ProjectFilesPanel } from './components/ProjectFilesPanel';
 import { ChunkControlsStats } from './components/ChunkControlsStats';
 import { RefinerProgress } from './components/RefinerProgress';
 import { RefinerSettingsPanel } from './components/RefinerSettingsPanel';
 import { runSettingsLine } from './utils/runSettings';
-import { conversationLines, languageShareLines } from './utils/languageShare';
 import { refinePromptFor, type RefinePromptPick } from './utils/refinePrompt';
 
 function AppContent() {
@@ -66,13 +66,6 @@ function AppContent() {
   const jobFiles = useJobProjectFiles(jobId, debouncedRevision);
   const jobChunkGroups = useJobChunkArtifactGroups(jobId, debouncedRevision);
   const languageShare = useJobLanguageShare(jobId, debouncedRevision);
-  const languageLines = useMemo(
-    () => [
-      ...languageShareLines(languageShare, t),
-      ...conversationLines(languageShare, t),
-    ],
-    [languageShare, t]
-  );
 
   // Combined transcripts the refiner can consume: every transcript*.md that is NOT a _fixed
   // output. Newest first — timestamped names (transcript_YYYYMMDD_HHmmss_fff.md) sort by time.
@@ -150,17 +143,15 @@ function AppContent() {
       </header>
 
       <div className="layout">
-        <aside className="sidebar">
-          <JobsList
-            jobs={jobsList}
-            currentJobId={jobId}
-            onSelectJob={openJob}
-            onRefresh={refreshList}
-            onDelete={handleDeleteJob}
-            loading={loadingList}
-            t={t}
-          />
-        </aside>
+        <JobsSidebar
+          jobs={jobsList}
+          currentJobId={jobId}
+          onSelectJob={openJob}
+          onRefresh={refreshList}
+          onDelete={handleDeleteJob}
+          loading={loadingList}
+          t={t}
+        />
 
         <main className="content">
           {showLessons && (
@@ -185,31 +176,21 @@ function AppContent() {
             ))}
           </div>
 
-          {!showLessons &&
-            activeStep !== 'upload' &&
-            runSettingsLine(job?.runSettings, t) && (
-              <p className="job-run-settings" data-testid="job-run-settings">
-                {runSettingsLine(job?.runSettings, t)}
-              </p>
-            )}
-
-          {!showLessons &&
-            activeStep !== 'upload' &&
-            languageLines.length > 0 && (
-              <div
-                className="job-language-share"
-                data-testid="job-language-share"
-              >
-                {languageLines.map((line) => (
-                  <p key={line}>{line}</p>
-                ))}
-              </div>
-            )}
-
           <div
             className="step-content"
             style={showLessons ? { display: 'none' } : undefined}
           >
+            {/* Scrolled with the step: in a low window they must not take the room of the step itself. */}
+            {activeStep !== 'upload' &&
+              runSettingsLine(job?.runSettings, t) && (
+                <p className="job-run-settings" data-testid="job-run-settings">
+                  {runSettingsLine(job?.runSettings, t)}
+                </p>
+              )}
+            {activeStep !== 'upload' && (
+              <JobStats report={languageShare} t={t} />
+            )}
+
             {activeStep === 'upload' && (
               <UploadCard
                 file={file}
@@ -286,116 +267,121 @@ function AppContent() {
               <div className="step-panel">
                 {job && jobId ? (
                   <>
-                    <RefinerSettingsPanel
-                      t={t}
-                      disabled={job.phase === 'refiner'}
-                    />
-                    <div className="refiner-panel">
-                      <div className="refiner-panel__head">
-                        <span className="refiner-panel__title">
-                          {t('refinerInputLabel')}
-                        </span>
-                        {job.phase === 'refiner' && (
-                          <span className="refiner-panel__badge refiner-panel__badge--running">
-                            {t('refinerRunning')}
+                    <div className="dock dock--refiner">
+                      <RefinerSettingsPanel
+                        t={t}
+                        disabled={job.phase === 'refiner'}
+                      />
+                      <div className="refiner-panel">
+                        <div className="refiner-panel__head">
+                          <span className="refiner-panel__title">
+                            {t('refinerInputLabel')}
                           </span>
+                          {job.phase === 'refiner' && (
+                            <span className="refiner-panel__badge refiner-panel__badge--running">
+                              {t('refinerRunning')}
+                            </span>
+                          )}
+                          {job.phase === 'awaiting_refiner' && (
+                            <button
+                              type="button"
+                              className="refiner-actions__skip"
+                              onClick={() => startRefiner(true)}
+                            >
+                              {t('refinerSkip')}
+                            </button>
+                          )}
+                        </div>
+                        <div
+                          className="refiner-prompt"
+                          role="radiogroup"
+                          aria-label={t('refinerPromptLabel')}
+                          data-testid="refiner-prompt"
+                        >
+                          <span className="refiner-prompt__label">
+                            {t('refinerPromptLabel')}
+                          </span>
+                          {(['lesson', 'saved'] as const).map((p) => (
+                            <label key={p} className="refiner-prompt__option">
+                              <input
+                                type="radio"
+                                name="refiner-prompt"
+                                value={p}
+                                checked={refinePrompt === p}
+                                disabled={job.phase === 'refiner'}
+                                onChange={() =>
+                                  setPromptPick({ jobId, prompt: p })
+                                }
+                              />
+                              {t(
+                                p === 'lesson'
+                                  ? 'refinerPromptLesson'
+                                  : 'refinerPromptSaved'
+                              )}
+                            </label>
+                          ))}
+                          <p
+                            className="refiner-prompt__hint"
+                            data-testid="refiner-prompt-hint"
+                          >
+                            {t(
+                              refinePrompt === 'lesson'
+                                ? 'refinerPromptLessonHint'
+                                : 'refinerPromptSavedHint'
+                            )}
+                          </p>
+                        </div>
+                        {refinerInputs.length === 0 ? (
+                          <p className="refiner-panel__hint">
+                            {t('refinerInputUnknown')}
+                          </p>
+                        ) : (
+                          <ul className="refiner-files">
+                            {refinerInputs.map((f) => (
+                              <li
+                                key={f.relativePath}
+                                className="refiner-files__row"
+                              >
+                                <div className="refiner-files__meta">
+                                  <code className="refiner-panel__file">
+                                    {f.name}
+                                  </code>
+                                  <span className="refiner-panel__arrow">
+                                    →
+                                  </span>
+                                  <code className="refiner-panel__file refiner-panel__file--out">
+                                    transcript_fixed_&lt;
+                                    {t('refinerOutputTime')}
+                                    &gt;.md
+                                  </code>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="refiner-actions__run"
+                                  disabled={job.phase === 'refiner'}
+                                  onClick={() =>
+                                    startRefiner(false, f.name, refinePrompt)
+                                  }
+                                >
+                                  {job.phase === 'completed'
+                                    ? t('refinerRerun')
+                                    : t('refinerRun')}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
                         )}
                         {job.phase === 'awaiting_refiner' && (
-                          <button
-                            type="button"
-                            className="refiner-actions__skip"
-                            onClick={() => startRefiner(true)}
-                          >
-                            {t('refinerSkip')}
-                          </button>
+                          <p className="refiner-panel__hint">
+                            {t('refinerAwaitingHint')}
+                          </p>
+                        )}
+                        {job.phase === 'completed' && (
+                          <p className="refiner-panel__hint">
+                            {t('refinerCompleted')}
+                          </p>
                         )}
                       </div>
-                      <div
-                        className="refiner-prompt"
-                        role="radiogroup"
-                        aria-label={t('refinerPromptLabel')}
-                        data-testid="refiner-prompt"
-                      >
-                        <span className="refiner-prompt__label">
-                          {t('refinerPromptLabel')}
-                        </span>
-                        {(['lesson', 'saved'] as const).map((p) => (
-                          <label key={p} className="refiner-prompt__option">
-                            <input
-                              type="radio"
-                              name="refiner-prompt"
-                              value={p}
-                              checked={refinePrompt === p}
-                              disabled={job.phase === 'refiner'}
-                              onChange={() =>
-                                setPromptPick({ jobId, prompt: p })
-                              }
-                            />
-                            {t(
-                              p === 'lesson'
-                                ? 'refinerPromptLesson'
-                                : 'refinerPromptSaved'
-                            )}
-                          </label>
-                        ))}
-                        <p
-                          className="refiner-prompt__hint"
-                          data-testid="refiner-prompt-hint"
-                        >
-                          {t(
-                            refinePrompt === 'lesson'
-                              ? 'refinerPromptLessonHint'
-                              : 'refinerPromptSavedHint'
-                          )}
-                        </p>
-                      </div>
-                      {refinerInputs.length === 0 ? (
-                        <p className="refiner-panel__hint">
-                          {t('refinerInputUnknown')}
-                        </p>
-                      ) : (
-                        <ul className="refiner-files">
-                          {refinerInputs.map((f) => (
-                            <li
-                              key={f.relativePath}
-                              className="refiner-files__row"
-                            >
-                              <div className="refiner-files__meta">
-                                <code className="refiner-panel__file">
-                                  {f.name}
-                                </code>
-                                <span className="refiner-panel__arrow">→</span>
-                                <code className="refiner-panel__file refiner-panel__file--out">
-                                  transcript_fixed_&lt;{t('refinerOutputTime')}
-                                  &gt;.md
-                                </code>
-                              </div>
-                              <button
-                                type="button"
-                                className="refiner-actions__run"
-                                disabled={job.phase === 'refiner'}
-                                onClick={() =>
-                                  startRefiner(false, f.name, refinePrompt)
-                                }
-                              >
-                                {job.phase === 'completed'
-                                  ? t('refinerRerun')
-                                  : t('refinerRun')}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {job.phase === 'awaiting_refiner' && (
-                        <p className="refiner-panel__hint">
-                          {t('refinerAwaitingHint')}
-                        </p>
-                      )}
-                      {job.phase === 'completed' && (
-                        <p className="refiner-panel__hint">
-                          {t('refinerCompleted')}
-                        </p>
-                      )}
                     </div>
                     <RefinerProgress progress={refineProgress} t={t} />
                     <ResultSection
@@ -528,15 +514,6 @@ function AppContent() {
           display: flex;
           overflow: hidden;
         }
-        .sidebar {
-          width: 280px;
-          flex-shrink: 0;
-          min-height: 0;
-          border-right: 1px solid var(--color-border);
-          background: var(--color-sidebar);
-          overflow-x: hidden;
-          overflow-y: auto;
-        }
         .content {
           flex: 1;
           min-width: 0;
@@ -577,17 +554,31 @@ function AppContent() {
           word-break: break-all;
           white-space: normal;
         }
+        /* The steps stand in one row while there is room for it and go under each other in a narrow window. */
         .steps-row {
           flex-shrink: 0;
-          display: flex;
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
           gap: 0.5rem;
           margin-bottom: 1rem;
-          flex-wrap: wrap;
         }
+        /*
+         * A band of the page whose panels stand side by side while there is room and go under each other
+         * when there is not. The page stays a stack of such bands; only the inside of a band is columns.
+         */
+        .dock {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: stretch;
+          gap: 1rem;
+          margin: 0 0 1rem 0;
+        }
+        .dock > * { min-width: 0; }
+        .dock--refiner > .refiner-settings { flex: 2.2 1 900px; margin: 0; }
+        .dock--refiner > .refiner-panel { flex: 1 1 460px; margin: 0; }
         .step-content {
           flex: 1;
           min-height: 0;
-          margin-top: 0.5rem;
           overflow-x: hidden;
           overflow-y: auto;
         }

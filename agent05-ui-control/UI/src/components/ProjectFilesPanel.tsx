@@ -35,9 +35,7 @@ function indexedSectionTitle(
 ): string {
   if (!items.length) return baseTitle;
   const count = items.length;
-  const idxs = items
-    .map((x) => x.index)
-    .filter((x): x is number => x != null);
+  const idxs = items.map((x) => x.index).filter((x): x is number => x != null);
   if (idxs.length === count) {
     const mn = Math.min(...idxs);
     const mx = Math.max(...idxs);
@@ -91,9 +89,7 @@ export function TextFileEditorModal({
       })
       .catch((e) => {
         if (!cancelled)
-          setLoadErr(
-            e instanceof Error ? e.message : t('loadEditorFailed')
-          );
+          setLoadErr(e instanceof Error ? e.message : t('loadEditorFailed'));
       });
     return () => {
       cancelled = true;
@@ -246,8 +242,12 @@ function Section({
   onEditText?: (f: JobProjectFile) => void;
 }) {
   if (!items.length) return null;
+  // A row with a player needs the whole width; a section of text files alone is laid out in columns.
+  const hasAudio = items.some((f) => f.kind === 'audio');
   return (
-    <section className="pf-section">
+    <section
+      className={hasAudio ? 'pf-section pf-section--audio' : 'pf-section'}
+    >
       <h4 className="pf-section__title">{title}</h4>
       <ul className="pf-list">
         {items.map((f) => (
@@ -348,10 +348,7 @@ export function ProjectFilesView({
               onEditText={openEditor}
             />
             <Section
-              title={indexedSectionTitle(
-                data.chunkJson,
-                t('sectionChunkJson')
-              )}
+              title={indexedSectionTitle(data.chunkJson, t('sectionChunkJson'))}
               jobId={jobId}
               items={data.chunkJson}
               t={t}
@@ -491,7 +488,8 @@ export function ProjectFilesPanel({
   const effectiveErr = managedFiles?.error ?? err;
   const effectiveLoading = managedFiles?.loading ?? loading;
   const effectiveRefreshing = managedFiles?.refreshing ?? refreshing;
-  const reloadFiles = managedFiles?.reload ?? (() => setReloadKey((k) => k + 1));
+  const reloadFiles =
+    managedFiles?.reload ?? (() => setReloadKey((k) => k + 1));
   const reloadChunkGroups = managedChunkGroups?.reload;
 
   const refreshFilesAndGroups = () => {
@@ -573,7 +571,21 @@ export function ProjectFilesPanel({
 }
 
 const styles = `
-  .project-files { margin-top: 1rem; color: var(--color-text); }
+  /* Sections stand side by side while there is room; one with players takes a row of its own. */
+  .project-files {
+    margin-top: 1rem;
+    color: var(--color-text);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0 2.5rem;
+  }
+  .project-files > * { flex: 1 1 440px; min-width: 0; }
+  .project-files > .pf-section--audio,
+  .project-files > .pf-status { flex-basis: 100%; }
+  /* The files of a section without players fill columns, top to bottom and then to the right. */
+  .pf-section:not(.pf-section--audio) > .pf-list { column-width: 400px; column-gap: 2.5rem; }
+  .pf-section:not(.pf-section--audio) > .pf-list > .pf-file { break-inside: avoid; }
   .pf-status { margin: 0.5rem 0; font-size: 0.875rem; color: var(--color-text-secondary); }
   .pf-status--err { color: var(--color-error-muted); }
   .pf-section { margin-bottom: 1rem; }
@@ -619,14 +631,15 @@ const styles = `
     text-decoration: underline;
   }
   .pf-file-meta { color: var(--color-text-secondary); font-size: 0.75rem; }
+  /* As wide as the player wants, but never wider than the row: in a narrow column the wave gets shorter. */
   .pf-file-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
-    flex-shrink: 0;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
     min-width: min(800px, 100%);
+    max-width: 100%;
   }
   .pf-wave {
     position: relative;
@@ -634,8 +647,9 @@ const styles = `
     align-items: center;
     gap: 0.4rem;
     width: 800px;
-    min-width: 280px;
-    flex: 0 0 auto;
+    max-width: 100%;
+    min-width: min(280px, 100%);
+    flex: 0 1 auto;
     transition: none;
     --pf-wave-line: var(--color-border-strong);
     --pf-wave-fill: color-mix(in srgb, var(--color-primary) 50%, var(--color-surface-sunken));

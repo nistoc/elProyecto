@@ -575,9 +575,16 @@ export function LessonsPanel({
         .lessons__session-head:hover { background: var(--color-surface-hover); }
         .lessons__session-counts { margin-left: auto; }
         .lessons__caret { width: 1rem; color: var(--color-text-secondary); }
-        .lessons__periods { padding: 0 0 0.75rem 1.5rem; }
+        /* The recordings of a lesson stand side by side while there is room. */
+        .lessons__periods {
+          padding: 0.5rem 0 0.75rem 1.5rem;
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(min(100%, 640px), 1fr));
+          align-items: start;
+          gap: 0.5rem 0.75rem;
+        }
         .lessons__period {
-          margin-top: 0.5rem;
+          min-width: 0;
           padding: 0.6rem 0.75rem;
           border: 1px solid var(--color-border);
           border-radius: 6px;

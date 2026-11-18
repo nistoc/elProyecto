@@ -85,7 +85,8 @@ const messages: Record<Locale, Record<string, string>> = {
     inWorkspace: 'available in workspace',
     loading: 'Loading…',
     selectJobOrCreate: 'Select a job or create one in Upload.',
-    refinerAwaitingHint: 'Transcription done — review the transcript, then start the refiner manually.',
+    refinerAwaitingHint:
+      'Transcription done — review the transcript, then start the refiner manually.',
     refinerRunning: 'Refiner is running…',
     refinerCompleted: 'Refiner completed.',
     refinerRun: 'Run Refiner',
@@ -96,8 +97,10 @@ const messages: Record<Locale, Record<string, string>> = {
     refinerPromptLabel: 'Prompt of the run',
     refinerPromptLesson: 'Lesson (the words in doubt only)',
     refinerPromptSaved: 'Saved settings',
-    refinerPromptLessonHint: 'The code finds the words that may be Spanish written in Cyrillic or that mix letters of both alphabets. The model only says in which language each was said; the spelling is taken from the transcript itself. No line is rewritten by the model. The settings above are not used.',
-    refinerPromptSavedHint: 'The prompt, block size and model saved above. Every line goes to the model and is taken as the model wrote it, nothing is checked.',
+    refinerPromptLessonHint:
+      'The code finds the words that may be Spanish written in Cyrillic or that mix letters of both alphabets. The model only says in which language each was said; the spelling is taken from the transcript itself. No line is rewritten by the model. The settings above are not used.',
+    refinerPromptSavedHint:
+      'The prompt, block size and model saved above. Every line goes to the model and is taken as the model wrote it, nothing is checked.',
     refineProgressTitle: 'Refining progress',
     refineProgressBatch: 'Batch',
     refineProgressChanged: 'changed',
@@ -114,21 +117,25 @@ const messages: Record<Locale, Record<string, string>> = {
     refinerSettingsTitle: 'Refiner settings',
     refinerSettingsCustom: 'custom prompts',
     refinerSettingsDefault: 'built-in prompt',
-    refinerSettingsHint: "Shared by all jobs; the next Run Refiner uses them. {context} is replaced by the previous block's refined lines, {batch} by the lines to fix.",
+    refinerSettingsHint:
+      "Shared by all jobs; the next Run Refiner uses them. {context} is replaced by the previous block's refined lines, {batch} by the lines to fix.",
     refinerSettingsPrompt: 'Prompt template',
-    refinerSettingsNeedBatch: 'The template must contain {batch} — the lines to fix are inserted there.',
+    refinerSettingsNeedBatch:
+      'The template must contain {batch} — the lines to fix are inserted there.',
     refinerSettingsBatchSize: 'Lines per block',
     refinerSettingsContextLines: 'Context lines (seam)',
     refinerSettingsModel: 'Model',
     refinerSettingsSave: 'Save settings',
     refinerSettingsReset: 'Reset prompt to built-in',
-    refinerSettingsResetTitle: 'Delete the custom prompt and use the built-in one',
+    refinerSettingsResetTitle:
+      'Delete the custom prompt and use the built-in one',
     refinerSettingsUnsaved: 'unsaved changes',
     refinerSettingsSaved: 'Saved',
     refinerSettingsSystem: 'System prompt',
     refinerSettingsRestoreSystem: 'Restore original system prompt',
     refinerSettingsRestoreTemplate: 'Restore original template',
-    refinerSettingsRestoreHint: 'Puts the built-in text into the field; press Save settings to apply it',
+    refinerSettingsRestoreHint:
+      'Puts the built-in text into the field; press Save settings to apply it',
     refinerOutputTime: 'time',
     linkRefinerRunPrompt: 'Prompts of that run',
     refineProgressFailed: 'batch failed — original kept',
@@ -158,12 +165,15 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsSubChunks: 'Split sub-chunks',
     chunkStatsSubChunkPrefix: 'Sub-chunk',
     chunkStatsSplitMerged: 'Merged split (chunk)',
-    chunkStatsSubChunkRunning: 'Sub-chunk transcription in progress (cancel from Agent04 / pipeline when supported).',
+    chunkStatsSubChunkRunning:
+      'Sub-chunk transcription in progress (cancel from Agent04 / pipeline when supported).',
     chunkStatsSubChunkRunningNoCancel: 'Sub-chunk transcription in progress.',
     chunkTranscribeSub: 'Transcribe sub-chunk',
-    chunkTranscribeSubTitle: 'Send this sub-chunk audio to Agent04 (writes results/sub_chunk_XX_result.json)',
+    chunkTranscribeSubTitle:
+      'Send this sub-chunk audio to Agent04 (writes results/sub_chunk_XX_result.json)',
     chunkStatsVmStatus: 'VM status',
-    chunkStatsTranscriptionActive: 'Transcription in progress — you can cancel this chunk',
+    chunkStatsTranscriptionActive:
+      'Transcription in progress — you can cancel this chunk',
     chunkStatsTranscriptionActiveNoCancel: 'Transcription in progress',
     chunkRebuildCombined: 'Rebuild combined MD + JSON',
     chunkRebuildCombinedHint:
@@ -174,7 +184,8 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkRebuildSplitMergedDisabled:
       'Wait until every sub-chunk has results/sub_chunk_XX_result.json on disk.',
     chunkStatsCancelChunk: 'Cancel chunk',
-    chunkStatsEmpty: 'No chunk rows yet (upload audio and run transcription, or open a job with chunk artifacts).',
+    chunkStatsEmpty:
+      'No chunk rows yet (upload audio and run transcription, or open a job with chunk artifacts).',
     chunkStatsLoadingFiles: 'Loading project files…',
     chunkStatsLoadingGroups: 'Loading chunk groups…',
     chunkStatsChunkPrefix: 'Chunk',
@@ -303,6 +314,16 @@ const messages: Record<Locale, Record<string, string>> = {
     conversationBeforeAnswer: 'before an answer',
     conversationInOwnSpeech: 'in own speech',
     conversationUpTo: 'up to',
+    jobsKindDialogue: 'dialogue',
+    jobsCreated: 'created',
+    jobsCompleted: 'done',
+    jobsColJob: 'Job',
+    jobsColLesson: 'Lesson',
+    jobsColState: 'State',
+    jobsColDates: 'Created / done',
+    sidebarResize: 'Width of the jobs list',
+    sidebarResizeHint:
+      'Drag to make the jobs list wider or narrower: a wider list tells more about each job. Arrow keys move it too; a double click puts the usual width back.',
   },
   ru: {
     appTitle: 'XtractManager',
@@ -379,7 +400,8 @@ const messages: Record<Locale, Record<string, string>> = {
     inWorkspace: 'в рабочей папке',
     loading: 'Загрузка…',
     selectJobOrCreate: 'Выберите задание или создайте в разделе «Загрузка».',
-    refinerAwaitingHint: 'Транскрипция готова — проверьте транскрипт и запустите рефайнер вручную.',
+    refinerAwaitingHint:
+      'Транскрипция готова — проверьте транскрипт и запустите рефайнер вручную.',
     refinerRunning: 'Рефайнер выполняется…',
     refinerCompleted: 'Рефайнер завершён.',
     refinerRun: 'Запустить Refiner',
@@ -390,8 +412,10 @@ const messages: Record<Locale, Record<string, string>> = {
     refinerPromptLabel: 'Prompt запуска',
     refinerPromptLesson: 'Урок (только слова под сомнением)',
     refinerPromptSaved: 'Сохранённые настройки',
-    refinerPromptLessonHint: 'Код сам находит слова, которые могут быть испанскими, но записаны кириллицей или буквами двух алфавитов. Модель отвечает только, на каком языке сказано слово; написание берётся из самой расшифровки. Строки модель не переписывает. Настройки выше не используются.',
-    refinerPromptSavedHint: 'Prompt, размер блока и модель из настроек выше. Модели уходит каждая строка, и берётся она такой, как её написала модель, без проверки.',
+    refinerPromptLessonHint:
+      'Код сам находит слова, которые могут быть испанскими, но записаны кириллицей или буквами двух алфавитов. Модель отвечает только, на каком языке сказано слово; написание берётся из самой расшифровки. Строки модель не переписывает. Настройки выше не используются.',
+    refinerPromptSavedHint:
+      'Prompt, размер блока и модель из настроек выше. Модели уходит каждая строка, и берётся она такой, как её написала модель, без проверки.',
     refineProgressTitle: 'Ход рефайнинга',
     refineProgressBatch: 'Батч',
     refineProgressChanged: 'изменено',
@@ -408,9 +432,11 @@ const messages: Record<Locale, Record<string, string>> = {
     refinerSettingsTitle: 'Настройки рефайнинга',
     refinerSettingsCustom: 'свои промпты',
     refinerSettingsDefault: 'встроенный промпт',
-    refinerSettingsHint: 'Общие для всех заданий, применяются при следующем запуске Refiner. Вместо {context} подставляются отрефайненные строки предыдущего блока, вместо {batch} — строки для исправления.',
+    refinerSettingsHint:
+      'Общие для всех заданий, применяются при следующем запуске Refiner. Вместо {context} подставляются отрефайненные строки предыдущего блока, вместо {batch} — строки для исправления.',
     refinerSettingsPrompt: 'Шаблон промпта',
-    refinerSettingsNeedBatch: 'В шаблоне обязателен {batch} — туда подставляются строки для исправления.',
+    refinerSettingsNeedBatch:
+      'В шаблоне обязателен {batch} — туда подставляются строки для исправления.',
     refinerSettingsBatchSize: 'Строк в блоке',
     refinerSettingsContextLines: 'Строк контекста (стык)',
     refinerSettingsModel: 'Модель',
@@ -422,7 +448,8 @@ const messages: Record<Locale, Record<string, string>> = {
     refinerSettingsSystem: 'Системный промпт',
     refinerSettingsRestoreSystem: 'Восстановить оригинальный системный промпт',
     refinerSettingsRestoreTemplate: 'Восстановить оригинальный шаблон',
-    refinerSettingsRestoreHint: 'Подставляет встроенный текст в поле; чтобы применить — «Сохранить настройки»',
+    refinerSettingsRestoreHint:
+      'Подставляет встроенный текст в поле; чтобы применить — «Сохранить настройки»',
     refinerOutputTime: 'время',
     linkRefinerRunPrompt: 'Промпты этого прогона',
     refineProgressFailed: 'батч не удался — оставлен оригинал',
@@ -459,7 +486,8 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkTranscribeSubTitle:
       'Отправить аудио субчанка в Agent04 (пишет results/sub_chunk_XX_result.json)',
     chunkStatsVmStatus: 'Статус VM',
-    chunkStatsTranscriptionActive: 'Идёт транскрипция — можно отменить этот чанк',
+    chunkStatsTranscriptionActive:
+      'Идёт транскрипция — можно отменить этот чанк',
     chunkStatsTranscriptionActiveNoCancel: 'Идёт транскрипция',
     chunkRebuildCombined: 'Собрать общий MD + JSON',
     chunkRebuildCombinedHint:
@@ -470,7 +498,8 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkRebuildSplitMergedDisabled:
       'Дождитесь, пока у каждого субчанка появится results/sub_chunk_XX_result.json на диске.',
     chunkStatsCancelChunk: 'Отменить чанк',
-    chunkStatsEmpty: 'Пока нет строк по чанкам (загрузите аудио и запустите транскрипцию или откройте job с артефактами).',
+    chunkStatsEmpty:
+      'Пока нет строк по чанкам (загрузите аудио и запустите транскрипцию или откройте job с артефактами).',
     chunkStatsLoadingFiles: 'Загрузка файлов проекта…',
     chunkStatsLoadingGroups: 'Загрузка групп чанков…',
     chunkStatsChunkPrefix: 'Чанк',
@@ -508,7 +537,8 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkVmColError: 'Деталь',
     chunkVmActivityLog: 'Журнал',
     chunkVmActivityLogEmpty: 'Пока нет записей.',
-    chunkSplitPartsPrompt: 'На сколько частей разбить? (целое число, минимум 2)',
+    chunkSplitPartsPrompt:
+      'На сколько частей разбить? (целое число, минимум 2)',
     chunkSplitPartsInvalid: 'Введите целое число ≥ 2.',
     chunkSplitTitle:
       'Разбиение через ffmpeg по выбранному файлу чанка; подфайлы — в «Разбиение чанков» после обновления.',
@@ -599,6 +629,16 @@ const messages: Record<Locale, Record<string, string>> = {
     conversationBeforeAnswer: 'перед ответом',
     conversationInOwnSpeech: 'в своей речи',
     conversationUpTo: 'до',
+    jobsKindDialogue: 'диалог',
+    jobsCreated: 'создано',
+    jobsCompleted: 'готово',
+    jobsColJob: 'Задание',
+    jobsColLesson: 'Урок',
+    jobsColState: 'Состояние',
+    jobsColDates: 'Создано / готово',
+    sidebarResize: 'Ширина списка заданий',
+    sidebarResizeHint:
+      'Потяните, чтобы сделать список заданий шире или уже: в широком списке о каждом задании видно больше. Стрелки на клавиатуре тоже двигают край; двойной щелчок возвращает обычную ширину.',
   },
   es: {
     appTitle: 'XtractManager',
@@ -676,7 +716,8 @@ const messages: Record<Locale, Record<string, string>> = {
     inWorkspace: 'disponible en la carpeta de trabajo',
     loading: 'Cargando…',
     selectJobOrCreate: 'Seleccione un trabajo o cree uno en Subir.',
-    refinerAwaitingHint: 'Transcripción lista — revisa el transcript y ejecuta el refinador manualmente.',
+    refinerAwaitingHint:
+      'Transcripción lista — revisa el transcript y ejecuta el refinador manualmente.',
     refinerRunning: 'Refinador en curso…',
     refinerCompleted: 'Refinador completado.',
     refinerRun: 'Ejecutar Refinador',
@@ -687,8 +728,10 @@ const messages: Record<Locale, Record<string, string>> = {
     refinerPromptLabel: 'Prompt de la ejecución',
     refinerPromptLesson: 'Clase (solo las palabras dudosas)',
     refinerPromptSaved: 'Ajustes guardados',
-    refinerPromptLessonHint: 'El código busca las palabras que pueden ser españolas escritas en cirílico o que mezclan letras de los dos alfabetos. El modelo solo dice en qué idioma se dijo cada una; la grafía se toma de la propia transcripción. El modelo no reescribe ninguna línea. Los ajustes de arriba no se usan.',
-    refinerPromptSavedHint: 'El prompt, el tamaño de bloque y el modelo guardados arriba. Cada línea va al modelo y se toma tal como él la escribió, sin comprobar nada.',
+    refinerPromptLessonHint:
+      'El código busca las palabras que pueden ser españolas escritas en cirílico o que mezclan letras de los dos alfabetos. El modelo solo dice en qué idioma se dijo cada una; la grafía se toma de la propia transcripción. El modelo no reescribe ninguna línea. Los ajustes de arriba no se usan.',
+    refinerPromptSavedHint:
+      'El prompt, el tamaño de bloque y el modelo guardados arriba. Cada línea va al modelo y se toma tal como él la escribió, sin comprobar nada.',
     refineProgressTitle: 'Progreso del refinado',
     refineProgressBatch: 'Lote',
     refineProgressChanged: 'cambiados',
@@ -705,9 +748,11 @@ const messages: Record<Locale, Record<string, string>> = {
     refinerSettingsTitle: 'Ajustes del refinado',
     refinerSettingsCustom: 'prompts propios',
     refinerSettingsDefault: 'prompt integrado',
-    refinerSettingsHint: 'Comunes a todos los trabajos; se aplican en el próximo Run Refiner. {context} se sustituye por las líneas refinadas del bloque anterior y {batch} por las líneas a corregir.',
+    refinerSettingsHint:
+      'Comunes a todos los trabajos; se aplican en el próximo Run Refiner. {context} se sustituye por las líneas refinadas del bloque anterior y {batch} por las líneas a corregir.',
     refinerSettingsPrompt: 'Plantilla del prompt',
-    refinerSettingsNeedBatch: 'La plantilla debe contener {batch}: ahí se insertan las líneas a corregir.',
+    refinerSettingsNeedBatch:
+      'La plantilla debe contener {batch}: ahí se insertan las líneas a corregir.',
     refinerSettingsBatchSize: 'Líneas por bloque',
     refinerSettingsContextLines: 'Líneas de contexto (unión)',
     refinerSettingsModel: 'Modelo',
@@ -719,7 +764,8 @@ const messages: Record<Locale, Record<string, string>> = {
     refinerSettingsSystem: 'Prompt de sistema',
     refinerSettingsRestoreSystem: 'Restaurar el prompt de sistema original',
     refinerSettingsRestoreTemplate: 'Restaurar la plantilla original',
-    refinerSettingsRestoreHint: 'Pone el texto integrado en el campo; pulsa Guardar ajustes para aplicarlo',
+    refinerSettingsRestoreHint:
+      'Pone el texto integrado en el campo; pulsa Guardar ajustes para aplicarlo',
     refinerOutputTime: 'hora',
     linkRefinerRunPrompt: 'Prompts de esa ejecución',
     refineProgressFailed: 'lote fallido — se mantiene el original',
@@ -751,12 +797,14 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkStatsSplitMerged: 'Fusión del split (fragmento)',
     chunkStatsSubChunkRunning:
       'Transcripción del subfragmento en curso (cancelar vía Agent04 / pipeline cuando exista).',
-    chunkStatsSubChunkRunningNoCancel: 'Transcripción del subfragmento en curso.',
+    chunkStatsSubChunkRunningNoCancel:
+      'Transcripción del subfragmento en curso.',
     chunkTranscribeSub: 'Transcribir subfragmento',
     chunkTranscribeSubTitle:
       'Enviar audio del subfragmento a Agent04 (escribe results/sub_chunk_XX_result.json)',
     chunkStatsVmStatus: 'Estado VM',
-    chunkStatsTranscriptionActive: 'Transcripción en curso — puede cancelar este fragmento',
+    chunkStatsTranscriptionActive:
+      'Transcripción en curso — puede cancelar este fragmento',
     chunkStatsTranscriptionActiveNoCancel: 'Transcripción en curso',
     chunkRebuildCombined: 'Reconstruir MD + JSON combinados',
     chunkRebuildCombinedHint:
@@ -767,7 +815,8 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkRebuildSplitMergedDisabled:
       'Espere a que cada subfragmento tenga results/sub_chunk_XX_result.json en disco.',
     chunkStatsCancelChunk: 'Cancelar fragmento',
-    chunkStatsEmpty: 'Aún no hay filas por fragmento (suba audio y ejecute la transcripción o abra un trabajo con artefactos).',
+    chunkStatsEmpty:
+      'Aún no hay filas por fragmento (suba audio y ejecute la transcripción o abra un trabajo con artefactos).',
     chunkStatsLoadingFiles: 'Cargando archivos del proyecto…',
     chunkStatsLoadingGroups: 'Cargando grupos de fragmentos…',
     chunkStatsChunkPrefix: 'Fragmento',
@@ -805,8 +854,7 @@ const messages: Record<Locale, Record<string, string>> = {
     chunkVmColError: 'Detalle',
     chunkVmActivityLog: 'Actividad',
     chunkVmActivityLogEmpty: 'Aún no hay entradas.',
-    chunkSplitPartsPrompt:
-      '¿En cuántas partes dividir? (entero, mínimo 2)',
+    chunkSplitPartsPrompt: '¿En cuántas partes dividir? (entero, mínimo 2)',
     chunkSplitPartsInvalid: 'Introduzca un entero ≥ 2.',
     chunkSplitTitle:
       'Divide con ffmpeg el archivo del fragmento; los subarchivos aparecen en Subfragmentos al actualizar.',
@@ -897,6 +945,16 @@ const messages: Record<Locale, Record<string, string>> = {
     conversationBeforeAnswer: 'antes de responder',
     conversationInOwnSpeech: 'en su propio discurso',
     conversationUpTo: 'hasta',
+    jobsKindDialogue: 'diálogo',
+    jobsCreated: 'creado',
+    jobsCompleted: 'terminado',
+    jobsColJob: 'Trabajo',
+    jobsColLesson: 'Clase',
+    jobsColState: 'Estado',
+    jobsColDates: 'Creado / terminado',
+    sidebarResize: 'Ancho de la lista de trabajos',
+    sidebarResizeHint:
+      'Arrastre para ensanchar o estrechar la lista de trabajos: una lista más ancha dice más de cada trabajo. Las flechas del teclado también la mueven; un doble clic devuelve el ancho habitual.',
   },
 };
 

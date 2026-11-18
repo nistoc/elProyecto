@@ -896,15 +896,21 @@ export function ChunkControlsStats({
         .chunk-stats__status--err {
           color: var(--color-error-muted, #c62828);
         }
+        /*
+         * A chunk card needs about 1500 px for the wave at its full length next to the text;
+         * a screen with room for two such cards shows them side by side.
+         */
         .chunk-stats__list {
           list-style: none;
           margin: 0;
           padding: 0;
-          display: flex;
-          flex-direction: column;
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(min(100%, 1500px), 1fr));
+          align-items: start;
           gap: 0.65rem;
         }
         .chunk-stats__card {
+          min-width: 0;
           border: 1px solid var(--color-border);
           border-radius: 6px;
           padding: 0.5rem 0.65rem;

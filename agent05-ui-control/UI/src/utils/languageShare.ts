@@ -42,8 +42,34 @@ function percent(part: number, whole: number): string {
   return `${whole > 0 ? Math.round((100 * part) / whole) : 0} %`;
 }
 
-/** "34.2 min: Spanish 69 % · Russian 26 % · mixed lines 5 %", or null when no timed line was counted. */
-function shareText(share: LanguageShare, t: T): string | null {
+/**
+ * One card of the job view: a title, what is said of the whole, and its parts.
+ * The same block read as one line is what the job view printed before it had cards.
+ */
+export interface StatBlock {
+  /** "Speech of the dialogue", "Talk" or the name of a participant. */
+  title: string;
+  /** What stands between the title and the parts: "19.5 min", "78 % of the speech, 15.3 min". */
+  lead?: string;
+  parts: string[];
+  /** A participant: the title is set off by a dash; a total: by a space. */
+  ofParticipant: boolean;
+}
+
+/** "Speech 34.2 min: Spanish 69 % · Russian 26 %", "Student — interruptions 12 · short assents 28". */
+export function statBlockLine(block: StatBlock): string {
+  const joint = block.ofParticipant ? ' — ' : ' ';
+  const tail = block.parts.join(' · ');
+  if (block.lead)
+    return `${block.title}${joint}${block.lead}${tail ? `: ${tail}` : ''}`;
+  return tail ? `${block.title}${joint}${tail}` : block.title;
+}
+
+/** "34.2 min" and "Spanish 69 %", "Russian 26 %", "mixed lines 5 %"; null when no timed line was counted. */
+function shareParts(
+  share: LanguageShare,
+  t: T
+): { minutes: string; parts: string[] } | null {
   if (!(share.speechSeconds > 0)) return null;
   const parts = [
     `${t('languageShareSpanish')} ${percent(share.spanishSeconds, share.speechSeconds)}`,
@@ -56,7 +82,7 @@ function shareText(share: LanguageShare, t: T): string | null {
   if (share.untimedLines > 0)
     parts.push(`${t('languageShareUntimed')}: ${share.untimedLines}`);
   const minutes = formatMinutes(share.speechSeconds, t('runSettingsDecimal'));
-  return `${minutes} ${t('languageShareMin')}: ${parts.join(' · ')}`;
+  return { minutes: `${minutes} ${t('languageShareMin')}`, parts };
 }
 
 /**
@@ -74,34 +100,61 @@ export function languageShareShort(
 }
 
 /**
- * The lines of the job view. A transcription job gives one:
+ * The cards of the job view. A transcription job gives one:
  * "Speech 34.2 min: Spanish 69 % · Russian 26 % · mixed lines 5 %".
- * A dialogue gives its total and one line per track with the track's part of all speech:
+ * A dialogue gives its total and one card per track with the track's part of all speech:
  * "Student — 40 % of the speech, 8.0 min: Spanish 25 % · Russian 75 %".
  * Empty when there is nothing to show.
  */
+export function languageShareBlocks(
+  report: JobLanguageShareReport | null | undefined,
+  t: T
+): StatBlock[] {
+  const total = report?.total;
+  if (!total) return [];
+  const whole = shareParts(total, t);
+  if (!whole) return [];
+
+  const tracks = report?.tracks ?? [];
+  const blocks: StatBlock[] = [
+    {
+      title: t(
+        tracks.length === 0
+          ? 'languageShareTitle'
+          : 'languageShareTitleDialogue'
+      ),
+      lead: whole.minutes,
+      parts: whole.parts,
+      ofParticipant: false,
+    },
+  ];
+  for (const track of tracks) {
+    const own = track.share ? shareParts(track.share, t) : null;
+    blocks.push(
+      own && track.share
+        ? {
+            title: track.speaker,
+            lead: `${percent(track.share.speechSeconds, total.speechSeconds)} ${t('languageShareOfSpeech')}, ${own.minutes}`,
+            parts: own.parts,
+            ofParticipant: true,
+          }
+        : {
+            title: track.speaker,
+            lead: t('languageShareNoLines'),
+            parts: [],
+            ofParticipant: true,
+          }
+    );
+  }
+  return blocks;
+}
+
+/** The same as lines of text, one per card. */
 export function languageShareLines(
   report: JobLanguageShareReport | null | undefined,
   t: T
 ): string[] {
-  const total = report?.total;
-  if (!total) return [];
-  const totalText = shareText(total, t);
-  if (!totalText) return [];
-
-  const tracks = report?.tracks ?? [];
-  if (tracks.length === 0) return [`${t('languageShareTitle')} ${totalText}`];
-
-  const lines = [`${t('languageShareTitleDialogue')} ${totalText}`];
-  for (const track of tracks) {
-    const text = track.share ? shareText(track.share, t) : null;
-    lines.push(
-      text && track.share
-        ? `${track.speaker} — ${percent(track.share.speechSeconds, total.speechSeconds)} ${t('languageShareOfSpeech')}, ${text}`
-        : `${track.speaker} — ${t('languageShareNoLines')}`
-    );
-  }
-  return lines;
+  return languageShareBlocks(report, t).map(statBlockLine);
 }
 
 /** How the talk of a dialogue goes, `conversation` of the same answer; null when it cannot be counted. */
@@ -139,16 +192,16 @@ export function formatSeconds(seconds: number, decimal = '.'): string {
 }
 
 /**
- * The lines of the job view for a dialogue:
- * "Talk 39.9 min: both at once 4.8 min · silence 6.4 min · speaker changes 399" and one line per participant:
+ * The cards of the job view for a dialogue:
+ * "Talk 39.9 min: both at once 4.8 min · silence 6.4 min · speaker changes 399" and one per participant:
  * "Student — interruptions 12 · short assents over the other 28 · usual wait before an answer 0.5 s ·
  * pauses from 3 s: before an answer 9 (up to 6.0 s), in own speech 5 (up to 4.5 s)".
  * Empty when there is no talk to show.
  */
-export function conversationLines(
+export function conversationBlocks(
   report: JobLanguageShareReport | null | undefined,
   t: T
-): string[] {
+): StatBlock[] {
   const talk = report?.conversation;
   if (!talk || !(talk.spanSeconds > 0)) return [];
   const decimal = t('runSettingsDecimal');
@@ -159,13 +212,17 @@ export function conversationLines(
   const pauses = (count: number, longest: number) =>
     count > 0 ? `${count} (${t('conversationUpTo')} ${sec(longest)})` : '0';
 
-  const lines = [
-    `${t('conversationTitle')} ${min(talk.spanSeconds)}: ` +
-      [
+  const blocks: StatBlock[] = [
+    {
+      title: t('conversationTitle'),
+      lead: min(talk.spanSeconds),
+      parts: [
         `${t('conversationOverlap')} ${min(talk.overlapSeconds)}`,
         `${t('conversationSilence')} ${min(talk.silenceSeconds)}`,
         `${t('conversationChanges')} ${talk.speakerChanges}`,
-      ].join(' · '),
+      ],
+      ofParticipant: false,
+    },
   ];
   for (const track of talk.tracks ?? []) {
     const parts = [
@@ -181,7 +238,15 @@ export function conversationLines(
         `${t('conversationBeforeAnswer')} ${pauses(track.longPausesBeforeAnswer, track.longestPauseBeforeAnswerSeconds)}, ` +
         `${t('conversationInOwnSpeech')} ${pauses(track.longPausesInOwnSpeech, track.longestPauseInOwnSpeechSeconds)}`
     );
-    lines.push(`${track.speaker} — ${parts.join(' · ')}`);
+    blocks.push({ title: track.speaker, parts, ofParticipant: true });
   }
-  return lines;
+  return blocks;
+}
+
+/** The same as lines of text, one per card. */
+export function conversationLines(
+  report: JobLanguageShareReport | null | undefined,
+  t: T
+): string[] {
+  return conversationBlocks(report, t).map(statBlockLine);
 }

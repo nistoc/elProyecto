@@ -103,104 +103,135 @@ export function RefinerSettingsPanel({ t, disabled }: Props) {
         <>
           <p className="refiner-settings__hint">{t('refinerSettingsHint')}</p>
 
-          <label className="refiner-settings__label" htmlFor="refiner-system-prompt">
-            {t('refinerSettingsSystem')}
-          </label>
-          <textarea
-            id="refiner-system-prompt"
-            className="refiner-settings__prompt"
-            value={systemPrompt}
-            onChange={(e) => setSystemPrompt(e.target.value)}
-            disabled={disabled || busy}
-            spellCheck={false}
-            rows={3}
-          />
+          {/* In a wide panel the template stands to the right of the system prompt and the fields. */}
+          <div className="refiner-settings__body">
+            <div className="refiner-settings__cols">
+              <div className="refiner-settings__system">
+                <label
+                  className="refiner-settings__label"
+                  htmlFor="refiner-system-prompt"
+                >
+                  {t('refinerSettingsSystem')}
+                </label>
+                <textarea
+                  id="refiner-system-prompt"
+                  className="refiner-settings__prompt"
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  disabled={disabled || busy}
+                  spellCheck={false}
+                  rows={3}
+                />
+              </div>
 
-          <label className="refiner-settings__label" htmlFor="refiner-prompt">
-            {t('refinerSettingsPrompt')}
-          </label>
-          <textarea
-            id="refiner-prompt"
-            className="refiner-settings__prompt"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            disabled={disabled || busy}
-            spellCheck={false}
-            rows={16}
-          />
-          {missingBatch && (
-            <p className="refiner-settings__error">
-              {t('refinerSettingsNeedBatch')}
-            </p>
-          )}
+              <div className="refiner-settings__template">
+                <label
+                  className="refiner-settings__label"
+                  htmlFor="refiner-prompt"
+                >
+                  {t('refinerSettingsPrompt')}
+                </label>
+                <textarea
+                  id="refiner-prompt"
+                  className="refiner-settings__prompt"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  disabled={disabled || busy}
+                  spellCheck={false}
+                  rows={16}
+                />
+                {missingBatch && (
+                  <p className="refiner-settings__error">
+                    {t('refinerSettingsNeedBatch')}
+                  </p>
+                )}
+              </div>
 
-          <div className="refiner-settings__row">
-            <label>
-              {t('refinerSettingsBatchSize')}
-              <input
-                type="number"
-                min={1}
-                max={200}
-                value={batchSize}
-                onChange={(e) => setBatchSize(Number(e.target.value) || 1)}
-                disabled={disabled || busy}
-              />
-            </label>
-            <label>
-              {t('refinerSettingsContextLines')}
-              <input
-                type="number"
-                min={0}
-                max={50}
-                value={contextLines}
-                onChange={(e) => setContextLines(Math.max(0, Number(e.target.value) || 0))}
-                disabled={disabled || busy}
-              />
-            </label>
-            <label>
-              {t('refinerSettingsModel')}
-              <input
-                type="text"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                disabled={disabled || busy}
-              />
-            </label>
-          </div>
+              <div className="refiner-settings__controls">
+                <div className="refiner-settings__row">
+                  <label>
+                    {t('refinerSettingsBatchSize')}
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={batchSize}
+                      onChange={(e) =>
+                        setBatchSize(Number(e.target.value) || 1)
+                      }
+                      disabled={disabled || busy}
+                    />
+                  </label>
+                  <label>
+                    {t('refinerSettingsContextLines')}
+                    <input
+                      type="number"
+                      min={0}
+                      max={50}
+                      value={contextLines}
+                      onChange={(e) =>
+                        setContextLines(
+                          Math.max(0, Number(e.target.value) || 0)
+                        )
+                      }
+                      disabled={disabled || busy}
+                    />
+                  </label>
+                  <label>
+                    {t('refinerSettingsModel')}
+                    <input
+                      type="text"
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      disabled={disabled || busy}
+                    />
+                  </label>
+                </div>
 
-          <div className="refiner-settings__actions">
-            <button
-              type="button"
-              className="refiner-actions__run"
-              disabled={disabled || busy || !dirty || missingBatch}
-              onClick={() => save()}
-            >
-              {t('refinerSettingsSave')}
-            </button>
-            <button
-              type="button"
-              className="refiner-actions__skip"
-              disabled={disabled || busy || systemPrompt === saved.defaultSystemPrompt}
-              onClick={() => setSystemPrompt(saved.defaultSystemPrompt)}
-              title={t('refinerSettingsRestoreHint')}
-            >
-              {t('refinerSettingsRestoreSystem')}
-            </button>
-            <button
-              type="button"
-              className="refiner-actions__skip"
-              disabled={disabled || busy || prompt === saved.defaultPromptTemplate}
-              onClick={() => setPrompt(saved.defaultPromptTemplate)}
-              title={t('refinerSettingsRestoreHint')}
-            >
-              {t('refinerSettingsRestoreTemplate')}
-            </button>
-            {dirty && (
-              <span className="refiner-settings__dirty">{t('refinerSettingsUnsaved')}</span>
-            )}
-            {notice && !dirty && (
-              <span className="refiner-settings__notice">{notice}</span>
-            )}
+                <div className="refiner-settings__actions">
+                  <button
+                    type="button"
+                    className="refiner-actions__run"
+                    disabled={disabled || busy || !dirty || missingBatch}
+                    onClick={() => save()}
+                  >
+                    {t('refinerSettingsSave')}
+                  </button>
+                  <button
+                    type="button"
+                    className="refiner-actions__skip"
+                    disabled={
+                      disabled ||
+                      busy ||
+                      systemPrompt === saved.defaultSystemPrompt
+                    }
+                    onClick={() => setSystemPrompt(saved.defaultSystemPrompt)}
+                    title={t('refinerSettingsRestoreHint')}
+                  >
+                    {t('refinerSettingsRestoreSystem')}
+                  </button>
+                  <button
+                    type="button"
+                    className="refiner-actions__skip"
+                    disabled={
+                      disabled || busy || prompt === saved.defaultPromptTemplate
+                    }
+                    onClick={() => setPrompt(saved.defaultPromptTemplate)}
+                    title={t('refinerSettingsRestoreHint')}
+                  >
+                    {t('refinerSettingsRestoreTemplate')}
+                  </button>
+                  {dirty && (
+                    <span className="refiner-settings__dirty">
+                      {t('refinerSettingsUnsaved')}
+                    </span>
+                  )}
+                  {notice && !dirty && (
+                    <span className="refiner-settings__notice">{notice}</span>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </>
       )}
@@ -235,6 +266,20 @@ export function RefinerSettingsPanel({ t, disabled }: Props) {
           color: var(--color-accent, #2d7ff9);
         }
         .refiner-settings__hint { margin: 0.6rem 0; font-size: 0.8rem; color: var(--color-text-secondary); }
+        /* The width that counts is the panel's own: it shares its band with the run panel. */
+        .refiner-settings__body { container-type: inline-size; container-name: refiner-settings; }
+        .refiner-settings__cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 1.25rem; }
+        @container refiner-settings (min-width: 1000px) {
+          .refiner-settings__cols {
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+            grid-template-rows: auto 1fr;
+            grid-template-areas: "system template" "controls template";
+          }
+          .refiner-settings__system { grid-area: system; }
+          .refiner-settings__template { grid-area: template; }
+          .refiner-settings__controls { grid-area: controls; }
+          .refiner-settings__system .refiner-settings__prompt { min-height: 9rem; }
+        }
         .refiner-settings__label { display: block; margin: 0.7rem 0 0.3rem 0; font-size: 0.8rem; color: var(--color-text-secondary); }
         .refiner-settings__prompt {
           width: 100%;

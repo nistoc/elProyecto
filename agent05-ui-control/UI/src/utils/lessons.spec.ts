@@ -7,6 +7,7 @@ import {
   formatBytes,
   formatDuration,
   formatUsd,
+  indexLessonJobs,
   periodDurationSec,
   periodTimeLabel,
   runUsdPerMinute,
@@ -279,5 +280,56 @@ describe('dialogue of a period', () => {
     expect(defaultDialogueTitle(s, period({ startedAt: null }))).toBe(
       '2026-10-23'
     );
+  });
+});
+
+describe('indexLessonJobs', () => {
+  it('ties every run and dialogue to its lesson and recording', () => {
+    const p = period({
+      tracks: [
+        track('mixed', null, 2400, [run('aaa')]),
+        track('participant', 'Maria Lopez', 2400, [run('bbb'), run('cc')]),
+      ],
+      dialogues: [
+        {
+          jobId: 'ddd',
+          title: 'Evening talk',
+          trackJobIds: ['bbb'],
+          merges: 1,
+        },
+      ],
+    });
+    const index = indexLessonJobs({
+      enabled: true,
+      estimateUsdPerMinute: 0.006,
+      sessions: [session([p])],
+    });
+    expect([...index.keys()]).toEqual(['aaa', 'bbb', 'cc', 'ddd']);
+    expect(index.get('aaa')).toMatchObject({
+      date: '2026-10-23',
+      time: '20:21',
+      kind: 'mixed',
+      label: '',
+      hasTranscript: true,
+      hasRefined: false,
+    });
+    expect(index.get('cc')).toMatchObject({
+      kind: 'participant',
+      label: 'Maria Lopez',
+    });
+    expect(index.get('ddd')).toEqual({
+      date: '2026-10-23',
+      time: '20:21',
+      kind: 'dialogue',
+      label: 'Evening talk',
+    });
+  });
+
+  it('is empty when there are no lessons to read', () => {
+    expect(indexLessonJobs(null).size).toBe(0);
+    expect(
+      indexLessonJobs({ enabled: false, estimateUsdPerMinute: 0, sessions: [] })
+        .size
+    ).toBe(0);
   });
 });

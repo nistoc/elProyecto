@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  conversationBlocks,
   conversationLines,
   formatMinutes,
   formatSeconds,
+  languageShareBlocks,
   languageShareLines,
   languageShareShort,
+  statBlockLine,
   type ConversationReport,
   type LanguageShare,
   type TrackConversation,
@@ -216,5 +219,83 @@ describe('languageShareShort', () => {
     expect(languageShareShort(null)).toBe('');
     expect(languageShareShort(undefined)).toBe('');
     expect(languageShareShort(share(0, 0, 0, 3))).toBe('');
+  });
+});
+
+describe('cards of the job view', () => {
+  it('keeps the title, the whole and the parts of a share apart', () => {
+    const report = {
+      total: share(840, 360),
+      tracks: [
+        { jobId: 'a', speaker: 'Student', share: share(120, 360) },
+        { jobId: 'c', speaker: 'Guest', share: null },
+      ],
+    };
+    expect(languageShareBlocks(report, t)).toEqual([
+      {
+        title: 'Speech of the dialogue',
+        lead: '20.0 min',
+        parts: ['Spanish 70 %', 'Russian 30 %'],
+        ofParticipant: false,
+      },
+      {
+        title: 'Student',
+        lead: '40 % of the speech, 8.0 min',
+        parts: ['Spanish 25 %', 'Russian 75 %'],
+        ofParticipant: true,
+      },
+      {
+        title: 'Guest',
+        lead: 'no lines with time',
+        parts: [],
+        ofParticipant: true,
+      },
+    ]);
+  });
+
+  it('gives a participant of a talk a card without a whole', () => {
+    const blocks = conversationBlocks(
+      { conversation: talk([talker('Guest', { interruptions: 2 })]) },
+      t
+    );
+    expect(blocks[0]).toEqual({
+      title: 'Talk',
+      lead: '39.9 min',
+      parts: ['both at once 4.8 min', 'silence 6.4 min', 'speaker changes 399'],
+      ofParticipant: false,
+    });
+    expect(blocks[1].title).toBe('Guest');
+    expect(blocks[1].lead).toBeUndefined();
+    expect(blocks[1].parts[0]).toBe('interruptions 2');
+  });
+
+  it('reads a card as the line the job view used to print', () => {
+    expect(
+      statBlockLine({
+        title: 'Speech',
+        lead: '1.0 min',
+        parts: ['Spanish 100 %'],
+        ofParticipant: false,
+      })
+    ).toBe('Speech 1.0 min: Spanish 100 %');
+    expect(
+      statBlockLine({
+        title: 'Guest',
+        lead: 'nothing',
+        parts: [],
+        ofParticipant: true,
+      })
+    ).toBe('Guest — nothing');
+    expect(
+      statBlockLine({ title: 'Guest', parts: ['a', 'b'], ofParticipant: true })
+    ).toBe('Guest — a · b');
+    expect(
+      statBlockLine({ title: 'Talk', parts: [], ofParticipant: false })
+    ).toBe('Talk');
+  });
+
+  it('gives no cards when nothing was counted', () => {
+    expect(languageShareBlocks(null, t)).toEqual([]);
+    expect(conversationBlocks({ total: share(60, 60) }, t)).toEqual([]);
   });
 });
