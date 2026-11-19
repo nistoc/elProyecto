@@ -148,6 +148,17 @@ public sealed class TrackRunsIndex
     private static (string Name, long Size) FileKey(string fileName, long size) =>
         (JobWorkspace.SanitizeUploadedFileName(fileName).ToLowerInvariant(), size);
 
+    /// <summary>
+    /// Something equal for two files with the same content, as far as this index tells it: the size and
+    /// the first bytes. Null when the file cannot be read.
+    /// </summary>
+    public static string? ContentKey(string fullPath)
+    {
+        var file = new FileInfo(fullPath);
+        var head = HeadHash(file);
+        return head == null ? null : file.Length.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + head;
+    }
+
     /// <summary>SHA-256 of the first <see cref="HeadBytes"/> of the file; remembered until the file changes.</summary>
     private static string? HeadHash(FileInfo file)
     {

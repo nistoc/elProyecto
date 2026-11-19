@@ -28,6 +28,12 @@ public sealed record RecordingSession(
     /// <see cref="LessonPackages.Application.ILessonPackageStore"/>); null when it has none.
     /// </summary>
     public LessonPackages.Application.LessonPackageInfo? Package { get; init; }
+
+    /// <summary>
+    /// Where the lesson stands on the way from a recording to a package, see <see cref="LessonStage"/>;
+    /// null where nobody worked it out.
+    /// </summary>
+    public string? Stage { get; init; }
 }
 
 /// <summary>One recording of a lesson (Zoom cuts a lesson into periods of about 40 minutes).</summary>

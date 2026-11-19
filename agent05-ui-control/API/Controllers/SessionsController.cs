@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using XtractManager.Features.Jobs.Application;
@@ -17,28 +15,20 @@ namespace XtractManager.Controllers;
 [ApiController]
 public class SessionsController : ControllerBase
 {
-    /// <summary>Upper bound of the price of the diarize model per minute of audio, measured by tokens on 2026-11-13.</summary>
-    public const double DefaultEstimateUsdPerMinute = 0.017;
+    // The defaults of a run live in RecordingRunDefaults (a batch of days reads them too); these names stay for callers.
+    public const double DefaultEstimateUsdPerMinute = RecordingRunDefaults.EstimateUsdPerMinute;
 
-    public const string EstimateKey = "Recordings:EstimateUsdPerMinute";
+    public const string EstimateKey = RecordingRunDefaults.EstimateKey;
 
-    /// <summary>
-    /// The model a participant track goes to when the run names none. A participant track is one voice, so
-    /// it needs no speakers; this model writes each language in its own script (the transcriber asks it for
-    /// a chunk whole and in pieces). The mixed track and a plain upload keep the transcriber's shared model.
-    /// </summary>
-    public const string DefaultParticipantTrackModel = "gpt-transcribe";
+    /// <summary>The model a participant track goes to when the run names none, see <see cref="RecordingRunDefaults.ParticipantTrackModel"/>.</summary>
+    public const string DefaultParticipantTrackModel = RecordingRunDefaults.ParticipantTrackModel;
 
     /// <summary>Config key of that model; an empty value leaves participant tracks on the shared model.</summary>
-    public const string ParticipantTrackModelKey = "Recordings:ParticipantTrackModel";
+    public const string ParticipantTrackModelKey = RecordingRunDefaults.ParticipantTrackModelKey;
 
-    /// <summary>
-    /// Upper bound of the price of that model per minute of a track: the audio is asked twice at $0.0045 a
-    /// minute, and a few pieces once more. The runs of 2026-11-14 cost about $0.006 a minute.
-    /// </summary>
-    public const double DefaultParticipantTrackEstimateUsdPerMinute = 0.01;
+    public const double DefaultParticipantTrackEstimateUsdPerMinute = RecordingRunDefaults.ParticipantTrackEstimateUsdPerMinute;
 
-    public const string ParticipantTrackEstimateKey = "Recordings:ParticipantTrackEstimateUsdPerMinute";
+    public const string ParticipantTrackEstimateKey = RecordingRunDefaults.ParticipantTrackEstimateKey;
 
     private readonly IRecordingsCatalog _catalog;
     private readonly IJobStore _store;
@@ -95,6 +85,7 @@ public class SessionsController : ControllerBase
             {
                 Pages = pages.TryGetValue(s.Date, out var ofLesson) ? ofLesson : Array.Empty<LessonPage>(),
                 Package = packages.TryGetValue(s.Date, out var package) ? package : null,
+                Stage = packages.ContainsKey(s.Date) ? LessonStage.Package : LessonBatchPlanner.StageOf(s),
             })
             .ToList();
         return Ok(new SessionsResponse(true, _catalog.RootPath, estimate, withRuns)
@@ -204,62 +195,24 @@ public class SessionsController : ControllerBase
                 return BadRequest(ProblemOf(400, settingsError ?? "settings are not valid."));
         }
 
-        var tags = new List<string> { "lesson:" + found.Session.Date, "track:" + found.Track.Kind };
-        var jobId = await _store.CreateAsync(new JobCreateInput(found.Track.FileName, tags), ct);
+        string jobId;
         try
         {
-            await using (var source = new FileStream(
-                             found.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true))
-            {
-                await _workspace.SaveUploadedFileAsync(jobId, source, found.Track.FileName, ct);
-            }
-
-            var jobDir = _workspace.GetJobDirectoryPath(jobId);
-            await TrackSourceFile.SaveAsync(
-                jobDir,
-                new TrackSource
-                {
-                    Track = found.Track.Id,
-                    FileName = found.Track.FileName,
-                    SizeBytes = found.Track.SizeBytes,
-                    Session = found.Session.Id,
-                    Period = found.Period.Id,
-                    Kind = found.Track.Kind,
-                    Participant = found.Track.Participant,
-                    CreatedAt = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
-                },
-                ct);
-
-            if (settingsFileJson != null)
-            {
-                await System.IO.File.WriteAllTextAsync(
-                    Path.Combine(jobDir, JobSettingsDocument.FileName),
-                    settingsFileJson,
-                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-                    ct);
-            }
+            jobId = await TrackRunStarter.StartAsync(_store, _workspace, _pipelineQueue, found, settingsFileJson, ct);
         }
-        catch (Exception ex)
+        catch (TrackRunStartException ex)
         {
-            _logger.LogError(ex, "Failed to prepare job {JobId} for track {Track}", jobId, trackId);
-            await _store.DeleteAsync(jobId, ct);
-            return StatusCode(500, ProblemOf(500, "Failed to copy the track into a job folder."));
+            _logger.LogError(ex.InnerException, "Failed to prepare job {JobId} for track {Track}", ex.JobId, trackId);
+            return StatusCode(500, ProblemOf(500, ex.Message));
         }
 
         _logger.LogInformation("Job {JobId} started for track {Track}", jobId, found.Track.Id);
-        _pipelineQueue.Enqueue(jobId);
         return Accepted(new CreateJobResponse(jobId));
     }
 
     private double EstimateUsdPerMinute() => Price(EstimateKey, DefaultEstimateUsdPerMinute);
 
-    private double Price(string key, double fallback)
-    {
-        var raw = _configuration[key];
-        return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && value > 0
-            ? value
-            : fallback;
-    }
+    private double Price(string key, double fallback) => RecordingRunDefaults.Price(_configuration, key, fallback);
 
     /// <summary>
     /// The model of a participant track that names none: the default when the key is absent, null when the
@@ -267,16 +220,11 @@ public class SessionsController : ControllerBase
     /// </summary>
     private string? ParticipantTrackModel()
     {
-        var raw = _configuration[ParticipantTrackModelKey];
-        if (raw == null)
-            return DefaultParticipantTrackModel;
-        var model = raw.Trim();
-        if (model.Length == 0)
-            return null;
-        if (JobSettingsDocument.IsModelId(model))
-            return model;
-        _logger.LogWarning("{Key} is not a model id; participant tracks stay on the shared model", ParticipantTrackModelKey);
-        return null;
+        var model = RecordingRunDefaults.Model(
+            _configuration, ParticipantTrackModelKey, DefaultParticipantTrackModel, out var notAModel);
+        if (notAModel)
+            _logger.LogWarning("{Key} is not a model id; participant tracks stay on the shared model", ParticipantTrackModelKey);
+        return model;
     }
 
     private static ProblemDetails ProblemOf(int status, string detail) => new()
