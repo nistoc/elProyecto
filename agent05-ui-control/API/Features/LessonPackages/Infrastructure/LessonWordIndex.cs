@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 using XtractManager.Features.Jobs.Application;
 using XtractManager.Features.LessonPackages.Application;
 using XtractManager.Features.Sessions.Application;
@@ -11,12 +12,31 @@ namespace XtractManager.Features.LessonPackages.Infrastructure;
 /// <summary>
 /// The words of every lesson, read from the transcripts in the job folders. For a recording that has a
 /// dialogue, the newest dialogue is read; for one that has none, the newest run of each of its tracks.
-/// Of a job the newest refined transcript is read, else the newest combined one. Nothing is kept on disk:
+/// Of a job the raw transcript is read, and of its refined one only what the raw text has
+/// (<see cref="SaidText"/>): a refine may have translated Russian speech, and a translated word was not said.
+/// A lesson of a day folder with no transcript in any job is read from the answer files of another
+/// recognition service that lie in that folder (<see cref="AnswersOfDay"/>). Nothing is kept on disk:
 /// a lesson is read again when the set, size or write time of its files changes, so a lesson transcribed
 /// today is counted the next time a package is opened.
 /// </summary>
 public sealed class LessonWordIndex : ILessonWordIndex
 {
+    /// <summary>The files the words of one job are read from.</summary>
+    /// <param name="Raw">The newest combined transcript (<c>transcript.md</c>, or the merge of a dialogue).</param>
+    /// <param name="Refined">The newest refined transcript.</param>
+    /// <param name="Answers">The chunk answers of a job that has a refined transcript and no raw one.</param>
+    public sealed record JobText(FileInfo? Raw, FileInfo? Refined, IReadOnlyList<FileInfo> Answers)
+    {
+        public IEnumerable<FileInfo> Files =>
+            new[] { Raw, Refined }.Where(f => f != null).Select(f => f!).Concat(Answers);
+    }
+
+    /// <summary>What one lesson is read from: the text of a job, or an answer file of a day folder.</summary>
+    private sealed record Source(JobText? Job, FileInfo? DayAnswer)
+    {
+        public IEnumerable<FileInfo> Files => Job?.Files ?? new[] { DayAnswer! };
+    }
+
     private readonly IRecordingsCatalog _catalog;
     private readonly IJobStore _store;
     private readonly IJobWorkspace _workspace;
@@ -46,32 +66,42 @@ public sealed class LessonWordIndex : ILessonWordIndex
             return LessonsRead.Nothing;
 
         var sessions = await LessonSessions.WithRunsAsync(_catalog, _store, _workspace, ct);
-        var files = new SortedDictionary<string, List<FileInfo>>(StringComparer.Ordinal);
+        var files = new SortedDictionary<string, List<Source>>(StringComparer.Ordinal);
         var mixedTrackByJob = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var session in sessions)
-        foreach (var period in session.Periods)
         {
-            if (period.Tracks.FirstOrDefault(t => t.Kind == RecordingsScanner.KindMixed) is { } mixed)
+            var ofSession = new List<Source>();
+            foreach (var period in session.Periods)
             {
-                foreach (var jobId in period.Dialogues.Select(d => d.JobId)
-                             .Concat(period.Tracks.SelectMany(t => t.Runs).Select(r => r.JobId)))
-                    mixedTrackByJob[jobId] = mixed.Id;
+                if (period.Tracks.FirstOrDefault(t => t.Kind == RecordingsScanner.KindMixed) is { } mixed)
+                {
+                    foreach (var jobId in period.Dialogues.Select(d => d.JobId)
+                                 .Concat(period.Tracks.SelectMany(t => t.Runs).Select(r => r.JobId)))
+                        mixedTrackByJob[jobId] = mixed.Id;
+                }
+
+                foreach (var jobId in JobsToRead(period))
+                {
+                    if (TextOf(_workspace.GetJobDirectoryPath(jobId)) is { } text)
+                        ofSession.Add(new Source(text, null));
+                }
             }
 
-            foreach (var jobId in JobsToRead(period))
-            {
-                var file = BestTranscript(_workspace.GetJobDirectoryPath(jobId));
-                if (file == null)
-                    continue;
-                if (!files.TryGetValue(session.Date, out var ofLesson))
-                    files[session.Date] = ofLesson = new List<FileInfo>();
-                ofLesson.Add(file);
-            }
+            // A day folder none of whose recordings was transcribed by a job: what another service answered.
+            if (ofSession.Count == 0 && !session.Loose && _catalog.RootPath is { } root)
+                ofSession.AddRange(AnswersOfDay(Path.Combine(root, session.Id)).Select(f => new Source(null, f)));
+
+            if (ofSession.Count == 0)
+                continue;
+            if (!files.TryGetValue(session.Date, out var ofLesson))
+                files[session.Date] = ofLesson = new List<Source>();
+            ofLesson.AddRange(ofSession);
         }
 
         var signatures = files.ToDictionary(
             f => f.Key,
             f => string.Join('|', f.Value
+                .SelectMany(source => source.Files)
                 .OrderBy(file => file.FullName, StringComparer.OrdinalIgnoreCase)
                 .Select(file => $"{file.FullName}:{file.Length}:{file.LastWriteTimeUtc.Ticks}")),
             StringComparer.Ordinal);
@@ -153,8 +183,12 @@ public sealed class LessonWordIndex : ILessonWordIndex
             .ToList();
     }
 
-    /// <summary>The newest refined transcript of a job, else its newest combined one; null when it has none.</summary>
-    public static FileInfo? BestTranscript(string jobDirectory)
+    /// <summary>
+    /// The files a job is read from: its newest combined transcript and its newest refined one; for a job
+    /// that kept a refined transcript and no combined one, the chunk answers stand in for the raw text.
+    /// Null when the job has no transcript.
+    /// </summary>
+    public static JobText? TextOf(string jobDirectory)
     {
         try
         {
@@ -164,34 +198,121 @@ public sealed class LessonWordIndex : ILessonWordIndex
                 .Where(f => !f.Name.EndsWith(".prompt.md", StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(f => f.LastWriteTimeUtc)
                 .ToList();
-            return transcripts.FirstOrDefault(f => f.Name.Contains("_fixed", StringComparison.OrdinalIgnoreCase))
-                   ?? transcripts.FirstOrDefault();
+            var refined = transcripts.FirstOrDefault(IsRefined);
+            var raw = transcripts.FirstOrDefault(f => !IsRefined(f));
+            if (refined == null && raw == null)
+                return null;
+
+            IReadOnlyList<FileInfo> answers = Array.Empty<FileInfo>();
+            var chunkAnswers = new DirectoryInfo(Path.Combine(jobDirectory, "chunks_json"));
+            if (raw == null && chunkAnswers.Exists)
+                answers = chunkAnswers.EnumerateFiles("*.json").OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            return new JobText(raw, refined, answers);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return null;
         }
+
+        static bool IsRefined(FileInfo f) => f.Name.Contains("_fixed", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The answer files of another recognition service that lie flat in a day folder next to the audio:
+    /// every <c>*.json</c> but the <c>response.json</c> of the old pipeline. Whether a file is such an answer
+    /// (<c>segments[].text</c>) is seen when it is read; a file of another shape adds no line.
+    /// </summary>
+    public static IReadOnlyList<FileInfo> AnswersOfDay(string dayDirectory)
+    {
+        try
+        {
+            var day = new DirectoryInfo(dayDirectory);
+            if (!day.Exists)
+                return Array.Empty<FileInfo>();
+            return day.EnumerateFiles("*.json")
+                .Where(f => !f.Name.EndsWith("response.json", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Array.Empty<FileInfo>();
+        }
     }
 
     /// <returns>The words of the lesson; null when one of its files could not be read.</returns>
-    private LessonWords? ReadLesson(string date, IEnumerable<FileInfo> files)
+    private LessonWords? ReadLesson(string date, IEnumerable<Source> sources)
     {
         var lines = new List<string>();
-        foreach (var file in files)
+        FileInfo? reading = null;
+        try
         {
-            try
+            foreach (var source in sources)
             {
-                var entries = TrackDialogueMerger.Parse(File.ReadAllText(file.FullName, Encoding.UTF8));
-                lines.AddRange(entries.Select(e => e.Body));
+                if (source.DayAnswer is { } answer)
+                {
+                    lines.AddRange(SegmentTexts(reading = answer));
+                    continue;
+                }
+
+                var job = source.Job!;
+                var raw = new List<string>();
+                if (job.Raw != null)
+                    raw.AddRange(TranscriptLines(reading = job.Raw));
+                foreach (var chunk in job.Answers)
+                    raw.AddRange(SegmentTexts(reading = chunk));
+                var refined = job.Refined != null ? TranscriptLines(reading = job.Refined) : new List<string>();
+                lines.AddRange(SaidText.Lines(raw, refined));
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                _logger.LogWarning(
-                    ex, "{File} cannot be read; the lesson of {Date} stays as it was read before, or is not counted, until it can", file.FullName, date);
-                return null;
-            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(
+                ex, "{File} cannot be read; the lesson of {Date} stays as it was read before, or is not counted, until it can", reading?.FullName, date);
+            return null;
         }
 
         return new LessonWords(date, lines);
+    }
+
+    private static List<string> TranscriptLines(FileInfo file) =>
+        TrackDialogueMerger.Parse(File.ReadAllText(file.FullName, Encoding.UTF8)).Select(e => e.Body).ToList();
+
+    /// <summary>
+    /// The text of every segment of an answer (<c>segments[].text</c>), or its whole <c>text</c> when it has
+    /// no segments. A file that is not such an answer gives nothing.
+    /// </summary>
+    private static List<string> SegmentTexts(FileInfo file)
+    {
+        var texts = new List<string>();
+        try
+        {
+            // The transcriber may be writing the file right now: share it instead of failing on a lock.
+            using var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var doc = JsonDocument.Parse(stream);
+            var answer = doc.RootElement;
+            if (answer.ValueKind != JsonValueKind.Object)
+                return texts;
+            if (answer.TryGetProperty("segments", out var segments) && segments.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var segment in segments.EnumerateArray())
+                {
+                    if (segment.ValueKind == JsonValueKind.Object
+                        && segment.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String
+                        && text.GetString() is { Length: > 0 } line)
+                        texts.Add(line);
+                }
+            }
+
+            if (texts.Count == 0 && answer.TryGetProperty("text", out var whole) && whole.ValueKind == JsonValueKind.String
+                && whole.GetString() is { Length: > 0 } all)
+                texts.Add(all);
+        }
+        catch (JsonException)
+        {
+            // not an answer file: it adds no line
+        }
+
+        return texts;
     }
 }

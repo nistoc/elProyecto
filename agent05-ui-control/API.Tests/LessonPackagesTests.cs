@@ -497,23 +497,123 @@ public sealed class LessonPackagesTests : IDisposable
     }
 
     [Fact]
-    public void BestTranscript_is_the_newest_refined_one_else_the_newest_combined_one()
+    public void The_text_of_a_job_is_its_newest_combined_transcript_and_its_newest_refined_one()
     {
         var job = Path.Combine(_workspace, "jobwithfiles1");
         var t0 = new DateTime(2026, 10, 24, 8, 0, 0, DateTimeKind.Utc);
         void PutAt(string name, int minutes) =>
             File.SetLastWriteTimeUtc(Put(_workspace, "jobwithfiles1/" + name, "- 1.00 speaker_0: \"hola\""), t0.AddMinutes(minutes));
 
-        Assert.Null(LessonWordIndex.BestTranscript(job));
+        Assert.Null(LessonWordIndex.TextOf(job));
 
         PutAt("transcript.md", 0);
         PutAt("transcript_dialogue_20261024.md", 5);
-        Assert.Equal("transcript_dialogue_20261024.md", LessonWordIndex.BestTranscript(job)!.Name);
+        Put(_workspace, "jobwithfiles1/chunks_json/audio_part_000.json", "{}");
+        var combinedOnly = LessonWordIndex.TextOf(job)!;
+        Assert.Equal("transcript_dialogue_20261024.md", combinedOnly.Raw!.Name);
+        Assert.Null(combinedOnly.Refined);
+        Assert.Empty(combinedOnly.Answers);
 
         PutAt("transcript_fixed_1.md", 1);
         PutAt("transcript_fixed_2.md", 2);
         PutAt("transcript_fixed_2.prompt.md", 9);
-        Assert.Equal("transcript_fixed_2.md", LessonWordIndex.BestTranscript(job)!.Name);
+        var both = LessonWordIndex.TextOf(job)!;
+        Assert.Equal("transcript_dialogue_20261024.md", both.Raw!.Name);
+        Assert.Equal("transcript_fixed_2.md", both.Refined!.Name);
+        Assert.Empty(both.Answers);
+    }
+
+    [Fact]
+    public void A_job_that_kept_only_a_refined_transcript_is_checked_against_its_chunk_answers()
+    {
+        Put(_workspace, "jobrefinedonly/transcript_fixed_1.md", "- 1.00 speaker_0: \"hola\"");
+        Put(_workspace, "jobrefinedonly/chunks_json/audio_part_001.json", "{}");
+        Put(_workspace, "jobrefinedonly/chunks_json/audio_part_000.json", "{}");
+
+        var text = LessonWordIndex.TextOf(Path.Combine(_workspace, "jobrefinedonly"))!;
+
+        Assert.Null(text.Raw);
+        Assert.Equal("transcript_fixed_1.md", text.Refined!.Name);
+        Assert.Equal(new[] { "audio_part_000.json", "audio_part_001.json" }, text.Answers.Select(f => f.Name));
+    }
+
+    [Fact]
+    public async Task Of_a_refined_transcript_only_the_words_the_raw_one_has_are_counted()
+    {
+        Put(_workspace, "jobearlier01/audio1844990001.m4a", "audio of the lesson before");
+        Put(_workspace, "jobearlier01/transcript.md",
+            "- 1.00 speaker_0: \"Грасиас, эста бьен.\"\n- 4.00 speaker_1: \"Не могу использовать окно.\"\n- 7.00 speaker_0: \"El tejado.\"\n");
+        Put(_workspace, "jobearlier01/transcript_fixed_1.md",
+            "- 1.00 speaker_0: \"Gracias, está bien.\"\n- 4.00 speaker_1: \"No puedo utilizar la ventana.\"\n- 7.00 speaker_0: \"El tejado.\"\n");
+        var parts = Create();
+        var index = new LessonWordIndex(parts.Catalog, parts.Jobs, parts.Workspace, NullLogger<LessonWordIndex>.Instance);
+
+        var lesson = Assert.Single((await index.ReadAsync()).Lessons);
+
+        // Spanish the recogniser wrote in Cyrillic and the refine respelled: said.
+        Assert.Contains("gracias", lesson.Forms);
+        Assert.Contains("bien", lesson.Forms);
+        Assert.Contains("tejado", lesson.Forms);
+        // Russian speech the refine wrote in Spanish: not said.
+        Assert.DoesNotContain("puedo", lesson.Forms);
+        Assert.DoesNotContain("utilizar", lesson.Forms);
+        Assert.DoesNotContain("ventana", lesson.Forms);
+    }
+
+    [Fact]
+    public async Task The_chunk_answers_stand_in_for_a_raw_transcript_that_was_not_kept()
+    {
+        Put(_workspace, "jobearlier01/audio1844990001.m4a", "audio of the lesson before");
+        Put(_workspace, "jobearlier01/transcript_fixed_1.md",
+            "- 1.00 speaker_0: \"Muchas gracias.\"\n- 4.00 speaker_1: \"No puedo utilizar la ventana.\"\n");
+        Put(_workspace, "jobearlier01/chunks_json/audio_part_000.json",
+            """{ "segments": [ { "text": "Мучас грасиас.", "start": 1.0, "end": 2.0 }, { "text": "Не могу использовать окно.", "start": 4.0, "end": 6.0 } ] }""");
+        var parts = Create();
+        var index = new LessonWordIndex(parts.Catalog, parts.Jobs, parts.Workspace, NullLogger<LessonWordIndex>.Instance);
+
+        var lesson = Assert.Single((await index.ReadAsync()).Lessons);
+
+        Assert.Contains("muchas", lesson.Forms);
+        Assert.Contains("gracias", lesson.Forms);
+        Assert.DoesNotContain("utilizar", lesson.Forms);
+        Assert.DoesNotContain("ventana", lesson.Forms);
+    }
+
+    [Fact]
+    public async Task A_lesson_no_job_transcribed_is_read_from_the_answer_files_of_its_day_folder()
+    {
+        // A day of flat recordings, before the pipeline: the answer of another service lies next to the audio.
+        Put(_recordings, "2025.09.03/Voice 250903_190328.m4a", "old audio");
+        Put(_recordings, "2025.09.03/Voice 250903_190328.m4a.json",
+            """{ "language_code": null, "segments": [ { "text": "Hoy hablamos del tejado.", "start_time": 1.0, "end_time": 3.0, "words": [] }, { "text": "Да, хорошо.", "start_time": 3.5, "end_time": 4.0, "words": [] } ] }""");
+        Put(_recordings, "2025.09.03/2025-09-03 response.json", """{ "chunks": [ { "response": { "text": "chimenea" } } ] }""");
+        Put(_recordings, "2025.09.03/notes.json", "[1, 2, 3]");
+        Put(_recordings, "2025.09.03/obsidian/media/data.json", """{ "segments": [ { "text": "ventanal" } ] }""");
+        var parts = Create();
+        var index = new LessonWordIndex(parts.Catalog, parts.Jobs, parts.Workspace, NullLogger<LessonWordIndex>.Instance);
+
+        var lesson = Assert.Single((await index.ReadAsync()).Lessons);
+
+        Assert.Equal("2025-09-03", lesson.Date);
+        Assert.Contains("hablamos", lesson.Forms);
+        Assert.Contains("tejado", lesson.Forms);
+        Assert.DoesNotContain("chimenea", lesson.Forms);
+        Assert.DoesNotContain("ventanal", lesson.Forms);
+    }
+
+    [Fact]
+    public async Task The_answer_files_of_a_day_folder_are_not_read_when_a_job_transcribed_one_of_its_recordings()
+    {
+        Put(_recordings, "2026.10.16/old answer.json", """{ "segments": [ { "text": "Una chimenea." } ] }""");
+        Put(_workspace, "jobearlier01/audio1844990001.m4a", "audio of the lesson before");
+        Put(_workspace, "jobearlier01/transcript.md", "- 1.00 speaker_0: \"El tejado.\"\n");
+        var parts = Create();
+        var index = new LessonWordIndex(parts.Catalog, parts.Jobs, parts.Workspace, NullLogger<LessonWordIndex>.Instance);
+
+        var lesson = Assert.Single((await index.ReadAsync()).Lessons);
+
+        Assert.Contains("tejado", lesson.Forms);
+        Assert.DoesNotContain("chimenea", lesson.Forms);
     }
 
     [Fact]

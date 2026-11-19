@@ -54,13 +54,13 @@ These are requirements, not ideas. A change that breaks one of them needs the ow
 | The owner's edits | `<packages folder>/<YYYY-MM-DD>/marks.json` — written by agent05 only |
 | Packages folder | config key `LessonPackages:RootPath` of agent05; without it the folder `lesson-packages` **next to** the jobs folder |
 | Model of the files, the view, the edit rule | `agent05-ui-control/API/Features/LessonPackages/Application/` — `LessonPackage.cs`, `LessonPackageViewBuilder.cs` |
-| "Was this word said before" | `…/Application/LessonWordRules.cs` (the rule), `…/Infrastructure/LessonWordIndex.cs` (which transcripts are read, the cache) |
+| "Was this word said before" | `…/Application/LessonWordRules.cs` (the rule), `…/Application/SaidText.cs` (what of a refined transcript was really said), `…/Infrastructure/LessonWordIndex.cs` (which transcripts and answer files are read, the cache) |
 | Reading and writing the files | `…/Infrastructure/FileLessonPackageStore.cs` |
 | HTTP | `agent05-ui-control/API/Controllers/LessonPackagesController.cs`; the lessons list tells which lesson has a package (`SessionsController.List`) |
 | Screen | `agent05-ui-control/UI/src/components/` — `LessonPackageView.tsx` (header, tabs, grammar, topics, examples, player), `LessonPackageWords.tsx` (the words table), `EditableText.tsx` (a text edited in place), `LessonPageLinks.tsx` (the button) |
 | Rows, filter, order, widths | `agent05-ui-control/UI/src/utils/lessonPackage.ts` |
 | Words of the UI | `agent05-ui-control/UI/src/contexts/I18nContext.tsx`, keys `lessonPackage*` and `pkg*`, three languages |
-| Tests | `agent05-ui-control/API.Tests/` — `LessonWordRulesTests.cs`, `LessonPackageViewBuilderTests.cs`, `LessonPackagesTests.cs`; `agent05-ui-control/UI/src/utils/lessonPackage.spec.ts` |
+| Tests | `agent05-ui-control/API.Tests/` — `LessonWordRulesTests.cs`, `SaidTextTests.cs`, `LessonPackageViewBuilderTests.cs`, `LessonPackagesTests.cs`; `agent05-ui-control/UI/src/utils/lessonPackage.spec.ts` |
 | Builder | not in the repository yet — see [BUILDER.md](BUILDER.md), "State" |
 
 ## Rules that must hold
@@ -72,8 +72,10 @@ These are requirements, not ideas. A change that breaks one of them needs the ow
    every item whose text did not change; the others are counted as stale and stay in the file. Do not make
    ids of positions in a list — also not for the examples inside a grammar theme, and not for two items of
    one name (they are told apart by the rest of their text, see CONTRACT.md).
-3. **"Said before" is never stored.** It is counted from the transcripts in the job folders each time
-   (cached in memory by the size and write time of the files).
+3. **"Said before" is never stored.** It is counted each time from the transcripts in the job folders and,
+   for a lesson no job transcribed, from the answer files in its day folder (cached in memory by the size
+   and write time of the files). Only what was said counts: a word a refine wrote in place of a Russian
+   one is not a word of the lesson (CONTRACT.md, "How they are counted").
 4. **The recordings folder is only read.** Audio is streamed from it, nothing is written there.
 5. **The packages folder is not inside the jobs folder**: every folder in the jobs folder is listed as a job.
 6. **A file that cannot be read is never written over** (the request gets 409 and the file stays), and
@@ -92,7 +94,7 @@ These are requirements, not ideas. A change that breaks one of them needs the ow
 
 ```bash
 # agent05 API tests (from agent05-ui-control); add --artifacts-path <temp folder> while the API is running
-dotnet test API.Tests --filter "FullyQualifiedName~LessonPackage|FullyQualifiedName~LessonWordRules"
+dotnet test API.Tests --filter "FullyQualifiedName~LessonPackage|FullyQualifiedName~LessonWordRules|FullyQualifiedName~SaidText"
 
 # UI (from agent05-ui-control/UI)
 npm run test -- lessonPackage
@@ -101,10 +103,10 @@ npx tsc -b && npm run lint
 
 Then look at the screen: start agent05 and the UI (root `CLAUDE.md`, "Commands"), open a lesson that has a
 package, and check by hand what the tests cannot — the table at full width and in a narrow window, an edit
-saved and put back, a phrase played. The first read after agent05 starts is slow — about 20 s with 36
-lessons: nearly all of it is the scan of the recordings folder and the tying of the jobs to its tracks (the
-same work the lessons list does), the transcripts themselves are read in about 2 s, four lessons at a time
-(agent05 logs the time). The next reads take a fraction of a second.
+saved and put back, a phrase played. The first read after agent05 starts is slow — some tens of seconds
+with 47 lessons: nearly all of it is the scan of the recordings folder and the tying of the jobs to its
+tracks (the same work the lessons list does), the texts themselves are read in about 4 s, four lessons at a
+time (agent05 logs the time). The next reads take a fraction of a second.
 
 ## How to change things
 

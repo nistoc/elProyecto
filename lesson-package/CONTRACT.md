@@ -149,8 +149,19 @@ How they are counted:
   `+` is looked for by its first word. Small words (articles, prepositions, pronouns) and placeholder words
   (`gerundio`, `algo`…) are not looked for; what stands in brackets is skipped.
 - The earlier lessons are the lessons of the recordings folder with a date before this one that have a
-  transcript: per recording the newest dialogue job, else the newest run with a transcript of each track; of a
-  job the newest `transcript_fixed*.md`, else the newest `transcript*.md`.
+  text: per recording the newest dialogue job, else the newest run with a transcript of each track.
+- The text of a job is what was said (`SaidText`), not its refined transcript as it is. An old refine
+  respelled Spanish the recogniser wrote in Cyrillic — that word was said — and also wrote Russian lines in
+  Spanish — those words were not. So the lines of the newest raw `transcript*.md` are taken whole, and of
+  the newest `transcript_fixed*.md` only the Latin-letter words the raw text of the same job has: in the
+  same letters, or with the same sound in either alphabet (the sound rule of the refiner's
+  `RespellingGuard.SoundForm`, copied — a change of one is a change of both). A word that is not kept
+  breaks its line, so no phrase is found across it. A job that kept no raw transcript is checked against
+  the segments of its `chunks_json/*.json`; with neither, the refined transcript is taken as it is.
+  Known leak: a Russian word that sounds like a Spanish one cannot be told from it and is kept.
+- A lesson of a day folder that no job transcribed is read from the answer files of another recognition
+  service lying in that day folder: every top-level `*.json` but `*response.json`, the `text` of its
+  `segments`. Once a job has transcribed one of the lesson's recordings, these files are not read.
 
 ## API (agent05, names in camel case)
 
