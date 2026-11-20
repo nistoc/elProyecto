@@ -274,6 +274,29 @@ public sealed class LessonPackagesTests : IDisposable
     }
 
     [Fact]
+    public async Task Words_gives_the_forms_of_the_lessons_before_the_date_oldest_first()
+    {
+        var words = new LessonsRead(
+            new[]
+            {
+                new LessonWords("2026-11-06", new[] { "El tejado es rojo." }),
+                new LessonWords("2026-10-16", new[] { "Abre las ventanitas del árbol." }),
+                new LessonWords("2026-11-13", new[] { "La chimenea." }),
+            },
+            new Dictionary<string, string>());
+        var controller = Create(words).Controller;
+
+        var answer = Assert.IsType<LessonFormsResponse>(
+            Assert.IsType<OkObjectResult>((await controller.Words("2026-11-13")).Result).Value);
+
+        Assert.Equal("2026-11-13", answer.Before);
+        Assert.Equal(new[] { "2026-10-16", "2026-11-06" }, answer.Lessons.Select(l => l.Date));
+        Assert.Equal(new[] { "abre", "arbol", "del", "las", "ventanitas" }, answer.Lessons[0].Forms);
+        Assert.IsType<BadRequestObjectResult>((await controller.Words("13.11.2026")).Result);
+        Assert.IsType<BadRequestObjectResult>((await controller.Words(null)).Result);
+    }
+
+    [Fact]
     public async Task Get_gives_the_package_with_its_words_counted_against_the_earlier_lessons()
     {
         PutPackage();

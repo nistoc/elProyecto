@@ -172,6 +172,8 @@ How they are counted:
 | `PUT /api/sessions/{date}/package/marks/{id}` | body `{ "fields"?: { name: text \| null }, "leftOut"?: bool }`; answers with the package as it reads now |
 | `DELETE /api/sessions/{date}/package/marks/{id}` | takes every edit off one item; answers with the package as it reads now |
 | `GET /api/sessions/tracks/audio?track=<track id>` | the audio file of a track of the recordings folder; a part of it can be asked for (HTTP range) |
+| `GET /api/sessions/{date}/text` | for the builder: every recording of the lesson, each line with its time, speaker and `role` (`teacher`, `student`, `other` or none) — agent05 README, «Текст урока с говорящими» |
+| `GET /api/sessions/words?before=YYYY-MM-DD` | for the builder: `{ before, lessons: [{ date, forms }] }` — the word forms of every earlier lesson, the ones "said before" is counted with |
 
 Errors: 400 — the date is not `YYYY-MM-DD`, the id is not an id, no `fields` and no `leftOut`, a field the
 item does not have, a text too long, the name of the item left empty; 404 — the lesson has no package, the

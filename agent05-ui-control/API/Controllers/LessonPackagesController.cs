@@ -129,6 +129,26 @@ public class LessonPackagesController : ControllerBase
     }
 
     /// <summary>
+    /// The word forms of every lesson before this date (lower case, no accents), oldest first — what a
+    /// package builder needs to tell the words a new lesson says for the first time. They are the forms the
+    /// screen counts "said before" with (<see cref="LessonWordRules.KnownForm"/>), so the builder and the
+    /// screen agree on which words are new.
+    /// </summary>
+    [HttpGet("api/sessions/words")]
+    public async Task<ActionResult<LessonFormsResponse>> Words([FromQuery] string? before, CancellationToken ct = default)
+    {
+        if (!LessonPageRules.TryDate(before, out var day))
+            return BadRequest(ProblemOf(400, "before is the date of a lesson, written YYYY-MM-DD."));
+        var read = await _words.ReadAsync(ct);
+        var lessons = read.Lessons
+            .Where(l => string.CompareOrdinal(l.Date, day) < 0)
+            .OrderBy(l => l.Date, StringComparer.Ordinal)
+            .Select(l => new LessonForms(l.Date, l.Forms.OrderBy(f => f, StringComparer.Ordinal).ToList()))
+            .ToList();
+        return Ok(new LessonFormsResponse(day, lessons));
+    }
+
+    /// <summary>
     /// The audio of one track of the recordings folder, for playing a phrase of a package from its time.
     /// The file is only read, and a part of it can be asked for (HTTP range), so playing starts at once
     /// anywhere in a long recording.
@@ -170,6 +190,12 @@ public class LessonPackagesController : ControllerBase
         Detail = detail,
     };
 }
+
+/// <summary>The word forms of one lesson.</summary>
+public sealed record LessonForms(string Date, IReadOnlyList<string> Forms);
+
+/// <summary>The answer of <c>GET /api/sessions/words</c>: the lessons before <see cref="Before"/>, oldest first.</summary>
+public sealed record LessonFormsResponse(string Before, IReadOnlyList<LessonForms> Lessons);
 
 public sealed class LessonMarkBody
 {
