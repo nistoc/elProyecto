@@ -261,6 +261,70 @@ public sealed class LessonTextTests : IDisposable
         Assert.True(recording.OverlayWordsMatched > recording.OverlayWords / 2);
     }
 
+    /// <summary>
+    /// The same day with no answer of another service: the file was transcribed by the plain model (our text,
+    /// Spanish in Latin letters) and by the diarize model (speakers, Spanish in Cyrillic), newest last.
+    /// </summary>
+    private void PutLessonWithDiarizeRun()
+    {
+        var audio = Path.Combine(_recordings, Day, Audio);
+        File.WriteAllText(audio, "made-up audio bytes", new UTF8Encoding(false));
+
+        var plain = Path.Combine(_workspace, "job-plain-1");
+        Directory.CreateDirectory(plain);
+        File.Copy(audio, Path.Combine(plain, Audio));
+        File.WriteAllText(Path.Combine(plain, "run_settings.json"), """{ "schema_version": 1, "model": "gpt-transcribe" }""");
+        File.WriteAllText(
+            Path.Combine(plain, "transcript.md"),
+            "- 10.0 speaker_0: Hola, ¿qué tal? Bien, грасиас, y tú?\n- 20.0 speaker_0: Muy bien. Hoy hablamos del pasado y del futuro de los verbos.\n",
+            new UTF8Encoding(false));
+
+        var diarize = Path.Combine(_workspace, "job-diarize-1");
+        Directory.CreateDirectory(Path.Combine(diarize, "timeline"));
+        Directory.CreateDirectory(Path.Combine(diarize, "chunks_json"));
+        File.Copy(audio, Path.Combine(diarize, Audio));
+        File.WriteAllText(Path.Combine(diarize, "run_settings.json"), """{ "schema_version": 1, "model": "gpt-4o-transcribe-diarize" }""");
+        File.WriteAllText(
+            Path.Combine(diarize, "transcript.md"),
+            "- 10.0 speaker_0: Ола, ке таль?\n- 11.6 speaker_1: Бьен, грасиас, и ту?\n- 20.0 speaker_0: Муй бьен. Ой абламос дель пасадо и дель футуро де лос вербос.\n",
+            new UTF8Encoding(false));
+        File.WriteAllText(
+            Path.Combine(diarize, "timeline", "chunks.json"),
+            """{ "schema_version": 1, "chunks": [ { "index": 0, "file": "voice_part_000.m4a", "offset_sec": 0, "emit_guard_sec": 0 } ] }""");
+        File.WriteAllText(
+            Path.Combine(diarize, "chunks_json", "voice_part_000.json"),
+            """
+            { "segments": [
+              { "start": 10.0, "end": 11.2, "speaker": "A", "text": "Ола, ке таль?" },
+              { "start": 11.6, "end": 13.0, "speaker": "B", "text": "Бьен, грасиас, и ту?" },
+              { "start": 20.0, "end": 23.6, "speaker": "A", "text": "Муй бьен. Ой абламос дель пасадо и дель футуро де лос вербос." }
+            ] }
+            """,
+            new UTF8Encoding(false));
+    }
+
+    [Fact]
+    public async Task A_mixed_recording_takes_its_text_from_the_plain_run_and_its_speakers_from_the_diarize_run()
+    {
+        PutLessonWithDiarizeRun();
+
+        var text = Body(await Controller().Get("2025-08-06"));
+
+        var recording = Assert.Single(text.Recordings);
+        Assert.Equal(LessonSpeakersFrom.ModelOverlay, recording.SpeakersFrom);
+        Assert.Equal(new[] { "job-plain-1", "job-diarize-1" }, recording.JobIds);
+        // our Latin text, cut where the diarize model heard the other voice
+        Assert.Equal(
+            new[] { ("speaker_1", "Hola, ¿qué tal?"), ("speaker_2", "Bien, грасиас, y tú?") },
+            recording.Lines.Take(2).Select(l => (l.Speaker!, l.Text)));
+        Assert.Equal("speaker_1", recording.Lines[2].Speaker);
+        Assert.StartsWith("Muy bien.", recording.Lines[2].Text);
+        Assert.Equal(LessonRole.Teacher, recording.Speakers.Single(s => s.Id == "speaker_1").Role);
+        Assert.Equal(LessonRole.Student, recording.Speakers.Single(s => s.Id == "speaker_2").Role);
+        Assert.Equal(new SpeakerTies(1, 0, 0), recording.SpeakerTies);
+        Assert.True(recording.OverlayWordsMatched > recording.OverlayWords / 2);
+    }
+
     [Fact]
     public async Task A_role_a_person_gives_wins_and_the_other_speaker_takes_the_opposite_one()
     {

@@ -22,6 +22,12 @@ public static class LessonSpeakersFrom
     /// <summary>The model that transcribed the mixed recording named them (<c>speaker_N</c>).</summary>
     public const string Model = "model";
 
+    /// <summary>
+    /// The text is of the plain-text model, the speakers of a run of the diarize model on the same file, tied
+    /// across its chunks (<see cref="DiarizedSpeakers"/>) and laid onto our lines (<see cref="SpeakerOverlay"/>).
+    /// </summary>
+    public const string ModelOverlay = "model_overlay";
+
     /// <summary>Another recognition service named them; our lines were cut by its words (<see cref="SpeakerOverlay"/>).</summary>
     public const string OtherService = "other_service";
 
@@ -67,7 +73,7 @@ public sealed record LessonTextRecording(
     IReadOnlyList<LessonTextSpeaker> Speakers,
     IReadOnlyList<LessonTextLine> Lines)
 {
-    /// <summary>When the speakers were laid on from another service: our words of the recording.</summary>
+    /// <summary>When the speakers were laid on from another answer: our words of the recording.</summary>
     public int? OverlayWords { get; init; }
 
     /// <summary>
@@ -75,6 +81,9 @@ public sealed record LessonTextRecording(
     /// speaker of the heard word nearest to where they stand. The share tells how much the cut can be trusted.
     /// </summary>
     public int? OverlayWordsMatched { get; init; }
+
+    /// <summary>With <see cref="LessonSpeakersFrom.ModelOverlay"/>: how the speakers were tied across the chunks of the run.</summary>
+    public SpeakerTies? SpeakerTies { get; init; }
 }
 
 /// <summary>The text of one lesson: its recordings in the order they were made, each with its lines in time order.</summary>

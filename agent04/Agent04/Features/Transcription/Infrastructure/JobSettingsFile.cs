@@ -23,11 +23,18 @@ public static class JobSettingsFile
     public const double MinSilenceKeepSec = 0.05;
     public const double MaxSilenceKeepSec = 5.0;
 
+    /// <summary>
+    /// The longest stretch two neighbouring chunks may share. A longer one lets the speakers of a diarize model,
+    /// named anew in every chunk, be tied across chunks by the words both chunks heard (agent05 does it).
+    /// </summary>
+    public const double MaxChunkOverlapSec = 30.0;
+
     public static readonly IReadOnlyList<string> AllowedKeys = new[]
     {
         "silence_compress_enabled",
         "silence_keep_sec",
         "model",
+        "chunk_overlap_sec",
     };
 
     private static readonly Regex ModelId = new(@"^[A-Za-z0-9][A-Za-z0-9._:\-]{0,79}$", RegexOptions.CultureInvariant);
@@ -127,6 +134,21 @@ public static class JobSettingsFile
                         }
 
                         result[p.Name] = keep;
+                        break;
+
+                    case "chunk_overlap_sec":
+                        if (p.Value.ValueKind != JsonValueKind.Number
+                            || !p.Value.TryGetDouble(out var overlap)
+                            || double.IsNaN(overlap)
+                            || overlap < 0
+                            || overlap > MaxChunkOverlapSec)
+                        {
+                            throw new InvalidDataException(string.Create(
+                                CultureInfo.InvariantCulture,
+                                $"{FileName}: 'chunk_overlap_sec' must be a number from 0 to {MaxChunkOverlapSec}"));
+                        }
+
+                        result[p.Name] = overlap;
                         break;
 
                     case "model":

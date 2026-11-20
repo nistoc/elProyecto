@@ -19,6 +19,12 @@ public static class JobSettingsDocument
     public const double MinSilenceKeepSec = 0.05;
     public const double MaxSilenceKeepSec = 5.0;
 
+    /// <summary>
+    /// The longest stretch two neighbouring chunks may share (agent04 <c>JobSettingsFile.MaxChunkOverlapSec</c>).
+    /// A longer one lets the speakers a diarize model names anew in every chunk be tied across chunks.
+    /// </summary>
+    public const double MaxChunkOverlapSec = 30.0;
+
     private static readonly Regex ModelId = new(@"^[A-Za-z0-9][A-Za-z0-9._:\-]{0,79}$", RegexOptions.CultureInvariant);
 
     /// <summary>True for a text that may stand as <c>settings.model</c>.</summary>
@@ -101,6 +107,22 @@ public static class JobSettingsDocument
                         transcription[p.Name] = keep;
                         break;
 
+                    case "chunk_overlap_sec":
+                        if (p.Value.ValueKind != JsonValueKind.Number
+                            || !p.Value.TryGetDouble(out var overlap)
+                            || double.IsNaN(overlap)
+                            || overlap < 0
+                            || overlap > MaxChunkOverlapSec)
+                        {
+                            error = string.Create(
+                                CultureInfo.InvariantCulture,
+                                $"settings.chunk_overlap_sec must be a number from 0 to {MaxChunkOverlapSec}.");
+                            return false;
+                        }
+
+                        transcription[p.Name] = overlap;
+                        break;
+
                     case "model":
                         var model = p.Value.ValueKind == JsonValueKind.String ? (p.Value.GetString() ?? "").Trim() : "";
                         if (!ModelId.IsMatch(model))
@@ -113,7 +135,7 @@ public static class JobSettingsDocument
                         break;
 
                     default:
-                        error = $"settings.{p.Name} is not a setting of a job (allowed: silence_compress_enabled, silence_keep_sec, model).";
+                        error = $"settings.{p.Name} is not a setting of a job (allowed: silence_compress_enabled, silence_keep_sec, model, chunk_overlap_sec).";
                         return false;
                 }
             }

@@ -77,6 +77,59 @@ public static class JobTimedLinesReader
     }
 
     /// <summary>
+    /// The lines of a job transcribed by a model that tells speakers apart, each with the speaker as the model
+    /// named it in its chunk (<see cref="DiarizedSegment"/>). Unlike <see cref="Read"/>, the lines that repeat
+    /// the previous chunk are kept and marked: the same speech heard by two chunks ties their speakers. A chunk
+    /// the server refused whole and that was asked in parts (block <c>auto_split</c> of its answer) gives one
+    /// unit per part, since every part named its speakers on its own. Null when <see cref="Read"/> is null, and
+    /// when no line names a speaker.
+    /// </summary>
+    public static IReadOnlyList<DiarizedSegment>? ReadDiarized(string jobDirectoryPath)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(jobDirectoryPath))
+                return null;
+            var jsonDir = Path.Combine(jobDirectoryPath, "chunks_json");
+            if (!Directory.Exists(jsonDir))
+                return null;
+
+            var places = LoadChunkPlaces(jobDirectoryPath);
+            if (places == null)
+                return null;
+
+            var mapPath = Path.Combine(jobDirectoryPath, "timeline", "speech_map.json");
+            RecordingTimeMap? map = null;
+            if (File.Exists(mapPath))
+            {
+                map = RecordingTimeMap.TryLoad(mapPath);
+                if (map == null)
+                    return null;
+            }
+            else if (WasCompressed(jobDirectoryPath))
+            {
+                return null;
+            }
+
+            var segments = new List<DiarizedSegment>();
+            var unit = 0;
+            foreach (var path in Directory.EnumerateFiles(jsonDir, "*.json").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+            {
+                var chunkName = Path.GetFileNameWithoutExtension(path);
+                if (!places.TryGetValue(chunkName, out var place) || JobLanguageShareReader.HasMergedSplit(jobDirectoryPath, chunkName))
+                    return null;
+                unit = AddDiarizedChunk(segments, path, place, map, unit);
+            }
+
+            return segments.Count == 0 ? null : segments;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// <c>timeline/chunks.json</c> by chunk name (the audio file name without its extension); null when the job
     /// has no such record.
     /// </summary>
@@ -161,6 +214,75 @@ public static class JobTimedLinesReader
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
             // a chunk answer that cannot be read gives no lines
+        }
+    }
+
+    /// <returns>The number of the unit after the chunk's last one.</returns>
+    private static int AddDiarizedChunk(List<DiarizedSegment> segments, string path, ChunkPlace place, RecordingTimeMap? map, int firstUnit)
+    {
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var doc = JsonDocument.Parse(stream);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return firstUnit + 1;
+
+            // Parts of a chunk the server refused whole: where each begins inside the chunk.
+            var partStarts = new List<double>();
+            if (root.TryGetProperty("auto_split", out var split) && split.ValueKind == JsonValueKind.Object
+                && split.TryGetProperty("parts", out var parts) && parts.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var part in parts.EnumerateArray())
+                {
+                    if (part.ValueKind == JsonValueKind.Object && Number(part, "start_sec") is { } partStart)
+                        partStarts.Add(partStart);
+                }
+
+                partStarts.Sort();
+            }
+
+            var units = Math.Max(1, partStarts.Count);
+            if (!root.TryGetProperty("segments", out var list) || list.ValueKind != JsonValueKind.Array)
+                return firstUnit + units;
+
+            foreach (var segment in list.EnumerateArray())
+            {
+                if (segment.ValueKind != JsonValueKind.Object)
+                    continue;
+                var text = segment.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
+                var speaker = segment.TryGetProperty("speaker", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString()?.Trim() : null;
+                var start = Number(segment, "start");
+                var end = Number(segment, "end");
+                if (string.IsNullOrEmpty(speaker) || start == null || end == null || LanguageShare.Classify(text) == LineLanguage.None)
+                    continue;
+                if (IsWithoutTime(start.Value, end.Value))
+                    continue;
+
+                var part = 0;
+                while (part + 1 < partStarts.Count && start.Value + Eps >= partStarts[part + 1])
+                    part++;
+
+                var from = start.Value + place.OffsetSec;
+                var to = Math.Max(from, end.Value + place.OffsetSec);
+                if (map != null)
+                {
+                    var sourceFrom = map.ToSourceSegmentStart(from, to);
+                    to = Math.Max(sourceFrom, map.ToSourceEnd(to));
+                    from = sourceFrom;
+                }
+
+                segments.Add(new DiarizedSegment(
+                    firstUnit + part, from, to, speaker, text!.Trim(),
+                    IsInsideGuard(start.Value, end.Value, place.EmitGuardSec)));
+            }
+
+            return firstUnit + units;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            // a chunk answer that cannot be read gives no lines
+            return firstUnit + 1;
         }
     }
 

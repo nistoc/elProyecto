@@ -1,5 +1,6 @@
 using System.Text;
 using XtractManager.Features.Jobs.Application;
+using XtractManager.Features.Jobs.Infrastructure;
 using XtractManager.Features.LessonPackages.Infrastructure;
 using XtractManager.Features.LessonText.Application;
 using XtractManager.Features.Sessions.Application;
@@ -16,6 +17,9 @@ namespace XtractManager.Features.LessonText.Infrastructure;
 /// <list type="bullet">
 /// <item>a dialogue and participant tracks: the name of the participant;</item>
 /// <item>a mixed file the model told speakers in (<c>speaker_0</c>, <c>speaker_1</c>…): as the model told them;</item>
+/// <item>a mixed file transcribed by the plain-text model and also by the diarize model: the text of the first,
+/// the speakers of the second, tied across its chunks (<see cref="DiarizedSpeakers"/>) and laid onto our lines
+/// (<see cref="SpeakerOverlay"/>) — <see cref="TrackTextRuns"/> tells the runs apart;</item>
 /// <item>a mixed file transcribed without speakers: those of the other service's answer to the same file,
 /// laid onto our lines by time and sound (<see cref="SpeakerOverlay"/>), a line cut where the speaker changes;</item>
 /// </list>
@@ -43,6 +47,8 @@ public sealed class LessonTextReader : ILessonTextReader
     {
         /// <summary>Of an overlay: our words, and how many of them were found among the heard ones.</summary>
         public (int Words, int Matched)? Overlay { get; init; }
+
+        public SpeakerTies? Ties { get; init; }
     }
 
     public async Task<LessonTextDocument?> ReadAsync(string date, CancellationToken ct = default)
@@ -120,21 +126,28 @@ public sealed class LessonTextReader : ILessonTextReader
                     entries.Select(e => new RawLine(e.TimeSec, Plain(e.Speaker), e.Body)).ToList());
             }
 
+            foreach (var source in TrackTextRuns.SpeakerSources(mixed.Runs, text.Run))
+            {
+                var directory = _workspace.GetJobDirectoryPath(source.JobId);
+                if (JobTimedLinesReader.ReadDiarized(directory) is not { } segments
+                    || LessonWordIndex.TextOf(directory)?.Raw is not { } sourceRaw)
+                    continue;
+                var tied = DiarizedSpeakers.Tie(segments);
+                if (tied.Words.Count == 0)
+                    continue;
+                var (overlaid, ourWords, found) = Overlay(entries, tied.Words);
+                return new Read(
+                    LessonTextSource.Tracks, new[] { text.JobId, source.JobId }, new[] { text.Raw.Name, sourceRaw.Name },
+                    LessonSpeakersFrom.ModelOverlay, overlaid)
+                {
+                    Overlay = (ourWords, found),
+                    Ties = tied.Ties,
+                };
+            }
+
             if (answerFile != null && OtherServiceAnswer.TryRead(answerFile) is { } answer)
             {
-                var lines = new List<RawLine>();
-                int words = 0, matched = 0;
-                for (var i = 0; i < entries.Count; i++)
-                {
-                    double? next = i + 1 < entries.Count ? entries[i + 1].TimeSec : null;
-                    foreach (var part in SpeakerOverlay.Split(entries[i].Body, entries[i].TimeSec, next, answer.Words))
-                    {
-                        lines.Add(new RawLine(part.Start, part.Speaker, part.Text));
-                        words += part.Words;
-                        matched += part.Matched;
-                    }
-                }
-
+                var (lines, words, matched) = Overlay(entries, answer.Words);
                 return new Read(
                     LessonTextSource.Tracks, new[] { text.JobId }, new[] { text.Raw.Name, answerFile.Name },
                     LessonSpeakersFrom.OtherService, lines)
@@ -158,18 +171,37 @@ public sealed class LessonTextReader : ILessonTextReader
         return null;
     }
 
-    /// <summary>The newest run of the track that has a raw transcript.</summary>
-    private (string JobId, FileInfo Raw)? NewestText(RecordingTrack track)
+    /// <summary>The run of the track that gives its text (<see cref="TrackTextRuns.TextOrder"/>) and has a raw transcript.</summary>
+    private (string JobId, FileInfo Raw, TrackRun Run)? NewestText(RecordingTrack track)
     {
-        foreach (var run in track.Runs.Reverse())
+        foreach (var run in TrackTextRuns.TextOrder(track.Runs))
         {
             if (!run.HasTranscript)
                 continue;
             if (LessonWordIndex.TextOf(_workspace.GetJobDirectoryPath(run.JobId))?.Raw is { } raw)
-                return (run.JobId, raw);
+                return (run.JobId, raw, run);
         }
 
         return null;
+    }
+
+    /// <summary>Our lines cut where the speaker of the heard words changes, with our words and how many were found.</summary>
+    private static (List<RawLine> Lines, int Words, int Matched) Overlay(IReadOnlyList<TranscriptEntry> entries, IReadOnlyList<HeardWord> heard)
+    {
+        var lines = new List<RawLine>();
+        int words = 0, matched = 0;
+        for (var i = 0; i < entries.Count; i++)
+        {
+            double? next = i + 1 < entries.Count ? entries[i + 1].TimeSec : null;
+            foreach (var part in SpeakerOverlay.Split(entries[i].Body, entries[i].TimeSec, next, heard))
+            {
+                lines.Add(new RawLine(part.Start, part.Speaker, part.Text));
+                words += part.Words;
+                matched += part.Matched;
+            }
+        }
+
+        return (lines, words, matched);
     }
 
     private static IReadOnlyList<TranscriptEntry> Entries(FileInfo file) =>
@@ -240,6 +272,7 @@ public sealed class LessonTextReader : ILessonTextReader
         {
             OverlayWords = read.Overlay?.Words,
             OverlayWordsMatched = read.Overlay?.Matched,
+            SpeakerTies = read.Ties,
         };
     }
 }

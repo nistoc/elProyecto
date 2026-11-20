@@ -51,6 +51,17 @@ public sealed class JobSettingsTests : IDisposable
         Assert.Equal(3, transcription.EnumerateObject().Count());
     }
 
+    [Fact]
+    public void TryBuild_takes_a_longer_chunk_overlap()
+    {
+        Assert.True(JobSettingsDocument.TryBuild(
+            """{"model":"gpt-4o-transcribe-diarize","chunk_overlap_sec":12}""", out var json, out var error));
+
+        Assert.Null(error);
+        using var doc = JsonDocument.Parse(json!);
+        Assert.Equal(12.0, doc.RootElement.GetProperty("transcription").GetProperty("chunk_overlap_sec").GetDouble());
+    }
+
     [Theory]
     [InlineData("oops", "settings must be a JSON object")]
     [InlineData("[1]", "settings must be a JSON object")]
@@ -61,6 +72,8 @@ public sealed class JobSettingsTests : IDisposable
     [InlineData("""{"model":"a b"}""", "model must be a model id")]
     [InlineData("""{"openai_api_key":"x"}""", "settings.openai_api_key is not a setting of a job")]
     [InlineData("""{"target_chunk_mb":1}""", "settings.target_chunk_mb is not a setting of a job")]
+    [InlineData("""{"chunk_overlap_sec":31}""", "chunk_overlap_sec must be a number from 0 to 30")]
+    [InlineData("""{"chunk_overlap_sec":-0.5}""", "chunk_overlap_sec must be a number")]
     public void TryBuild_refuses_what_is_not_a_job_setting(string formValue, string expectedReason)
     {
         Assert.False(JobSettingsDocument.TryBuild(formValue, out var json, out var error));

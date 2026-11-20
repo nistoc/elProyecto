@@ -177,7 +177,7 @@ public sealed class LessonWordIndex : ILessonWordIndex
         if (period.Dialogues.Count > 0)
             return new[] { period.Dialogues.OrderBy(d => d.CreatedAt ?? "", StringComparer.Ordinal).Last().JobId };
         return period.Tracks
-            .Select(t => t.Runs.LastOrDefault(r => r.HasTranscript || r.HasRefined)?.JobId)
+            .Select(t => TrackTextRuns.TextOrder(t.Runs).FirstOrDefault(r => r.HasTranscript || r.HasRefined)?.JobId)
             .Where(id => !string.IsNullOrEmpty(id))
             .Select(id => id!)
             .ToList();

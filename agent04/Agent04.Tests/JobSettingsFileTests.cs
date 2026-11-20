@@ -53,6 +53,25 @@ public sealed class JobSettingsFileTests : IDisposable
     }
 
     [Fact]
+    public void Apply_takes_a_longer_chunk_overlap_for_one_job()
+    {
+        // Neighbouring chunks that share more speech let the speakers of a diarize model be tied across chunks.
+        WriteSettings("""{ "schema_version": 1, "transcription": { "model": "gpt-4o-transcribe-diarize", "chunk_overlap_sec": 12 } }""");
+        var shared = new TranscriptionConfig(new Dictionary<string, object?>
+        {
+            ["model"] = "gpt-4o-transcribe-diarize",
+            ["chunk_overlap_sec"] = 1.0,
+        });
+
+        var config = JobSettingsFile.Apply(shared, _jobDir);
+
+        Assert.Equal(12.0, config.Get<double?>("chunk_overlap_sec"));
+        Assert.Equal(12.0, config.ChunkOverlapSec);
+        Assert.Equal(1.0, shared.Get<double?>("chunk_overlap_sec"));
+        Assert.Equal(new[] { "model", "chunk_overlap_sec" }, JobSettingsFile.ReadKeys(_jobDir));
+    }
+
+    [Fact]
     public void Apply_gives_another_model_its_own_answer_format()
     {
         WriteSettings("""{ "transcription": { "model": "whisper-1" } }""");
@@ -102,6 +121,9 @@ public sealed class JobSettingsFileTests : IDisposable
     [InlineData("""{ "transcription": { "silence_compress_enabled": "yes" } }""", "'silence_compress_enabled' must be true or false")]
     [InlineData("""{ "transcription": { "model": "" } }""", "'model' must be a model id")]
     [InlineData("""{ "transcription": { "model": "whisper 1; rm" } }""", "'model' must be a model id")]
+    [InlineData("""{ "transcription": { "chunk_overlap_sec": -1 } }""", "'chunk_overlap_sec' must be a number from 0 to 30")]
+    [InlineData("""{ "transcription": { "chunk_overlap_sec": 31 } }""", "'chunk_overlap_sec' must be a number")]
+    [InlineData("""{ "transcription": { "chunk_overlap_sec": "12" } }""", "'chunk_overlap_sec' must be a number")]
     public void Apply_refuses_a_file_it_cannot_take_as_settings(string json, string expectedReason)
     {
         // A job must not silently run with other settings than the operator asked for.

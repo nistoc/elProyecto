@@ -163,7 +163,7 @@ public class SessionsController : ControllerBase
     /// <summary>
     /// Starts a job for one track: the file is copied into a new job folder and goes through the usual
     /// pipeline (the transcription is paid). Body:
-    /// <c>{ "track": string, "settings"?: { "silence_keep_sec"?, "silence_compress_enabled"?, "model"? } }</c>.
+    /// <c>{ "track": string, "settings"?: { "silence_keep_sec"?, "silence_compress_enabled"?, "model"?, "chunk_overlap_sec"? } }</c>.
     /// A participant track whose settings name no model gets <see cref="ParticipantTrackModelKey"/>.
     /// </summary>
     [HttpPost("api/sessions/runs")]
