@@ -61,7 +61,7 @@ These are requirements, not ideas. A change that breaks one of them needs the ow
 | Rows, filter, order, widths | `agent05-ui-control/UI/src/utils/lessonPackage.ts` |
 | Words of the UI | `agent05-ui-control/UI/src/contexts/I18nContext.tsx`, keys `lessonPackage*` and `pkg*`, three languages |
 | Tests | `agent05-ui-control/API.Tests/` — `LessonWordRulesTests.cs`, `SaidTextTests.cs`, `LessonPackageViewBuilderTests.cs`, `LessonPackagesTests.cs`; `agent05-ui-control/UI/src/utils/lessonPackage.spec.ts` |
-| Builder | not in the repository yet — see [BUILDER.md](BUILDER.md), "State" |
+| Builder | `lesson-package/builder/` — `python -m builder build <date>…` ([README](builder/README.md), how it builds: [BUILDER.md](BUILDER.md)); tests `builder/tests/` (`python -m unittest discover` from `lesson-package/`) |
 
 ## Rules that must hold
 
@@ -123,19 +123,18 @@ time (agent05 logs the time). The next reads take a fraction of a second.
   A prompt is checked only by a paid run — rule 7.
 - **A new kind of list**: its model and ids first (rule 2), then the screen.
 
-## State (2026-11-18) and what is next
+## State (2026-11-20) and what is next
 
 Done: the screen with four tabs; the words table (only new by default, lists, search, recording, sorting,
 columns dragged and remembered); every text edited in place and put back; a row taken out and returned; a
 phrase played from the recording; "said before" counted against all earlier lessons; four lessons have a
-package.
+package; the builder in the repository (`builder/`, see BUILDER.md, "State"), reading the lesson with its
+speakers from agent05.
 
 Not done, in the order it is worth doing:
 
-1. **The builder in the repository** — see BUILDER.md. Until then a package is built by scripts that lie
-   outside the repository and is converted to `package.json` by hand.
-2. **A package built from the screen** — a button at a lesson with the estimate shown before the start
+1. **A package built from the screen** — a button at a lesson with the estimate shown before the start
    (paid; rule 7).
-3. **The weak spots of the lists** named in BUILDER.md.
-4. **A corrected phrase written into the transcript** — rule 9.
-5. `DELETE …/package/marks/{id}` exists, the screen does not use it yet (it puts fields back one by one).
+2. **The weak spots of the lists** named in BUILDER.md.
+3. **A corrected phrase written into the transcript** — rule 9.
+4. `DELETE …/package/marks/{id}` exists, the screen does not use it yet (it puts fields back one by one).

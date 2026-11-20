@@ -4,17 +4,23 @@ The lists of `package.json` are built by models that read the transcripts of a l
 them that picks what to ask and checks what comes back. This file tells how; the text of every prompt is in
 [prompts/](prompts/).
 
-## State (2026-11-18)
+## State (2026-11-20)
 
-- The builder is a set of Python scripts kept **outside the repository**: they grew by trial on real
-  lessons and hold lines of lessons and names of people, and the repository is public. Their output is
-  converted to `package.json` by a script that also lies outside.
-- The prompts in [prompts/](prompts/) are the builder's own, word for word, but for the few examples that
+- The builder is in the repository: [builder/](builder/README.md), `python -m builder build <date>…` from
+  `lesson-package/` (Python 3, standard library only). It reads the prompts from [prompts/](prompts/), the
+  lesson from agent05 (`GET /api/sessions/{date}/text` — lines with their speaker and role; `GET
+  /api/sessions/words?before=` — the forms of the earlier lessons, by whole date) and writes `package.json`
+  itself; lessons of a group go in parallel. The models can be answered by OpenAI (paid, with `--max-usd`),
+  or by request files that another hand answers (`files`), pass by pass.
+- It was ported from the scripts that grew by trial on real lessons and stay outside the repository (they
+  hold lines of lessons and names). A replay of the stored answers of the three lessons of the third form
+  gives their `package.json` again, field for field, but for two fields of `stats` that were a probe of
+  one lesson and are no longer written (`caught`, `keep`). The notes below on "scripts" describe that code;
+  the passes and rules are the same.
+- The prompts in [prompts/](prompts/) are the old scripts' own, word for word, but for the few examples that
   were taken from real lessons — those are replaced by made-up ones — and for one phrase of
-  `03-word-in-doubt.md` written in other words of the same meaning («стоят под вопросом»). The scripts still
-  carry their own copy.
-- **Next step**: the builder moves into the repository — cleaned of lesson text and names, reading its
-  prompts from `prompts/`, writing `package.json` itself. From then on a prompt is changed in one place.
+  `03-word-in-doubt.md` written in other words of the same meaning («стоят под вопросом»). A replay does not
+  ask anything, so it does not see these changes.
 - Four lessons have a package: three built by the third form described here, one by the first form alone
   (its lists and a request "what is missing"; its words found by code have no `kind`, and its grammar is
   not merged into themes).
