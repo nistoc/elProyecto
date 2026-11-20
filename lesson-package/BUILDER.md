@@ -26,6 +26,17 @@ dialogue job), each line with its time and speaker. The builder numbers the line
 as `П` (teacher) or `У` (student); a line goes to a model as `[n] П: text`. Nothing is written into a job
 folder.
 
+Since 2026-11-20 agent05 gives this text for every kind of recording in one answer:
+`GET /api/sessions/{date}/text` (agent05 README, «Текст урока с говорящими»). Every line has its time, its
+speaker and a `role` — `teacher`, `student`, `other` or none. A lesson with participant tracks has the
+speakers of its tracks; a lesson recorded as one mixed file gets them from the model that told speakers, or
+from the answer of another recognition service lying next to the audio, laid onto our lines by the sound of
+the words. The role is the one a person gave (`PUT …/text/speakers`, file `speakers.json` next to the
+package), the one a track label names, or a guess by the volume of speech (the teacher says more: 33 of 33
+on role-labelled recordings). A builder reading it marks `teacher` as `П`, `student` as `У`, and a line
+without a role as `?` — such a line is still read, but a list does not count it as the teacher's
+explanation.
+
 ## The passes
 
 | # | Pass | Asked | Model | Prompt |

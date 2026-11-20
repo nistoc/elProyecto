@@ -40,6 +40,8 @@ builder.Services.AddSingleton<XtractManager.Features.Sessions.Application.IRecor
 builder.Services.AddSingleton<XtractManager.Features.Sessions.Application.ILessonPagesStore, XtractManager.Features.Sessions.Infrastructure.FileLessonPagesStore>();
 builder.Services.AddSingleton<XtractManager.Features.LessonPackages.Application.ILessonPackageStore, XtractManager.Features.LessonPackages.Infrastructure.FileLessonPackageStore>();
 builder.Services.AddSingleton<XtractManager.Features.LessonPackages.Application.ILessonWordIndex, XtractManager.Features.LessonPackages.Infrastructure.LessonWordIndex>();
+builder.Services.AddSingleton<XtractManager.Features.LessonText.Application.ILessonSpeakersStore, XtractManager.Features.LessonText.Infrastructure.FileLessonSpeakersStore>();
+builder.Services.AddSingleton<XtractManager.Features.LessonText.Application.ILessonTextReader, XtractManager.Features.LessonText.Infrastructure.LessonTextReader>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();

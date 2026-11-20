@@ -49,20 +49,23 @@ public sealed class FileLessonPackageStore : ILessonPackageStore
         ILogger<FileLessonPackageStore> logger)
     {
         _logger = logger;
+        _root = ResolveRoot(configuration, environment, workspace);
+        _logger.LogInformation("Lesson packages folder ({Key}): {Path}", RootPathKey, _root);
+    }
+
+    /// <summary>The packages folder: <see cref="RootPathKey"/>, or <see cref="DefaultFolderName"/> next to the jobs folder.</summary>
+    public static string ResolveRoot(IConfiguration configuration, IHostEnvironment environment, IJobWorkspace workspace)
+    {
         var raw = configuration[RootPathKey]?.Trim();
         if (string.IsNullOrEmpty(raw))
         {
             var jobs = Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspace.WorkspaceRootPath));
-            _root = Path.Combine(Path.GetDirectoryName(jobs) ?? jobs, DefaultFolderName);
-        }
-        else
-        {
-            _root = Path.IsPathRooted(raw)
-                ? Path.GetFullPath(raw)
-                : Path.GetFullPath(Path.Combine(environment.ContentRootPath ?? Directory.GetCurrentDirectory(), raw));
+            return Path.Combine(Path.GetDirectoryName(jobs) ?? jobs, DefaultFolderName);
         }
 
-        _logger.LogInformation("Lesson packages folder ({Key}): {Path}", RootPathKey, _root);
+        return Path.IsPathRooted(raw)
+            ? Path.GetFullPath(raw)
+            : Path.GetFullPath(Path.Combine(environment.ContentRootPath ?? Directory.GetCurrentDirectory(), raw));
     }
 
     public string RootPath => _root;
