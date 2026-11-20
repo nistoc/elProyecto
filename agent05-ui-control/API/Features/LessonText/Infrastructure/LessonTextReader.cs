@@ -18,10 +18,13 @@ namespace XtractManager.Features.LessonText.Infrastructure;
 /// <item>a dialogue and participant tracks: the name of the participant;</item>
 /// <item>a mixed file the model told speakers in (<c>speaker_0</c>, <c>speaker_1</c>…): as the model told them;</item>
 /// <item>a mixed file transcribed by the plain-text model and also by the diarize model: the text of the first,
-/// the speakers of the second, tied across its chunks (<see cref="DiarizedSpeakers"/>) and laid onto our lines
-/// (<see cref="SpeakerOverlay"/>) — <see cref="TrackTextRuns"/> tells the runs apart;</item>
+/// the speakers of the second, tied across its chunks (<see cref="DiarizedSpeakers"/>) — by voice when the voice
+/// tool read the file (<see cref="IVoiceSpeakersStore"/>), else by the words neighbouring chunks share — and laid
+/// onto our lines (<see cref="SpeakerOverlay"/>); <see cref="TrackTextRuns"/> tells the runs apart;</item>
 /// <item>a mixed file transcribed without speakers: those of the other service's answer to the same file,
 /// laid onto our lines by time and sound (<see cref="SpeakerOverlay"/>), a line cut where the speaker changes;</item>
+/// <item>else, when the voice tool read the file: every word of our lines takes the voice at its time
+/// (<see cref="VoiceSpeakers"/>), a line cut where the voice changes;</item>
 /// </list>
 /// and the roles: given by a person (<see cref="ILessonSpeakersStore"/>), else guessed (<see cref="LessonRoleGuess"/>).
 /// Every file is only read.
@@ -32,13 +35,16 @@ public sealed class LessonTextReader : ILessonTextReader
     private readonly IJobStore _store;
     private readonly IJobWorkspace _workspace;
     private readonly ILessonSpeakersStore _speakers;
+    private readonly IVoiceSpeakersStore? _voices;
 
-    public LessonTextReader(IRecordingsCatalog catalog, IJobStore store, IJobWorkspace workspace, ILessonSpeakersStore speakers)
+    public LessonTextReader(
+        IRecordingsCatalog catalog, IJobStore store, IJobWorkspace workspace, ILessonSpeakersStore speakers, IVoiceSpeakersStore? voices = null)
     {
         _catalog = catalog;
         _store = store;
         _workspace = workspace;
         _speakers = speakers;
+        _voices = voices;
     }
 
     private sealed record RawLine(double Start, string? Speaker, string Text);
@@ -126,18 +132,22 @@ public sealed class LessonTextReader : ILessonTextReader
                     entries.Select(e => new RawLine(e.TimeSec, Plain(e.Speaker), e.Body)).ToList());
             }
 
+            var voice = VoiceOf(mixed, text.JobId);
             foreach (var source in TrackTextRuns.SpeakerSources(mixed.Runs, text.Run))
             {
                 var directory = _workspace.GetJobDirectoryPath(source.JobId);
                 if (JobTimedLinesReader.ReadDiarized(directory) is not { } segments
                     || LessonWordIndex.TextOf(directory)?.Raw is not { } sourceRaw)
                     continue;
-                var tied = DiarizedSpeakers.Tie(segments);
+                var tied = voice != null ? DiarizedSpeakers.TieByVoice(segments, voice.Value.Segments) : DiarizedSpeakers.Tie(segments);
                 if (tied.Words.Count == 0)
                     continue;
                 var (overlaid, ourWords, found) = Overlay(entries, tied.Words);
+                var files = new List<string> { text.Raw.Name, sourceRaw.Name };
+                if (voice != null)
+                    files.Add(FileVoiceSpeakersStore.FileName(voice.Value.JobId));
                 return new Read(
-                    LessonTextSource.Tracks, new[] { text.JobId, source.JobId }, new[] { text.Raw.Name, sourceRaw.Name },
+                    LessonTextSource.Tracks, new[] { text.JobId, source.JobId }, files,
                     LessonSpeakersFrom.ModelOverlay, overlaid)
                 {
                     Overlay = (ourWords, found),
@@ -154,6 +164,21 @@ public sealed class LessonTextReader : ILessonTextReader
                 {
                     Overlay = (words, matched),
                 };
+            }
+
+            if (voice != null)
+            {
+                var lines = new List<RawLine>();
+                for (var i = 0; i < entries.Count; i++)
+                {
+                    double? next = i + 1 < entries.Count ? entries[i + 1].TimeSec : null;
+                    lines.AddRange(VoiceSpeakers.Split(entries[i].Body, entries[i].TimeSec, next, voice.Value.Segments)
+                        .Select(p => new RawLine(p.Start, p.Speaker, p.Text)));
+                }
+
+                return new Read(
+                    LessonTextSource.Tracks, new[] { text.JobId }, new[] { text.Raw.Name, FileVoiceSpeakersStore.FileName(voice.Value.JobId) },
+                    LessonSpeakersFrom.Voice, lines);
             }
 
             return new Read(
@@ -180,6 +205,20 @@ public sealed class LessonTextReader : ILessonTextReader
                 continue;
             if (LessonWordIndex.TextOf(_workspace.GetJobDirectoryPath(run.JobId))?.Raw is { } raw)
                 return (run.JobId, raw, run);
+        }
+
+        return null;
+    }
+
+    /// <summary>The voices of the track's audio told by the voice tool: of the job that gives the text first, then of its other runs.</summary>
+    private (string JobId, IReadOnlyList<VoiceSegment> Segments)? VoiceOf(RecordingTrack track, string textJobId)
+    {
+        if (_voices == null)
+            return null;
+        foreach (var jobId in new[] { textJobId }.Concat(TrackTextRuns.TextOrder(track.Runs).Select(r => r.JobId)).Distinct(StringComparer.Ordinal))
+        {
+            if (_voices.For(jobId) is { Count: > 0 } segments)
+                return (jobId, segments);
         }
 
         return null;

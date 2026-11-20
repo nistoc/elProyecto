@@ -208,7 +208,7 @@ public static class SpeakerOverlay
     }
 
     /// <summary>A short stretch none of whose words was found is a guess of the timing: it joins its neighbour.</summary>
-    private static void Smooth(string[] speakers, int[] matched)
+    internal static void Smooth(string[] speakers, int[] matched)
     {
         for (var pass = 0; pass < 4; pass++)
         {
@@ -240,7 +240,7 @@ public static class SpeakerOverlay
     /// A cut that fell inside a sentence moves to the nearest end of a sentence, when that is within
     /// <see cref="SnapWords"/> words and no found word changes its speaker by it.
     /// </summary>
-    private static void SnapToSentences(string[] tokens, string[] speakers, int[] matched)
+    internal static void SnapToSentences(string[] tokens, string[] speakers, int[] matched)
     {
         for (var cut = 1; cut < tokens.Length; cut++)
         {

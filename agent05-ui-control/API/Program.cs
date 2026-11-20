@@ -41,6 +41,7 @@ builder.Services.AddSingleton<XtractManager.Features.Sessions.Application.ILesso
 builder.Services.AddSingleton<XtractManager.Features.LessonPackages.Application.ILessonPackageStore, XtractManager.Features.LessonPackages.Infrastructure.FileLessonPackageStore>();
 builder.Services.AddSingleton<XtractManager.Features.LessonPackages.Application.ILessonWordIndex, XtractManager.Features.LessonPackages.Infrastructure.LessonWordIndex>();
 builder.Services.AddSingleton<XtractManager.Features.LessonText.Application.ILessonSpeakersStore, XtractManager.Features.LessonText.Infrastructure.FileLessonSpeakersStore>();
+builder.Services.AddSingleton<XtractManager.Features.LessonText.Application.IVoiceSpeakersStore, XtractManager.Features.LessonText.Infrastructure.FileVoiceSpeakersStore>();
 builder.Services.AddSingleton<XtractManager.Features.LessonText.Application.ILessonTextReader, XtractManager.Features.LessonText.Infrastructure.LessonTextReader>();
 
 builder.Services.AddControllers();

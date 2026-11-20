@@ -26,11 +26,13 @@ public sealed class LessonTextTests : IDisposable
     private readonly string _base = Path.Combine(Path.GetTempPath(), "XtractManagerTests", "text_" + Guid.NewGuid().ToString("N"));
     private readonly string _recordings;
     private readonly string _workspace;
+    private readonly string _voices;
 
     public LessonTextTests()
     {
         _recordings = Path.Combine(_base, "recordings");
         _workspace = Path.Combine(_base, "runtime");
+        _voices = Path.Combine(_base, "voice-speakers");
         Directory.CreateDirectory(Path.Combine(_recordings, Day));
         Directory.CreateDirectory(_workspace);
     }
@@ -231,7 +233,10 @@ public sealed class LessonTextTests : IDisposable
         var store = new WorkspaceAwareJobStore(new InMemoryJobStore(), workspace, NullLogger<WorkspaceAwareJobStore>.Instance);
         var catalog = new RecordingsCatalog(config, env, NullLogger<RecordingsCatalog>.Instance);
         var speakers = new FileLessonSpeakersStore(config, env, workspace);
-        var reader = new LessonTextReader(catalog, store, workspace, speakers);
+        var voices = new FileVoiceSpeakersStore(
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { [FileVoiceSpeakersStore.RootPathKey] = _voices }).Build(),
+            env, workspace);
+        var reader = new LessonTextReader(catalog, store, workspace, speakers, voices);
         return new LessonTextController(reader, speakers, catalog, NullLogger<LessonTextController>.Instance);
     }
 
@@ -323,6 +328,62 @@ public sealed class LessonTextTests : IDisposable
         Assert.Equal(LessonRole.Student, recording.Speakers.Single(s => s.Id == "speaker_2").Role);
         Assert.Equal(new SpeakerTies(1, 0, 0), recording.SpeakerTies);
         Assert.True(recording.OverlayWordsMatched > recording.OverlayWords / 2);
+    }
+
+    /// <summary>The answer of the voice tool for a job: the first voice 10.0–11.4 and 20.0–23.6, the second 11.5–13.2.</summary>
+    private void PutVoices(string jobId)
+    {
+        Directory.CreateDirectory(_voices);
+        File.WriteAllText(
+            Path.Combine(_voices, jobId + ".json"),
+            """
+            { "speakers": 2, "segments": [
+              { "start": 10.0, "end": 11.4, "speaker": "S1" },
+              { "start": 11.5, "end": 13.2, "speaker": "S2" },
+              { "start": 20.0, "end": 23.6, "speaker": "S1" }
+            ] }
+            """,
+            new UTF8Encoding(false));
+    }
+
+    [Fact]
+    public async Task A_mixed_recording_with_only_its_voices_gets_its_lines_cut_by_voice()
+    {
+        PutLessonWithDiarizeRun();
+        Directory.Delete(Path.Combine(_workspace, "job-diarize-1"), true);
+        PutVoices("job-plain-1");
+
+        var text = Body(await Controller().Get("2025-08-06"));
+
+        var recording = Assert.Single(text.Recordings);
+        Assert.Equal(LessonSpeakersFrom.Voice, recording.SpeakersFrom);
+        Assert.Equal(new[] { "job-plain-1" }, recording.JobIds);
+        Assert.Contains("job-plain-1.json", recording.Files);
+        Assert.Equal(
+            new[] { ("voice_1", "Hola, ¿qué tal?"), ("voice_2", "Bien, грасиас, y tú?") },
+            recording.Lines.Take(2).Select(l => (l.Speaker!, l.Text)));
+        Assert.Equal("voice_1", recording.Lines[2].Speaker);
+        Assert.Equal(LessonRole.Teacher, recording.Speakers.Single(s => s.Id == "voice_1").Role);
+        Assert.Equal(LessonRole.Student, recording.Speakers.Single(s => s.Id == "voice_2").Role);
+        Assert.Null(recording.SpeakerTies);
+    }
+
+    [Fact]
+    public async Task A_diarize_run_of_a_recording_whose_voices_are_known_is_named_by_voice()
+    {
+        PutLessonWithDiarizeRun();
+        PutVoices("job-diarize-1");
+
+        var text = Body(await Controller().Get("2025-08-06"));
+
+        var recording = Assert.Single(text.Recordings);
+        Assert.Equal(LessonSpeakersFrom.ModelOverlay, recording.SpeakersFrom);
+        Assert.Equal(new[] { "job-plain-1", "job-diarize-1" }, recording.JobIds);
+        Assert.Contains("job-diarize-1.json", recording.Files);
+        Assert.Equal(
+            new[] { ("voice_1", "Hola, ¿qué tal?"), ("voice_2", "Bien, грасиас, y tú?") },
+            recording.Lines.Take(2).Select(l => (l.Speaker!, l.Text)));
+        Assert.Equal(new SpeakerTies(1, 0, 0, 1), recording.SpeakerTies);
     }
 
     [Fact]

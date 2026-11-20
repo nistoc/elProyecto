@@ -31,6 +31,13 @@ public static class LessonSpeakersFrom
     /// <summary>Another recognition service named them; our lines were cut by its words (<see cref="SpeakerOverlay"/>).</summary>
     public const string OtherService = "other_service";
 
+    /// <summary>
+    /// Told by voice on the local GPU (<see cref="VoiceSpeakers"/>): every word of our lines takes the voice at
+    /// its time, a line cut where the voice changes. A diarize run of the same file, when there is one, is
+    /// <see cref="ModelOverlay"/> with its names given by voice instead.
+    /// </summary>
+    public const string Voice = "voice";
+
     public const string None = "none";
 }
 
