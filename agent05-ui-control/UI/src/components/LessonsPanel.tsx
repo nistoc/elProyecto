@@ -47,6 +47,8 @@ interface LessonsPanelProps {
   onLessonsChanged?: () => void;
   /** Opens the package of a lesson (by its date) inside the app. */
   onOpenPackage?: (date: string) => void;
+  /** Opens the notes of a lesson (by its date; homework first) inside the app. */
+  onOpenNotes?: (date: string) => void;
 }
 
 /** What the operator typed for the page of one lesson. */
@@ -82,6 +84,7 @@ export function LessonsPanel({
   onJobsChanged,
   onLessonsChanged,
   onOpenPackage,
+  onOpenNotes,
 }: LessonsPanelProps) {
   const [data, setData] = useState<LessonsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -664,6 +667,10 @@ export function LessonsPanel({
               t={t}
               packageDate={session.package ? session.date : null}
               onOpenPackage={onOpenPackage}
+              notes={
+                session.notes ? { date: session.date, ...session.notes } : null
+              }
+              onOpenNotes={onOpenNotes}
             />
             <button
               type="button"

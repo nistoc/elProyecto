@@ -43,6 +43,7 @@ builder.Services.AddSingleton<XtractManager.Features.LessonPackages.Application.
 builder.Services.AddSingleton<XtractManager.Features.LessonText.Application.ILessonSpeakersStore, XtractManager.Features.LessonText.Infrastructure.FileLessonSpeakersStore>();
 builder.Services.AddSingleton<XtractManager.Features.LessonText.Application.IVoiceSpeakersStore, XtractManager.Features.LessonText.Infrastructure.FileVoiceSpeakersStore>();
 builder.Services.AddSingleton<XtractManager.Features.LessonText.Application.ILessonTextReader, XtractManager.Features.LessonText.Infrastructure.LessonTextReader>();
+builder.Services.AddSingleton<XtractManager.Features.LessonNotes.Application.ILessonNotesReader, XtractManager.Features.LessonNotes.Infrastructure.LessonNotesReader>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();

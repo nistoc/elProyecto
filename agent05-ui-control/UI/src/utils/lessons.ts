@@ -1,3 +1,4 @@
+import type { LessonNotesInfo } from './lessonNotes';
 /**
  * Lessons as the API reads them from the recordings folder (GET /api/sessions):
  * lesson → period (one Zoom recording) → track (one audio file) → runs (jobs that transcribed it).
@@ -77,6 +78,8 @@ export interface LessonSession {
   pages?: LessonPage[] | null;
   /** The lesson has a package the app itself shows (words, grammar, topics); null when it has none. */
   package?: { builtAt?: string | null } | null;
+  /** The notes of the vault copy in the day folder: how many, how many are homework; null when none. */
+  notes?: LessonNotesInfo | null;
 }
 
 /** The address as a link may open it: http(s) only. Null for anything else, which is never made a link. */
@@ -303,6 +306,8 @@ export interface LessonJobInfo {
   pages?: LessonPage[];
   /** The lesson this job belongs to has a package the app itself shows. */
   hasPackage?: boolean;
+  /** The lesson this job belongs to has notes in its vault copy (homework and others). */
+  notes?: LessonNotesInfo;
 }
 
 /**
@@ -322,6 +327,9 @@ export function indexLessonJobs(
         startedAt: period.startedAt ?? '',
         ...(pages.length > 0 ? { pages } : {}),
         ...(session.package ? { hasPackage: true } : {}),
+        ...(session.notes && session.notes.notes > 0
+          ? { notes: session.notes }
+          : {}),
       };
       for (const track of period.tracks) {
         const kind = track.kind === 'mixed' ? 'mixed' : 'participant';

@@ -13,6 +13,7 @@ import type { ChunkArtifactGroup } from './utils/chunkArtifactGroups';
 import type { JobSettings } from './utils/jobSettings';
 import type { LessonPage, LessonsResponse } from './utils/lessons';
 import type { LessonPackageView, PackageEdit } from './utils/lessonPackage';
+import type { LessonNotesResponse } from './utils/lessonNotes';
 import type { JobLanguageShareReport } from './utils/languageShare';
 import type { RefinePrompt } from './utils/refinePrompt';
 import {
@@ -65,9 +66,7 @@ export async function fetchJob(id: string): Promise<JobSnapshot | null> {
 export async function fetchJobFiles(
   id: string
 ): Promise<JobFilesApiResponse | null> {
-  const r = await fetch(
-    `${API_BASE}/api/jobs/${encodeURIComponent(id)}/files`
-  );
+  const r = await fetch(`${API_BASE}/api/jobs/${encodeURIComponent(id)}/files`);
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`HTTP ${r.status}: /api/jobs/.../files`);
   return r.json() as Promise<JobFilesApiResponse>;
@@ -613,6 +612,29 @@ export async function removeLessonPage(
  * The package of the lesson of this date (GET /api/sessions/{date}/package): its lists with the owner's
  * edits put on and every word counted against the lessons before it.
  */
+/** The notes of a lesson from the vault copy in its day folder, homework first. */
+export async function fetchLessonNotes(
+  date: string
+): Promise<LessonNotesResponse> {
+  const r = await fetch(
+    `${API_BASE}/api/sessions/${encodeURIComponent(date)}/notes`
+  );
+  if (!r.ok) throw new Error(await problemText(r));
+  return r.json() as Promise<LessonNotesResponse>;
+}
+
+/** The text (markdown) of one note of a lesson, by its path. */
+export async function fetchLessonNoteText(
+  date: string,
+  path: string
+): Promise<string> {
+  const r = await fetch(
+    `${API_BASE}/api/sessions/${encodeURIComponent(date)}/notes/text?path=${encodeURIComponent(path)}`
+  );
+  if (!r.ok) throw new Error(await problemText(r));
+  return r.text();
+}
+
 export async function fetchLessonPackage(
   date: string
 ): Promise<LessonPackageView> {

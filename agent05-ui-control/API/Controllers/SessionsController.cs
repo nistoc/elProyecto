@@ -38,6 +38,7 @@ public class SessionsController : ControllerBase
     private readonly ILessonPackageStore _packages;
     private readonly IConfiguration _configuration;
     private readonly ILogger<SessionsController> _logger;
+    private readonly XtractManager.Features.LessonNotes.Application.ILessonNotesReader? _notes;
 
     public SessionsController(
         IRecordingsCatalog catalog,
@@ -47,7 +48,8 @@ public class SessionsController : ControllerBase
         ILessonPagesStore pages,
         ILessonPackageStore packages,
         IConfiguration configuration,
-        ILogger<SessionsController> logger)
+        ILogger<SessionsController> logger,
+        XtractManager.Features.LessonNotes.Application.ILessonNotesReader? notes = null)
     {
         _catalog = catalog;
         _store = store;
@@ -57,6 +59,7 @@ public class SessionsController : ControllerBase
         _packages = packages;
         _configuration = configuration;
         _logger = logger;
+        _notes = notes;
     }
 
     /// <summary>
@@ -80,12 +83,14 @@ public class SessionsController : ControllerBase
 
         var pages = _pages.Load();
         var packages = _packages.List();
+        var notes = _notes?.Infos();
         var withRuns = (await LessonSessions.WithRunsAsync(_catalog, _store, _workspace, ct))
             .Select(s => s with
             {
                 Pages = pages.TryGetValue(s.Date, out var ofLesson) ? ofLesson : Array.Empty<LessonPage>(),
                 Package = packages.TryGetValue(s.Date, out var package) ? package : null,
                 Stage = packages.ContainsKey(s.Date) ? LessonStage.Package : LessonBatchPlanner.StageOf(s),
+                Notes = notes != null && notes.TryGetValue(s.Date, out var ofNotes) ? ofNotes : null,
             })
             .ToList();
         return Ok(new SessionsResponse(true, _catalog.RootPath, estimate, withRuns)

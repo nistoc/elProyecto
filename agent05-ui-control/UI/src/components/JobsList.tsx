@@ -47,6 +47,8 @@ interface JobsListProps {
   onSort?: (sort: JobsSort) => void;
   /** Opens the package of a lesson (by its date) inside the app; the heading of a lesson offers it. */
   onOpenPackage?: (date: string) => void;
+  /** Opens the notes of a lesson (by its date; homework first) inside the app. */
+  onOpenNotes?: (date: string) => void;
 }
 
 /**
@@ -93,6 +95,7 @@ function JobsListView({
   sort,
   onSort,
   onOpenPackage,
+  onOpenNotes,
 }: JobsListProps) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
@@ -203,6 +206,12 @@ function JobsListView({
                     t={t}
                     packageDate={head.hasPackage ? head.date : null}
                     onOpenPackage={onOpenPackage}
+                    notes={
+                      head.notes && head.date
+                        ? { date: head.date, ...head.notes }
+                        : null
+                    }
+                    onOpenNotes={onOpenNotes}
                   />
                 </li>
               )}

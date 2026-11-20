@@ -1,4 +1,5 @@
 import type { LessonJobInfo, LessonPage } from './lessons';
+import type { LessonNotesInfo } from './lessonNotes';
 
 /** What the jobs list is ordered by: the lesson a job belongs to, or the day the job itself was made. */
 export type JobsSortKey = 'lesson' | 'created';
@@ -94,6 +95,8 @@ export interface JobsLessonGroup {
   pages?: LessonPage[];
   /** The lesson has a package the app itself shows. */
   hasPackage?: boolean;
+  /** The notes of the lesson's vault copy (homework and others); absent when it has none. */
+  notes?: LessonNotesInfo;
 }
 
 /**
@@ -114,6 +117,7 @@ export function lessonGroupHeads(
       current = { date, count: 0 };
       if (info?.pages?.length) current.pages = info.pages;
       if (info?.hasPackage) current.hasPackage = true;
+      if (info?.notes) current.notes = info.notes;
       heads.set(job.id, current);
     }
     current.count += 1;

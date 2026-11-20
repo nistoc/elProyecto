@@ -19,6 +19,8 @@ interface JobsSidebarProps {
   lessonJobs: Map<string, LessonJobInfo> | null;
   /** Opens the package of a lesson (by its date) inside the app. */
   onOpenPackage?: (date: string) => void;
+  /** Opens the notes of a lesson (by its date; homework first) inside the app. */
+  onOpenNotes?: (date: string) => void;
 }
 
 /**

@@ -34,6 +34,12 @@ public sealed record RecordingSession(
     /// null where nobody worked it out.
     /// </summary>
     public string? Stage { get; init; }
+
+    /// <summary>
+    /// The notes of the vault copy in the day folder (<c>obsidian/</c>): how many, and how many of them are homework;
+    /// null when the day folder has none. See <see cref="LessonNotes.Application.ILessonNotesReader"/>.
+    /// </summary>
+    public LessonNotes.Application.LessonNotesInfo? Notes { get; init; }
 }
 
 /// <summary>One recording of a lesson (Zoom cuts a lesson into periods of about 40 minutes).</summary>

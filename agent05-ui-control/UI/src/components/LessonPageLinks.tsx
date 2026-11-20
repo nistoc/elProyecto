@@ -12,6 +12,10 @@ interface LessonPageLinksProps {
   packageDate?: string | null;
   /** Opens the package of a lesson inside the app. */
   onOpenPackage?: (date: string) => void;
+  /** YYYY-MM-DD of the lesson and how many notes its vault copy holds; nothing when it holds none. */
+  notes?: { date: string; notes: number; homework: number } | null;
+  /** Opens the notes of a lesson (homework first) inside the app. */
+  onOpenNotes?: (date: string) => void;
 }
 
 /**
@@ -25,10 +29,13 @@ export function LessonPageLinks({
   t,
   packageDate,
   onOpenPackage,
+  notes,
+  onOpenNotes,
 }: LessonPageLinksProps) {
   const links = openablePages(pages);
   const inApp = packageDate && onOpenPackage ? packageDate : null;
-  if (links.length === 0 && !inApp) return null;
+  const notesOf = notes && notes.notes > 0 && onOpenNotes ? notes : null;
+  if (links.length === 0 && !inApp && !notesOf) return null;
   return (
     <span className="lesson-pages" data-testid="lesson-pages">
       {inApp && (
@@ -44,6 +51,25 @@ export function LessonPageLinks({
         >
           <span aria-hidden="true">📗</span>
           <span className="lesson-pages__name">{t('lessonPackage')}</span>
+        </button>
+      )}
+      {notesOf && (
+        <button
+          type="button"
+          className="lesson-pages__link lesson-pages__link--app"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenNotes?.(notesOf.date);
+          }}
+          title={t('lessonNotesOpenHint')}
+          data-testid="lesson-notes-open"
+        >
+          <span aria-hidden="true">📝</span>
+          <span className="lesson-pages__name">
+            {notesOf.homework > 0
+              ? `${t('lessonNotesButton')} ${notesOf.homework}`
+              : `${t('notesAll')} ${notesOf.notes}`}
+          </span>
         </button>
       )}
       {links.map((page) => (
