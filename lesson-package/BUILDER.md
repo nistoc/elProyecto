@@ -21,7 +21,9 @@ them that picks what to ask and checks what comes back. This file tells how; the
   were taken from real lessons — those are replaced by made-up ones — and for one phrase of
   `03-word-in-doubt.md` written in other words of the same meaning («стоят под вопросом»). A replay does not
   ask anything, so it does not see these changes.
-- Four lessons have a package: three built by the third form described here, one by the first form alone
+- Seven lessons have a package. Three of 2025 were built by `builder/` itself (2026-11-20, pass 3 answered
+  by a Claude subagent, see "What was measured"). Of the four built before by the old scripts, three by the
+  third form described here, one by the first form alone
   (its lists and a request "what is missing"; its words found by code have no `kind`, and its grammar is
   not merged into themes).
 
@@ -109,6 +111,15 @@ Measured on three lessons of three recordings each:
 | 1219 | 68 | $0.92 | $0.35 | $0.24 | $0.23 | $0.06 | $0.04 |
 | 1390 | 67 | $0.86 | $0.30 | $0.23 | $0.23 | $0.06 | $0.04 |
 
+Three lessons of one or two recordings, built by `builder/` on 2026-11-20 with pass 3 answered by a Claude
+subagent (sonnet) from the request files — its price is in Claude tokens, about 110–145 thousand a lesson:
+
+| Lines of the lesson | Requests (of them pass 3) | OpenAI price | First form | Passes 1–2 | Pass 3 | Pass 4 | Passes 5–7 |
+|---|---|---|---|---|---|---|---|
+| 366 (two recordings) | 37 (16) | $0.34 | $0.16 | $0.13 | — | $0.03 | $0.02 |
+| 586 | 44 (26) | $0.36 | $0.17 | $0.13 | — | $0.03 | $0.03 |
+| 546 | 40 (25) | $0.31 | $0.14 | $0.11 | — | $0.03 | $0.02 |
+
 The price follows the words of the answers more than the lines of the lesson (the middle lesson has fewer
 lines and costs more): before a build name the estimate with a margin of a quarter. A build takes under
 ten minutes. A lesson built by the first form alone took 9 requests and $0.33.
@@ -125,6 +136,7 @@ A build is a paid action: the owner is told the estimate before it starts and th
 | twelve misses a person found in one lesson of the first form | first form with its second pass caught 3; the passes here catch 9 |
 | words pass 3 marks as taught that really were | about 61 %; after the filter of pass 6 — 73 % |
 | grammar themes | with pass 4 the section got back the rules a single pass lost: 20 and 11 themes on the two lessons |
+| pass 3 answered by a Claude subagent from the request files (`--answer pass3=files`), the same 69 requests and 806 words of two lessons as gpt-4.1 (2026-11-20, no OpenAI) | words marked taught that are right, by the same reader's key: gpt-4.1 97 right / 54 wrong (64 %); **sonnet 112 / 27 (81 %)**; haiku 136 / 70 (66 %, its extra words mostly said in passing — the kind the filter of pass 6 cannot tell). Of the twelve known misses: gpt-4.1 9, sonnet 8, haiku 10. Sonnet's one weak place: a list of words of one suffix the teacher gave on purpose, left as not taught. About 150 thousand Claude tokens a lesson for sonnet; the OpenAI price of the pass ($0.19–0.23 a lesson) is saved. The words outside the key were read by the same person who wrote it, knowing which hand answered |
 
 ### The first form taken out (2026-11-18)
 

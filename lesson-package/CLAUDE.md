@@ -127,9 +127,9 @@ time (agent05 logs the time). The next reads take a fraction of a second.
 
 Done: the screen with four tabs; the words table (only new by default, lists, search, recording, sorting,
 columns dragged and remembered); every text edited in place and put back; a row taken out and returned; a
-phrase played from the recording; "said before" counted against all earlier lessons; four lessons have a
+phrase played from the recording; "said before" counted against all earlier lessons; seven lessons have a
 package; the builder in the repository (`builder/`, see BUILDER.md, "State"), reading the lesson with its
-speakers from agent05.
+speakers from agent05 — three lessons of 2025 built by it, pass 3 answered by a Claude subagent.
 
 Not done, in the order it is worth doing:
 
