@@ -264,6 +264,32 @@ public sealed class DialogueBuilderTests : IDisposable
     }
 
     [Fact]
+    public async Task A_track_nobody_spoke_on_is_left_out_of_the_dialogue_with_a_warning()
+    {
+        // agent04's answer for a track it heard nobody on: the markers and no line.
+        WriteJobFile("silent000001", "transcript_ccc.md", ">>>>>>>\n<<<<<\n");
+
+        var result = await _builder.CreateAsync(new DialogueCreateRequest("t", new[]
+        {
+            new DialogueTrackRequest(TeacherJob, "Преподаватель"),
+            new DialogueTrackRequest("silent000001", "Ученик"),
+        }));
+
+        Assert.Equal(0, result.Tracks.Single(t => t.JobId == "silent000001").Entries);
+        Assert.Equal(result.Tracks.Single(t => t.JobId == TeacherJob).Entries, result.Entries);
+        Assert.Contains(result.Warnings, w => w.Contains("nothing was said", StringComparison.Ordinal));
+        Assert.DoesNotContain("Ученик", ReadDialogueFile(result));
+
+        // When nobody said anything on any track there is nothing to merge.
+        WriteJobFile("silent000002", "transcript_ddd.md", ">>>>>>>\n<<<<<\n");
+        await Assert.ThrowsAsync<DialogueRequestException>(() => _builder.CreateAsync(new DialogueCreateRequest("t", new[]
+        {
+            new DialogueTrackRequest("silent000001", "A"),
+            new DialogueTrackRequest("silent000002", "B"),
+        })));
+    }
+
+    [Fact]
     public async Task Rebuild_writes_a_new_file_and_keeps_an_edited_earlier_merge()
     {
         var first = await _builder.CreateAsync(TwoTracks());

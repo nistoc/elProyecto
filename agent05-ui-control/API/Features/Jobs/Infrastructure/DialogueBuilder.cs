@@ -142,9 +142,18 @@ public sealed class DialogueBuilder : IDialogueBuilder
                 throw new DialogueRequestException($"job '{track.JobId}' not found", notFound: true);
 
             var file = ResolveTranscriptFile(track, jobDir);
-            var entries = TrackDialogueMerger.Parse(await File.ReadAllTextAsync(file.FullName, Encoding.UTF8, ct).ConfigureAwait(false));
+            var text = await File.ReadAllTextAsync(file.FullName, Encoding.UTF8, ct).ConfigureAwait(false);
+            var entries = TrackDialogueMerger.Parse(text);
             if (entries.Count == 0)
-                throw new DialogueRequestException($"'{file.Name}' of job '{track.JobId}' has no transcript lines (- TIME SPEAKER: \"text\")");
+            {
+                if (!SaidNothing(text))
+                    throw new DialogueRequestException($"'{file.Name}' of job '{track.JobId}' has no transcript lines (- TIME SPEAKER: \"text\")");
+                // The transcriber heard nobody on this track (a participant who kept silent, a short reconnect):
+                // the others are merged without it.
+                warnings.Add($"{track.Speaker} (job {track.JobId}): nothing was said on this track; the dialogue has no line of it");
+                results.Add(new DialogueTrackResult(track.JobId, track.Speaker, file.Name, 0, 0));
+                continue;
+            }
 
             if (HasCompressedTimesWithoutMap(jobDir))
             {
@@ -165,6 +174,9 @@ public sealed class DialogueBuilder : IDialogueBuilder
             results.Add(new DialogueTrackResult(track.JobId, track.Speaker, file.Name, entries.Count, untimed.Count));
         }
 
+        if (inputs.Count == 0)
+            throw new DialogueRequestException("nothing was said on any of the tracks: the dialogue would have no line");
+
         var markdown = TrackDialogueMerger.Merge(inputs);
         return new MergeOutcome(markdown, results.Sum(r => r.Entries), results, warnings);
     }
@@ -173,6 +185,15 @@ public sealed class DialogueBuilder : IDialogueBuilder
     /// The transcript of a track: the named file, or the newest combined <c>transcript*.md</c> that is not a
     /// refiner output — the same default the refiner uses for its input.
     /// </summary>
+    /// <summary>
+    /// The transcript of a track the transcriber heard nobody on: nothing but the markers agent04 puts around its
+    /// lines (<c>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</c> … <c>&lt;&lt;&lt;&lt;&lt;</c>). Other text without lines is a file that is not a transcript.
+    /// </summary>
+    private static readonly Regex Marker = new(@"^(>{3,}|<{3,})$", RegexOptions.CultureInvariant);
+
+    internal static bool SaidNothing(string transcript) =>
+        transcript.Split('\n').Select(l => l.Trim()).All(l => l.Length == 0 || Marker.IsMatch(l));
+
     private static FileInfo ResolveTranscriptFile(DialogueTrackRequest track, string jobDir)
     {
         if (!string.IsNullOrEmpty(track.File))
