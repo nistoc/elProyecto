@@ -114,24 +114,39 @@ def cmd_publish(a):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='python -m builder', description='Builder of the lesson package.')
     sub = ap.add_subparsers(dest='cmd', required=True)
+    def build_options(b):
+        b.add_argument('--work', required=True, help='work folder: <work>/<date>/...')
+        b.add_argument('--mode', required=True, choices=MODES, help='how a missing answer is got')
+        b.add_argument('--answer', action='append', metavar='PASS=MODE', help='mode of one pass (%s)' % ', '.join(PASSES))
+        b.add_argument('--max-usd', type=float, help='limit of what an openai call may spend (required with openai)')
+        b.add_argument('--parallel', type=int, default=3, help='lessons built at the same time')
+        b.add_argument('--first-form', default='all', choices=('all', 'a', 'none'), help='requests of the first form to ask')
+        b.add_argument('--agent05', default=DEFAULT_URL)
+        b.add_argument('--refresh-input', action='store_true', help='read the input from agent05 again')
+        b.add_argument('--env', default=DEFAULT_ENV, help='env file with the line of the OpenAI key (never printed)')
+
     b = sub.add_parser('build', help='build the packages of one or more lessons')
     b.add_argument('dates', nargs='+', metavar='date', help='YYYY-MM-DD')
-    b.add_argument('--work', required=True, help='work folder: <work>/<date>/...')
-    b.add_argument('--mode', required=True, choices=MODES, help='how a missing answer is got')
-    b.add_argument('--answer', action='append', metavar='PASS=MODE', help='mode of one pass (%s)' % ', '.join(PASSES))
-    b.add_argument('--max-usd', type=float, help='limit of what an openai call may spend (required with openai)')
-    b.add_argument('--parallel', type=int, default=3, help='lessons built at the same time')
-    b.add_argument('--first-form', default='all', choices=('all', 'a', 'none'), help='requests of the first form to ask')
-    b.add_argument('--agent05', default=DEFAULT_URL)
-    b.add_argument('--refresh-input', action='store_true', help='read the input from agent05 again')
-    b.add_argument('--env', default=DEFAULT_ENV, help='env file with the line of the OpenAI key (never printed)')
+    build_options(b)
+    d = sub.add_parser('days', help='a group of days from recording to package; paid transcription only on request')
+    d.add_argument('dates', nargs='+', metavar='date', help='YYYY-MM-DD')
+    build_options(d)
+    d.add_argument('--transcribe-max-usd', type=float, help='start the missing transcriptions (paid) when their estimate is within this')
+    d.add_argument('--retry-failed', action='store_true', help='start a track again whose runs ended without a transcript (paid)')
+    d.add_argument('--publish', action='store_true', help='publish the packages that are done (never replaces one)')
+    d.add_argument('--packages', help='packages folder (required with --publish)')
     p = sub.add_parser('publish', help='copy a built package.json to the packages folder')
     p.add_argument('date')
     p.add_argument('--work', required=True)
     p.add_argument('--packages', required=True)
     p.add_argument('--replace', action='store_true')
     a = ap.parse_args(argv)
+    if a.cmd == 'days' and a.publish and not a.packages:
+        ap.error('--publish needs --packages')
     try:
+        if a.cmd == 'days':
+            from .days import cmd_days
+            return cmd_days(a)
         return cmd_build(a) if a.cmd == 'build' else cmd_publish(a)
     except SystemExit:
         raise

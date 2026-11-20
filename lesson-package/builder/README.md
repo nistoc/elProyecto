@@ -63,3 +63,37 @@ stored and reused like answers, so a stored build can be replayed exactly. Delet
   among the forms. This only touches the counts `never*` in `stats`.
 - Pass 5 is stored as `merge3.json`. `stats.caught` and `stats.keep` (a probe of one lesson) are not written.
 - The short labels that put data into a prompt (`строка [n]`, `слово «…»`) are in the code; the prompts themselves are not.
+
+## Days
+
+`days` takes a group of lesson days from a recording to a package. It can be run again and again: every call reads
+agent05 anew and does only what is missing, and it stops before every paid step.
+
+```bash
+python -m builder days <date>... --work <work folder> --mode dry|files|openai [build options]
+    [--transcribe-max-usd X] [--retry-failed] [--publish --packages <packages folder>]
+```
+
+The build options are those of `build` (`--mode`, `--answer`, `--max-usd`, `--parallel`, `--first-form`, `--agent05`,
+`--refresh-input`, `--env`).
+
+Steps of a call:
+
+1. `POST /api/sessions/batch` with `dryRun: true` for all dates. Per lesson it prints the count of steps by kind
+   (`run`, `dialogue`, `wait`, `failed`, `duplicate`, `done`), the minutes to transcribe and the estimate in dollars.
+   `failed` and `duplicate` steps are listed with their reason.
+2. A lesson with `run` or `dialogue` steps (or `failed` ones with `--retry-failed`) needs a start. Without
+   `--transcribe-max-usd` nothing is sent: the estimate is printed and the call ends with 5. With it, one
+   `POST` with `dryRun: false`, `maxUsd` set to the flag (and `retryFailed` if given) queues them all; the call prints
+   what was queued and ends with 6. Answer 409 (estimate above the limit, nothing started) ends with 4.
+3. A lesson with a `wait` step (queued or going) is not built yet (6). A `failed` step without `--retry-failed` is
+   printed and the lesson is not built (5). A lesson with no transcript and nothing to start is also 5.
+4. Lessons with nothing missing are built in the same call by the code of `build` (same modes, budget and
+   parallelism). Lessons not ready are listed as not built.
+5. With `--publish` every lesson of the call that has a `package.json` in the work folder is copied to the packages
+   folder as `publish` does, never replacing; an existing package is left and reported.
+
+Exit codes: 0 all done, 2 error (also a date agent05 does not know, or agent05 unreachable), 3 answers are to be
+written (files mode), 4 over a limit (`--max-usd` or 409 of `--transcribe-max-usd`), 5 a paid or manual step waits for
+the person (start not asked for, failed track, nothing to build from), 6 transcription is queued or going: run the same
+command again later. The call exits with the most urgent code of its lessons, in this order: 2, 4, 5, 3, 6, 0.
