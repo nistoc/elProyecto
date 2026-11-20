@@ -69,6 +69,7 @@ public sealed class LessonTextReader : ILessonTextReader
 
         var roles = _speakers.Roles(date);
         var recordings = new List<LessonTextRecording>();
+        var given = new HashSet<string>(StringComparer.Ordinal);
         foreach (var session in sessions)
         {
             var dayAnswers = !session.Loose && _catalog.RootPath is { } root
@@ -78,8 +79,14 @@ public sealed class LessonTextReader : ILessonTextReader
             foreach (var period in session.Periods.OrderBy(p => p.StartedAt ?? p.Id, StringComparer.Ordinal))
             {
                 ct.ThrowIfCancellationRequested();
-                if (ReadPeriod(period, dayAnswers, audioFiles) is { } read)
-                    recordings.Add(Shape(period, read, roles));
+                if (ReadPeriod(period, dayAnswers, audioFiles) is not { } read)
+                    continue;
+                // The same file lying in the day twice (a copy under another name) is tied to the same jobs: one
+                // transcription serves both (the batch plan calls it a duplicate), and its text is given once.
+                if (read.JobIds.Count > 0 && read.JobIds.All(given.Contains))
+                    continue;
+                given.UnionWith(read.JobIds);
+                recordings.Add(Shape(period, read, roles));
             }
         }
 

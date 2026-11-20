@@ -330,6 +330,20 @@ public sealed class LessonTextTests : IDisposable
         Assert.True(recording.OverlayWordsMatched > recording.OverlayWords / 2);
     }
 
+    [Fact]
+    public async Task A_file_that_lies_in_the_day_twice_gives_its_text_once()
+    {
+        PutLessonWithDiarizeRun();
+        // the same bytes under another name: the batch plan calls it a duplicate, one transcription serves both
+        File.Copy(Path.Combine(_recordings, Day, Audio), Path.Combine(_recordings, Day, "Voice 250806_191245 copy.m4a"));
+
+        var text = Body(await Controller().Get("2025-08-06"));
+
+        var recording = Assert.Single(text.Recordings);
+        Assert.Equal(new[] { "job-plain-1", "job-diarize-1" }, recording.JobIds);
+        Assert.Equal(3, text.Lines);
+    }
+
     /// <summary>The answer of the voice tool for a job: the first voice 10.0–11.4 and 20.0–23.6, the second 11.5–13.2.</summary>
     private void PutVoices(string jobId)
     {
