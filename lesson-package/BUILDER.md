@@ -21,8 +21,10 @@ them that picks what to ask and checks what comes back. This file tells how; the
   were taken from real lessons — those are replaced by made-up ones — and for one phrase of
   `03-word-in-doubt.md` written in other words of the same meaning («стоят под вопросом»). A replay does not
   ask anything, so it does not see these changes.
-- Seven lessons have a package. Three of 2025 were built by `builder/` itself (2026-11-20, pass 3 answered
-  by a Claude subagent, see "What was measured"). Of the four built before by the old scripts, three by the
+- Fourteen lessons have a package. Ten were built by `builder/` itself on 2026-11-20 with pass 3 answered
+  by a Claude subagent (see "What was measured"): three of 2025 recorded as one mixed file, and seven with
+  participant tracks, taken through `python -m builder days` from the batch plan to the published package
+  in two calls. Of the four built before by the old scripts, three by the
   third form described here, one by the first form alone
   (its lists and a request "what is missing"; its words found by code have no `kind`, and its grammar is
   not merged into themes).
@@ -120,6 +122,23 @@ subagent (sonnet) from the request files — its price is in Claude tokens, abou
 | 586 | 44 (26) | $0.36 | $0.17 | $0.13 | — | $0.03 | $0.03 |
 | 546 | 40 (25) | $0.31 | $0.14 | $0.11 | — | $0.03 | $0.02 |
 
+Seven lessons with participant tracks, built the same way on 2026-11-20 (two or three recordings each; the
+subagent read 1.07 million Claude tokens for the seven, about 150 thousand a lesson):
+
+| Lines of the lesson | Requests (of them pass 3) | OpenAI price | First form | Passes 1–2 | Pass 3 | Pass 4 | Passes 5–7 |
+|---|---|---|---|---|---|---|---|
+| 907 (two recordings) | 37 (18) | $0.51 | $0.26 | $0.18 | — | $0.04 | $0.03 |
+| 1275 | 61 (33) | $0.71 | $0.35 | $0.26 | — | $0.06 | $0.04 |
+| 1287 | 65 (37) | $0.69 | $0.36 | $0.23 | — | $0.06 | $0.04 |
+| 1361 | 64 (35) | $0.68 | $0.32 | $0.25 | — | $0.07 | $0.04 |
+| 1386 | 54 (28) | $0.75 | $0.36 | $0.30 | — | $0.06 | $0.03 |
+| 1419 | 58 (32) | $0.72 | $0.37 | $0.25 | — | $0.07 | $0.03 |
+| 1483 | 63 (36) | $0.73 | $0.36 | $0.27 | — | $0.07 | $0.04 |
+
+The seven cost $4.79 in OpenAI; the estimate named before was $6 with the margin, and the dry run's own
+estimate of what was known to be asked, $4.50, was 4 % under what the same requests then cost. With pass 3
+taken off OpenAI the first form is about half of what is left.
+
 The price follows the words of the answers more than the lines of the lesson (the middle lesson has fewer
 lines and costs more): before a build name the estimate with a margin of a quarter. A build takes under
 ten minutes. A lesson built by the first form alone took 9 requests and $0.33.
@@ -137,6 +156,7 @@ A build is a paid action: the owner is told the estimate before it starts and th
 | words pass 3 marks as taught that really were | about 61 %; after the filter of pass 6 — 73 % |
 | grammar themes | with pass 4 the section got back the rules a single pass lost: 20 and 11 themes on the two lessons |
 | pass 3 answered by a Claude subagent from the request files (`--answer pass3=files`), the same 69 requests and 806 words of two lessons as gpt-4.1 (2026-11-20, no OpenAI) | words marked taught that are right, by the same reader's key: gpt-4.1 97 right / 54 wrong (64 %); **sonnet 112 / 27 (81 %)**; haiku 136 / 70 (66 %, its extra words mostly said in passing — the kind the filter of pass 6 cannot tell). Of the twelve known misses: gpt-4.1 9, sonnet 8, haiku 10. Sonnet's one weak place: a list of words of one suffix the teacher gave on purpose, left as not taught. About 150 thousand Claude tokens a lesson for sonnet; the OpenAI price of the pass ($0.19–0.23 a lesson) is saved. The words outside the key were read by the same person who wrote it, knowing which hand answered |
+| the `evidence` of a word sonnet marked as taught, found letter for letter in the lines its request showed (whitespace aside; a code check of the answer files, 2026-11-20) | 470 of 474 on the seven lessons with tracks, 123 of 125 on the three of 2025 |
 
 ### The first form taken out (2026-11-18)
 
