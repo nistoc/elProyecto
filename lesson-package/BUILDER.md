@@ -24,7 +24,9 @@ them that picks what to ask and checks what comes back. This file tells how; the
 - Fourteen lessons have a package. Ten were built by `builder/` itself on 2026-11-20 with pass 3 answered
   by a Claude subagent (see "What was measured"): three of 2025 recorded as one mixed file, and seven with
   participant tracks, taken through `python -m builder days` from the batch plan to the published package
-  in two calls. Of the four built before by the old scripts, three by the
+  in two calls. All ten asked the whole first form (A, B, C); since the owner's pick of 2026-11-20 a build
+  asks request A alone unless `--first-form all` is given — a replay of their stored answers needs that
+  option to give the same package. Of the four built before by the old scripts, three by the
   third form described here, one by the first form alone
   (its lists and a request "what is missing"; its words found by code have no `kind`, and its grammar is
   not merged into themes).
@@ -58,7 +60,7 @@ explanation.
 | 5 | grammar notes of the whole lesson merged into themes | once per lesson | gpt-4.1 | [05](prompts/05-grammar-merge.md) |
 | 6 | filter of the words pass 3 marked as taught | 20 words to a request | gpt-4.1-mini | [06](prompts/06-word-filter.md) |
 | 7 | what the words found only by code are | 25 words to a request | gpt-4.1-mini, the doubtful ones again by gpt-4.1 | [07](prompts/07-words-by-code.md) |
-| A, B, C | **the first form**, still run before all of the above: its own lists and "what is missing" | three requests per recording | gpt-4.1 | [08](prompts/08-first-form-topics-grammar-examples.md), [09](prompts/09-first-form-words.md), [10](prompts/10-first-form-what-is-missing.md) |
+| A, B, C | **the first form**, run before all of the above: its own lists and "what is missing"; since 2026-11-20 only A by default (`--first-form a`; `all` asks the three) | one request per recording (three with `all`) | gpt-4.1 | [08](prompts/08-first-form-topics-grammar-examples.md), [09](prompts/09-first-form-words.md), [10](prompts/10-first-form-what-is-missing.md) |
 
 All requests: the chat completions API, temperature 0, a strict JSON schema for the answer (every field
 required, no other fields), the system message [00](prompts/00-system.md) unless the prompt file names its
@@ -70,7 +72,7 @@ stopped goes on from where it was and a rebuild after a change of code costs not
 The passes grew one on another, so a build runs them in this order (the scripts as they are today, each
 with a dry run that asks nothing and prints the estimate of what is left):
 
-1. the first form — requests A, B, C for every recording;
+1. the first form — request A for every recording (A, B, C with `--first-form all`);
 2. passes 1 and 2 for every recording;
 3. pass 3 — the code picks the words in doubt from the lists of step 2 and the earlier lessons;
 4. pass 4 for every recording;
@@ -201,10 +203,12 @@ three lessons:
    them out — look at `word_notes` after a build.
 5. **Themes are named by the model** (`theme`, Spanish, as in a textbook's contents); the same theme may
    get two names in two lessons. Nothing ties the themes of different lessons together yet.
-6. **The first form is still paid for in every build** — 35–39 % of the price. Measured (see "The first
+6. **The first form was paid for in every build** — 35–39 % of the price. Measured (see "The first
    form taken out"): its request about words is half of that and adds about ten entries a lesson, nearly
-   all of them words said before; its request A adds most of what the grammar gains from it. Which of its
-   requests stay is the owner's decision — it changes what a package holds.
+   all of them words said before; its request A adds most of what the grammar gains from it. The owner
+   chose on 2026-11-20 to keep request A alone: it is the default of `builder/` since then (`--first-form
+   a`), a build is expected to cost about $0.22 less (not measured on a new build yet). The fourteen
+   packages built before keep A, B and C.
 
 ## Changing a prompt
 

@@ -130,7 +130,8 @@ columns dragged and remembered); every text edited in place and put back; a row 
 phrase played from the recording; "said before" counted against all earlier lessons; fourteen lessons have
 a package; the builder in the repository (`builder/`, see BUILDER.md, "State"), reading the lesson with its
 speakers from agent05 — ten lessons built by it, pass 3 answered by a Claude subagent, seven of them through
-`python -m builder days` from the batch plan to the published package.
+`python -m builder days` from the batch plan to the published package. By the owner's pick of 2026-11-20 a
+build asks only request A of the first form (`--first-form a`, the default; BUILDER.md, "What is weak", 6).
 
 Not done, in the order it is worth doing:
 

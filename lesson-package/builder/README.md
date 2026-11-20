@@ -17,7 +17,8 @@ python -m unittest discover        # tests
 ```
 
 Options of `build`: `--answer passN=mode` (a pass with its own mode; `first`, `pass1` … `pass7`),
-`--parallel N`, `--first-form all|a|none` (requests of the first form; `all` is today's build), `--agent05 URL`
+`--parallel N`, `--first-form a|all|none` (requests of the first form: `a` — request A alone — is the default
+since 2026-11-20, by the owner's pick; `all` asks A, B and C, as every package built before it), `--agent05 URL`
 (default `http://localhost:5010`, GET only), `--refresh-input`, `--env <env file with the OpenAI key line>`
 (default `agent06-improver-dot-net/API/.env`; the key is never printed).
 

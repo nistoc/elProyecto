@@ -158,7 +158,7 @@ class FilesMode(unittest.TestCase):
         self.assertTrue(all(w['kind'] == 'spanish' for w in pkg['other_words']))
         self.assertEqual(pkg['stats']['lines'], 5)
         self.assertEqual(pkg['requests'], pkg['stats']['requests'])
-        self.assertGreater(pkg['requests'], 8)
+        self.assertGreaterEqual(pkg['requests'], 7)  # request A of the first form (the default) and the passes
 
     def test_answer_for_only_one_pass_is_asked_by_files(self):
         with tempfile.TemporaryDirectory() as work:
@@ -167,6 +167,19 @@ class FilesMode(unittest.TestCase):
             self.assertEqual(code, 3)
             reqs = sorted(f for _, _, fs in os.walk(work) for f in fs if f.endswith('.request.json'))
             self.assertEqual(reqs, ['task1.request.json'])
+
+    def test_first_form_asks_request_a_alone_by_default(self):
+        def first_requests(work):
+            return sorted(f for r, _, fs in os.walk(work) for f in fs
+                          if f.endswith('.request.json') and os.path.basename(r) == 'first')
+        with tempfile.TemporaryDirectory() as work:
+            make_input(work)
+            self.assertEqual(run('build', DATE, '--work', work, '--mode', 'files')[0], 3)
+            self.assertEqual(first_requests(work), ['task1.request.json'])
+        with tempfile.TemporaryDirectory() as work:
+            make_input(work)
+            self.assertEqual(run('build', DATE, '--work', work, '--mode', 'files', '--first-form', 'all')[0], 3)
+            self.assertEqual(first_requests(work), ['task1.request.json', 'task2.request.json'])
 
     def test_replay_with_a_missing_answer_is_an_error(self):
         with tempfile.TemporaryDirectory() as work:

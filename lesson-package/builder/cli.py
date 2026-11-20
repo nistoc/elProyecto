@@ -120,7 +120,8 @@ def main(argv=None):
         b.add_argument('--answer', action='append', metavar='PASS=MODE', help='mode of one pass (%s)' % ', '.join(PASSES))
         b.add_argument('--max-usd', type=float, help='limit of what an openai call may spend (required with openai)')
         b.add_argument('--parallel', type=int, default=3, help='lessons built at the same time')
-        b.add_argument('--first-form', default='all', choices=('all', 'a', 'none'), help='requests of the first form to ask')
+        b.add_argument('--first-form', default='a', choices=('a', 'all', 'none'),
+                       help='requests of the first form to ask (default a: request A alone; all: A, B and C)')
         b.add_argument('--agent05', default=DEFAULT_URL)
         b.add_argument('--refresh-input', action='store_true', help='read the input from agent05 again')
         b.add_argument('--env', default=DEFAULT_ENV, help='env file with the line of the OpenAI key (never printed)')
