@@ -742,6 +742,7 @@ function PackageStyles() {
       .pkg-badge-new { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; background: #2e7d32; color: #fff; font-size: 0.75rem; font-weight: 600; }
       .pkg-place { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.4rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
       .pkg-place .pkg-sub { flex-basis: 100%; }
+      .pkg-held { color: var(--color-warning, #b8860b); }
       .pkg-play {
         width: 1.6rem;
         height: 1.6rem;

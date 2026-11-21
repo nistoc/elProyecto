@@ -417,6 +417,10 @@ const messages: Record<Locale, Record<string, string>> = {
       'Words no other hearing of the same audio has (the piece heard alone, the piece asked again with the audio around it, the other model): they may not have been said',
     pkgUnheardHint:
       'No other hearing of this audio has the word: it may not have been said. Listen to the place.',
+    pkgHeldSeen: 'Said before:',
+    pkgHeldHeard: 'No longer doubtful after the edit.',
+    pkgHeldQuery: 'No longer matches the search.',
+    pkgHeldUntil: 'The row stays until the filter changes.',
     pkgTeacher: 'teacher',
     pkgStudent: 'student',
     pkgPlay: 'Listen to this place',
@@ -868,6 +872,10 @@ const messages: Record<Locale, Record<string, string>> = {
       'Слова, которых нет ни в одном другом прослушивании того же звука (кусок, услышанный отдельно, кусок, переспрошенный вместе с соседним звуком, другая модель): возможно, их не говорили',
     pkgUnheardHint:
       'Ни одно другое прослушивание этого места не слышит слово: возможно, его не говорили. Послушайте место.',
+    pkgHeldSeen: 'Уже было:',
+    pkgHeldHeard: 'После правки слово уже не сомнительное.',
+    pkgHeldQuery: 'Больше не подходит под поиск.',
+    pkgHeldUntil: 'Строка останется до смены фильтра.',
     pkgTeacher: 'преподаватель',
     pkgStudent: 'ученик',
     pkgPlay: 'Послушать это место',
@@ -1321,6 +1329,10 @@ const messages: Record<Locale, Record<string, string>> = {
       'Palabras que no aparecen en ninguna otra escucha del mismo audio (el fragmento oído solo, el fragmento preguntado de nuevo con el audio de alrededor, el otro modelo): quizá no se dijeron',
     pkgUnheardHint:
       'Ninguna otra escucha de este lugar tiene la palabra: quizá no se dijo. Escuche el lugar.',
+    pkgHeldSeen: 'Ya se dijo:',
+    pkgHeldHeard: 'Tras la edición ya no es dudosa.',
+    pkgHeldQuery: 'Ya no coincide con la búsqueda.',
+    pkgHeldUntil: 'La fila se queda hasta cambiar el filtro.',
     pkgTeacher: 'profesor',
     pkgStudent: 'alumno',
     pkgPlay: 'Escuchar este lugar',

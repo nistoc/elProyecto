@@ -296,22 +296,46 @@ export function plain(text: string): string {
   return text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
+const NONE_HELD: ReadonlySet<string> = new Set();
+
+function matchesQuery(row: WordRow, query: string): boolean {
+  if (query === '') return true;
+  return [row.word, row.ru, row.note, row.lemma, row.phrase].some((text) =>
+    plain(text).includes(query)
+  );
+}
+
+/**
+ * The rows the filter lets through. A row in `held` (its text was just edited on screen) stays even
+ * when the edit made it fall out of «only new», «doubtful» or the search: it does not vanish under the
+ * hand. The lists, the recording and the rows taken out still apply to it.
+ */
 export function filterWordRows(
   rows: readonly WordRow[],
-  filter: WordFilter
+  filter: WordFilter,
+  held: ReadonlySet<string> = NONE_HELD
 ): WordRow[] {
   const query = plain(filter.query.trim());
   return rows.filter((row) => {
     if (row.leftOut && !filter.showLeftOut) return false;
     if (!filter.lists.has(row.list)) return false;
+    if (filter.period !== 0 && row.period !== filter.period) return false;
+    if (held.has(row.id)) return true;
     if (filter.onlyNew && !isNewWord(row)) return false;
     if (filter.onlyUnheard && !isUnheard(row)) return false;
-    if (filter.period !== 0 && row.period !== filter.period) return false;
-    if (query === '') return true;
-    return [row.word, row.ru, row.note, row.lemma, row.phrase].some((text) =>
-      plain(text).includes(query)
-    );
+    return matchesQuery(row, query);
   });
+}
+
+/** Why the filter would hide a row now (it is shown because it was just edited); null when it would not. */
+export function heldOutReason(
+  row: WordRow,
+  filter: WordFilter
+): 'seen' | 'unheard' | 'query' | null {
+  if (filter.onlyNew && !isNewWord(row)) return 'seen';
+  if (filter.onlyUnheard && !isUnheard(row)) return 'unheard';
+  if (!matchesQuery(row, plain(filter.query.trim()))) return 'query';
+  return null;
 }
 
 export type WordSortKey = 'word' | 'ru' | 'list' | 'place' | 'seen' | 'count';

@@ -16,6 +16,7 @@ import {
   countWordRows,
   dayLabel,
   filterWordRows,
+  heldOutReason,
   isNewWord,
   isUnheard,
   nextWordSort,
@@ -67,6 +68,8 @@ function storedWidths(): Record<ColumnKey, number> {
   return readColumnWidths(COLUMN_DEFAULTS, stored);
 }
 
+const NOTHING_HELD: ReadonlySet<string> = new Set();
+
 const LIST_LABEL: Record<WordList, string> = {
   new: 'pkgListNew',
   vocabulary: 'pkgListVocabulary',
@@ -92,16 +95,53 @@ export function LessonPackageWords({
   const [sort, setSort] = useState<WordSort>(DEFAULT_WORD_SORT);
   const [widths, setWidths] = useState(storedWidths);
   const [resizing, setResizing] = useState(false);
+  /** Rows whose text was edited here: they stay on screen until the owner changes the filter. */
+  const [held, setHeld] = useState<ReadonlySet<string>>(NOTHING_HELD);
   const drag = useRef<{ key: ColumnKey; startX: number; start: number } | null>(
     null
+  );
+
+  const changeFilter = useCallback((next: (f: WordFilter) => WordFilter) => {
+    setHeld(NOTHING_HELD);
+    setFilter(next);
+  }, []);
+  const onTextEdit = useCallback(
+    (id: string, change: PackageEdit) => {
+      setHeld((h) => (h.has(id) ? h : new Set(h).add(id)));
+      return onEdit(id, change);
+    },
+    [onEdit]
   );
 
   const rows = useMemo(() => wordRows(pkg), [pkg]);
   const counts = useMemo(() => countWordRows(rows), [rows]);
   const shown = useMemo(
-    () => sortWordRows(filterWordRows(rows, { ...filter, showLeftOut }), sort),
-    [rows, filter, showLeftOut, sort]
+    () =>
+      sortWordRows(
+        filterWordRows(rows, { ...filter, showLeftOut }, held),
+        sort
+      ),
+    [rows, filter, showLeftOut, sort, held]
   );
+
+  /** Why a row kept after its edit would be hidden by the filter now, in words; null when it would not. */
+  const heldNote = (row: WordRow): string | null => {
+    if (!held.has(row.id)) return null;
+    const why = heldOutReason(row, { ...filter, showLeftOut });
+    if (why === null) return null;
+    let reason: string;
+    if (why === 'seen') {
+      const days = (row.seenIn ?? []).map(dayLabel);
+      const listed =
+        days.length > 3
+          ? `${days.slice(0, 3).join(', ')} +${days.length - 3}`
+          : days.join(', ');
+      reason = `${t('pkgHeldSeen')} ${listed}.`;
+    } else {
+      reason = t(why === 'unheard' ? 'pkgHeldHeard' : 'pkgHeldQuery');
+    }
+    return `${reason} ${t('pkgHeldUntil')}`;
+  };
   const totals = useMemo(() => {
     const picked = WORD_LISTS.filter((l) => filter.lists.has(l));
     return {
@@ -169,7 +209,7 @@ export function LessonPackageWords({
   );
 
   const toggleList = (list: WordList) =>
-    setFilter((f) => {
+    changeFilter((f) => {
       const lists = new Set(f.lists);
       if (lists.has(list)) lists.delete(list);
       else lists.add(list);
@@ -231,7 +271,7 @@ export function LessonPackageWords({
             type="button"
             className={filter.onlyNew ? 'pkg-seg__btn on' : 'pkg-seg__btn'}
             aria-pressed={filter.onlyNew}
-            onClick={() => setFilter((f) => ({ ...f, onlyNew: true }))}
+            onClick={() => changeFilter((f) => ({ ...f, onlyNew: true }))}
             title={t('pkgOnlyNewHint')}
             data-testid="package-only-new"
           >
@@ -241,7 +281,7 @@ export function LessonPackageWords({
             type="button"
             className={filter.onlyNew ? 'pkg-seg__btn' : 'pkg-seg__btn on'}
             aria-pressed={!filter.onlyNew}
-            onClick={() => setFilter((f) => ({ ...f, onlyNew: false }))}
+            onClick={() => changeFilter((f) => ({ ...f, onlyNew: false }))}
             data-testid="package-all-words"
           >
             {t('pkgAllWords')} <b>{totals.all}</b>
@@ -278,7 +318,7 @@ export function LessonPackageWords({
             }
             aria-pressed={filter.onlyUnheard === true}
             onClick={() =>
-              setFilter((f) => ({ ...f, onlyUnheard: !f.onlyUnheard }))
+              changeFilter((f) => ({ ...f, onlyUnheard: !f.onlyUnheard }))
             }
             title={t('pkgOnlyUnheardHint')}
             data-testid="package-only-unheard"
@@ -291,14 +331,16 @@ export function LessonPackageWords({
           className="pkg-search"
           value={filter.query}
           placeholder={t('pkgSearch')}
-          onChange={(e) => setFilter((f) => ({ ...f, query: e.target.value }))}
+          onChange={(e) =>
+            changeFilter((f) => ({ ...f, query: e.target.value }))
+          }
           data-testid="package-search"
         />
         <select
           className="pkg-select"
           value={filter.period}
           onChange={(e) =>
-            setFilter((f) => ({ ...f, period: Number(e.target.value) }))
+            changeFilter((f) => ({ ...f, period: Number(e.target.value) }))
           }
           aria-label={t('pkgRecording')}
         >
@@ -361,7 +403,9 @@ export function LessonPackageWords({
                       }
                       t={t}
                       onSave={(text) =>
-                        onEdit(row.id, { fields: { [row.wordField]: text } })
+                        onTextEdit(row.id, {
+                          fields: { [row.wordField]: text },
+                        })
                       }
                     />
                     {isUnheard(row) && (
@@ -375,6 +419,14 @@ export function LessonPackageWords({
                       </span>
                     )}
                   </div>
+                  {heldNote(row) !== null && (
+                    <div
+                      className="pkg-sub pkg-held"
+                      data-testid="package-held"
+                    >
+                      {heldNote(row)}
+                    </div>
+                  )}
                   {row.wordField === 'raw' &&
                     (row.lemma !== '' || 'lemma' in row.edited) && (
                       <div className="pkg-sub">
@@ -384,7 +436,7 @@ export function LessonPackageWords({
                           was={row.edited.lemma}
                           t={t}
                           onSave={(text) =>
-                            onEdit(row.id, { fields: { lemma: text } })
+                            onTextEdit(row.id, { fields: { lemma: text } })
                           }
                         />
                       </div>
@@ -403,7 +455,7 @@ export function LessonPackageWords({
                           multiline
                           t={t}
                           onSave={(text) =>
-                            onEdit(row.id, { fields: { note: text } })
+                            onTextEdit(row.id, { fields: { note: text } })
                           }
                         />
                       </div>
@@ -414,7 +466,9 @@ export function LessonPackageWords({
                     value={row.ru}
                     was={row.edited.ru}
                     t={t}
-                    onSave={(text) => onEdit(row.id, { fields: { ru: text } })}
+                    onSave={(text) =>
+                      onTextEdit(row.id, { fields: { ru: text } })
+                    }
                   />
                 </td>
                 <td>
@@ -457,7 +511,9 @@ export function LessonPackageWords({
                     }
                     t={t}
                     onSave={(text) =>
-                      onEdit(row.id, { fields: { [row.phraseField]: text } })
+                      onTextEdit(row.id, {
+                        fields: { [row.phraseField]: text },
+                      })
                     }
                   />
                 </td>

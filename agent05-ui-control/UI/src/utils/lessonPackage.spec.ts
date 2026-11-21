@@ -9,6 +9,7 @@ import {
   countWordRows,
   dayLabel,
   filterWordRows,
+  heldOutReason,
   isNewWord,
   isUnheard,
   nextWordSort,
@@ -293,6 +294,55 @@ describe('words no other hearing has', () => {
     expect(
       filterWordRows(heard, filter({ onlyNew: false })).length
     ).toBeGreaterThan(1);
+  });
+});
+
+describe('a row kept on screen after its edit', () => {
+  const row = (id: string) => rows.find((r) => r.id === id)!;
+
+  it('stays under «only new» once an edit made it a word said before', () => {
+    expect(
+      ids(filterWordRows(rows, DEFAULT_WORD_FILTER, new Set(['n-ventana'])))
+    ).toEqual(['n-ventana', 'n-tejado', 'o-chimenea']);
+    expect(heldOutReason(row('n-ventana'), DEFAULT_WORD_FILTER)).toBe('seen');
+    expect(heldOutReason(row('n-tejado'), DEFAULT_WORD_FILTER)).toBeNull();
+  });
+
+  it('stays when it no longer matches the search', () => {
+    const search = filter({ onlyNew: false, query: 'balcón' });
+    expect(ids(filterWordRows(rows, search, new Set(['n-tejado'])))).toEqual([
+      'n-tejado',
+    ]);
+    expect(heldOutReason(row('n-tejado'), search)).toBe('query');
+  });
+
+  it('stays among the doubtful words once it is no longer doubtful', () => {
+    const heard = wordRows({
+      ...pkg,
+      newWords: pkg.newWords.map((w, i) => ({
+        ...w,
+        heardElsewhere: i === 1 ? false : true,
+      })),
+    });
+    const doubtful = filter({ onlyNew: false, onlyUnheard: true });
+    expect(
+      ids(filterWordRows(heard, doubtful, new Set(['n-ventana'])))
+    ).toEqual(['n-ventana', 'n-tejado']);
+    expect(
+      heldOutReason(heard.find((r) => r.id === 'n-ventana')!, doubtful)
+    ).toBe('unheard');
+  });
+
+  it('still keeps to the lists, the recording and the rows taken out', () => {
+    const held = new Set(['v-estufa', 'o-ladno', 'n-ventana']);
+    expect(ids(filterWordRows(rows, DEFAULT_WORD_FILTER, held))).toEqual([
+      'n-ventana',
+      'n-tejado',
+      'o-chimenea',
+    ]);
+    expect(ids(filterWordRows(rows, filter({ period: 2 }), held))).toEqual([
+      'n-tejado',
+    ]);
   });
 });
 
