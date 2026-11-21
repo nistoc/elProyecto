@@ -21,8 +21,8 @@ them that picks what to ask and checks what comes back. This file tells how; the
   were taken from real lessons — those are replaced by made-up ones — and for one phrase of
   `03-word-in-doubt.md` written in other words of the same meaning («стоят под вопросом»). A replay does not
   ask anything, so it does not see these changes.
-- Twenty-six lessons have a package; the twelve of 2026-11-20 evening and 2026-11-21 (four of autumn 2025,
-  eight of December 2025 and 2026) are in "Price and time". Of the fourteen before them, ten were built by
+- Thirty lessons have a package; the sixteen of 2026-11-20 evening and 2026-11-21 (four of autumn 2025,
+  eight of December 2025 and 2026, four of January 2026) are in "Price and time". Of the fourteen before them, ten were built by
   `builder/` itself on 2026-11-20 with pass 3 answered
   by a Claude subagent (see "What was measured"): three of 2025 recorded as one mixed file, and seven with
   participant tracks, taken through `python -m builder days` from the batch plan to the published package
@@ -188,6 +188,24 @@ first form and passes 1–2), $2.94, was 37 % over what those requests cost ($2.
 The lesson of 970 lines holds the answer that looped (see "What the code does around the models"): its cut
 answer is paid in the table. The last lesson is a talk in Russian (25 of its 2651 words in Latin letters): its
 package has no word, as it should.
+
+Four lessons of January 2026 (three mixed recordings of the lesson and one or two short audio files of
+exercises, transcribed anew by `gpt-transcribe`, speakers told by voice), built the same way on 2026-11-21; four
+sonnet agents (one a lesson) read 0.70 million Claude tokens for 151 pass-3 requests in under four minutes. Two
+quotes of 214 taught words were off by a word; each was set to the exact words of its lines before the answers
+were taken:
+
+| Lines of the lesson | Requests (of them pass 3) | OpenAI price | First form | Passes 1–2 | Pass 3 | Pass 4 | Passes 5–7 |
+|---|---|---|---|---|---|---|---|
+| 927 (five recordings) | 75 (45) | $0.44 | $0.11 | $0.24 | — | $0.06 | $0.03 |
+| 958 | 59 (35) | $0.46 | $0.10 | $0.27 | — | $0.06 | $0.03 |
+| 960 | 61 (38) | $0.42 | $0.10 | $0.23 | — | $0.06 | $0.03 |
+| 965 | 56 (33) | $0.41 | $0.10 | $0.24 | — | $0.05 | $0.02 |
+
+The four cost $1.73 in OpenAI. The dry run's estimate of what was known to be asked (the first form and passes
+1–2), $2.31, was 67 % over what those requests cost ($1.38), and over the price of the whole build. In one
+recording the two voices said nearly as much (1210 and 1057 words): the role guess gave neither a role, and the
+examples of that recording have no teacher or student until a person names them.
 
 The price follows the words of the answers more than the lines of the lesson (the middle lesson has fewer
 lines and costs more): before a build name the estimate with a margin of a quarter. A build takes under
