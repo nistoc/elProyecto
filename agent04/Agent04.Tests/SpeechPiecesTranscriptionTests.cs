@@ -244,6 +244,52 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
         Assert.Single(SpeechPiecePlanner.Plan(Array.Empty<SilenceInterval>(), 12, 1.0, 15, 0.2));
     }
 
+    [Fact]
+    public void A_chunk_with_no_pause_at_the_shared_level_is_cut_at_a_louder_one()
+    {
+        // 60 s of speech over steady noise: no silence at -40 dB, one breath at -35 dB, real pauses at -30 dB
+        var byLevel = new Dictionary<double, SilenceInterval[]>
+        {
+            [-40] = Array.Empty<SilenceInterval>(),
+            [-35] = new[] { Quiet(40, 40.4) },
+            [-30] = new[] { Quiet(10, 11.2), Quiet(20, 21.2), Quiet(30, 31.2), Quiet(40, 41.2), Quiet(50, 51.2) },
+        };
+
+        var (pieces, level) = SpeechPiecePlanner.PlanAtFittingLevel(l => byLevel[l], -40, 60, pauseSec: 1.0, maxPieceSec: 15, minSpeechSec: 0.2);
+
+        Assert.Equal(-30, level);
+        Assert.Equal(new[] { (0.0, 10.0), (11.2, 20.0), (21.2, 30.0), (31.2, 40.0), (41.2, 50.0), (51.2, 60.0) },
+            pieces.Select(p => (p.StartSec, p.EndSec)));
+    }
+
+    [Fact]
+    public void A_chunk_with_pauses_at_the_shared_level_is_not_searched_again()
+    {
+        var asked = new List<double>();
+
+        var (pieces, level) = SpeechPiecePlanner.PlanAtFittingLevel(l => { asked.Add(l); return ThreePieces().Silence; }, -40, 60, 1.0, 15, 0.2);
+
+        Assert.Equal(-40, level);
+        Assert.Equal(new[] { -40.0 }, asked);
+        Assert.Equal(3, pieces.Count);
+    }
+
+    [Fact]
+    public void A_louder_level_that_leaves_little_sound_is_not_taken()
+    {
+        // a quiet voice: at -35 dB most of the chunk would count as silence, and -30 dB is not tried
+        var byLevel = new Dictionary<double, SilenceInterval[]>
+        {
+            [-40] = Array.Empty<SilenceInterval>(),
+            [-35] = new[] { Quiet(0, 25), Quiet(30, 55) },
+        };
+
+        var (pieces, level) = SpeechPiecePlanner.PlanAtFittingLevel(l => byLevel[l], -40, 60, 1.0, 15, 0.2);
+
+        Assert.Equal(-40, level);
+        Assert.Equal(new[] { (0.0, 60.0) }, pieces.Select(p => (p.StartSec, p.EndSec)));
+    }
+
     // ---- the whole text onto the pieces ----
 
     [Theory]

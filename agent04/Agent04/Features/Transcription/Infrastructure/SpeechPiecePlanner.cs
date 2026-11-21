@@ -27,6 +27,61 @@ internal static class SpeechPiecePlanner
     /// </summary>
     public const double PauseToleranceSec = 0.01;
 
+    /// <summary>
+    /// A piece longer than this many times the longest allowed length holds no pause the search saw: there is
+    /// steady noise under the voice (a phone on a table, a fan, a bad line), and nothing in the recording is as
+    /// quiet as the shared silence level. Such a chunk is searched again at a louder level
+    /// (<see cref="PlanAtFittingLevel"/>). Seen live: 2.5 minutes as one line, no pause at −40 dB, 15–30
+    /// pauses at −35 dB and as many long ones at −30 dB as a quiet recording has at −40 dB.
+    /// </summary>
+    public const double TooLongFactor = 2.0;
+
+    /// <summary>Each new search counts this many dB louder as silence, at most <see cref="LouderSteps"/> times.</summary>
+    public const double LouderStepDb = 5.0;
+
+    public const int LouderSteps = 2;
+
+    /// <summary>
+    /// A louder search is taken only while its pieces keep at least this share of the chunk as sound: a level
+    /// that turns a quiet voice into silence would lose words (a quiet recording keeps about 0.85 at −40 dB).
+    /// </summary>
+    public const double MinSoundShare = 0.6;
+
+    /// <summary>
+    /// The pieces of a chunk at the shared silence level, or at a louder one when the shared level finds no
+    /// pause in it (see <see cref="TooLongFactor"/>). Returns the pieces and the level they were cut at.
+    /// </summary>
+    /// <param name="silenceAt">Silence found in the chunk at a level in dB.</param>
+    /// <param name="noiseDb">The shared silence level.</param>
+    public static (IReadOnlyList<SpeechStretch> Pieces, double NoiseDb) PlanAtFittingLevel(
+        Func<double, IReadOnlyList<SilenceInterval>> silenceAt,
+        double noiseDb,
+        double durationSec,
+        double pauseSec,
+        double maxPieceSec,
+        double minSpeechSec)
+    {
+        var pieces = Plan(silenceAt(noiseDb), durationSec, pauseSec, maxPieceSec, minSpeechSec);
+        var level = noiseDb;
+        for (var step = 1; step <= LouderSteps && Longest(pieces) > maxPieceSec * TooLongFactor; step++)
+        {
+            var louder = noiseDb + step * LouderStepDb;
+            var again = Plan(silenceAt(louder), durationSec, pauseSec, maxPieceSec, minSpeechSec);
+            if (again.Sum(p => p.SpeechSec) < durationSec * MinSoundShare)
+                break;
+            if (Longest(again) < Longest(pieces))
+            {
+                pieces = again;
+                level = louder;
+            }
+        }
+
+        return (pieces, level);
+    }
+
+    private static double Longest(IReadOnlyList<SpeechStretch> pieces) =>
+        pieces.Count == 0 ? 0 : pieces.Max(p => p.DurationSec);
+
     /// <param name="silence">Silence found in the chunk, seconds of the chunk.</param>
     /// <param name="durationSec">Length of the chunk.</param>
     /// <param name="pauseSec">A pause this long always ends a piece.</param>

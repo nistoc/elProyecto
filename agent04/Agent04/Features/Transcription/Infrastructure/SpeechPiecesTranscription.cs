@@ -221,8 +221,18 @@ public sealed class SpeechPiecesTranscription
         var ffmpeg = _audioUtils.WhichOr(config.FfmpegPath, "ffmpeg") ?? "ffmpeg";
         var ffprobe = _audioUtils.WhichOr(config.FfprobePath, "ffprobe") ?? "ffprobe";
         var durationSec = _audioUtils.GetDurationAndSize(ffprobe, chunkPath).DurationSeconds;
-        var silence = _audioUtils.DetectSilence(ffmpeg, chunkPath, settings.Detect, ct);
-        var pieces = SpeechPiecePlanner.Plan(silence, durationSec, settings.PauseSec, settings.MaxPieceSec, MinSpeechSec);
+        var detect = settings.Detect;
+        var (pieces, noiseDb) = SpeechPiecePlanner.PlanAtFittingLevel(
+            level => _audioUtils.DetectSilence(ffmpeg, chunkPath, detect with { NoiseDb = level }, ct),
+            detect.NoiseDb, durationSec, settings.PauseSec, settings.MaxPieceSec, MinSpeechSec);
+        if (noiseDb != detect.NoiseDb)
+        {
+            // Noise under the voice: no pause at the shared level. The block of the answer names the level used.
+            _logger?.LogInformation("Chunk {ChunkIndex}: no pause at {Shared} dB; cut into {Pieces} pieces at {Level} dB",
+                options.ChunkIndex, detect.NoiseDb, pieces.Count, noiseDb);
+            settings = settings with { Detect = detect with { NoiseDb = noiseDb } };
+        }
+
         var model = string.IsNullOrWhiteSpace(options.Model) ? config.Model : options.Model.Trim();
 
         if (pieces.Count == 0)
@@ -892,6 +902,7 @@ public sealed class SpeechPiecesTranscription
         ["whole_languages"] = settings.WholeLanguages.Cast<object?>().ToArray(),
         ["pause_sec"] = Round(settings.PauseSec),
         ["max_piece_sec"] = Round(settings.MaxPieceSec),
+        ["silence_noise_db"] = Round(settings.Detect.NoiseDb),
         ["pieces"] = items.Length,
         ["requests"] = requests,
         ["words"] = words,
