@@ -127,10 +127,10 @@ time (agent05 logs the time). The next reads take a fraction of a second.
 
 Done: the screen with four tabs; the words table (only new by default, lists, search, recording, sorting,
 columns dragged and remembered); every text edited in place and put back; a row taken out and returned; a
-phrase played from the recording; "said before" counted against all earlier lessons; thirty-three lessons
+phrase played from the recording; "said before" counted against all earlier lessons; thirty-five lessons
 have a package; the builder in the repository (`builder/`, see BUILDER.md, "State"), reading the lesson with its
-speakers from agent05 — twenty-nine lessons built by it, pass 3 answered by Claude subagents, eleven of them
-through `python -m builder days` from the batch plan to the published package (the last nineteen with speakers
+speakers from agent05 — thirty-one lessons built by it, pass 3 answered by Claude subagents, eleven of them
+through `python -m builder days` from the batch plan to the published package (the last twenty-one with speakers
 told by voice, `voice-speakers/`). By the owner's pick of 2026-11-20 a
 build asks only request A of the first form (`--first-form a`, the default; BUILDER.md, "What is weak", 6).
 

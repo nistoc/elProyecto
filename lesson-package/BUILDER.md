@@ -21,8 +21,9 @@ them that picks what to ask and checks what comes back. This file tells how; the
   were taken from real lessons — those are replaced by made-up ones — and for one phrase of
   `03-word-in-doubt.md` written in other words of the same meaning («стоят под вопросом»). A replay does not
   ask anything, so it does not see these changes.
-- Thirty-three lessons have a package; the nineteen of 2026-11-20 evening and 2026-11-21 (four of autumn 2025,
-  eight of December 2025 and 2026, four of January and three of February 2026) are in "Price and time". Of the fourteen before them, ten were built by
+- Thirty-five lessons have a package; the twenty-one of 2026-11-20 evening and 2026-11-21 (four of autumn 2025,
+  eight of December 2025 and 2026, four of January, three of February and two of March 2026) are in "Price and
+  time". Of the fourteen before them, ten were built by
   `builder/` itself on 2026-11-20 with pass 3 answered
   by a Claude subagent (see "What was measured"): three of 2025 recorded as one mixed file, and seven with
   participant tracks, taken through `python -m builder days` from the batch plan to the published package
@@ -218,6 +219,21 @@ for 110 pass-3 requests; every quote of the 247 taught words was found letter fo
 
 The three cost $1.21 in OpenAI; the first estimate of the build ($1.42 for the first form and passes 1–2) was
 45 % over what those requests cost ($0.98).
+
+Two lessons of March 2026, the same way (two sonnet agents, 0.33 million Claude tokens for 76 pass-3 requests; one
+quote of 134 was off by a word and was set to the exact words of its line). One date had two day folders: the
+second holds a recording of its own (no stretch of it matches the three periods of the first), a talk of four
+voices in Spanish; the lesson text of the date gives all four recordings, so its package is built of them all and
+the lessons list shows the package at both folders:
+
+| Lines of the lesson | Requests (of them pass 3) | OpenAI price | First form | Passes 1–2 | Pass 3 | Pass 4 | Passes 5–7 |
+|---|---|---|---|---|---|---|---|
+| 953 | 58 (37) | $0.48 | $0.11 | $0.29 | — | $0.05 | $0.03 |
+| 1492 (four recordings, one of them the talk) | 65 (39) | $0.60 | $0.13 | $0.36 | — | $0.07 | $0.04 |
+
+The two cost $1.08 in OpenAI; the first estimate of the build ($1.06 for the first form and passes 1–2) was 20 %
+over what those requests cost ($0.89). The talk and one period whose two voices said nearly as much got no roles
+from the guess.
 
 The price follows the words of the answers more than the lines of the lesson (the middle lesson has fewer
 lines and costs more): before a build name the estimate with a margin of a quarter. A build takes under
