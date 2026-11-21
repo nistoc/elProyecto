@@ -72,6 +72,27 @@ stored and reused like answers, so a stored build can be replayed exactly. Delet
 - Pass 5 is stored as `merge3.json`. `stats.caught` and `stats.keep` (a probe of one lesson) are not written.
 - The short labels that put data into a prompt (`строка [n]`, `слово «…»`) are in the code; the prompts themselves are not.
 
+## Page
+
+```bash
+python -m builder page <date>... --out <folder>          # writes <folder>/<date>.html; GET only, free
+```
+
+The package page of a lesson: one self-contained HTML file (the shape of a claude.ai Artifact page: no `<html>`,
+`<head>` or `<body>` of its own; marked and DOMPurify from cdnjs) made of what agent05 gives — the package as the app
+shows it (the owner's edits on, items taken out left out, "said before" and «?» as counted at that moment) and the
+notes of the vault copy of the lesson (`GET /api/sessions/{date}/notes`), homework first. Pictures of the notes are
+made at most 1400 px wide (Pillow, when installed) and put in as data URIs; a sound is put in while it is under 3 MB and
+the page under 14 MB, else the page names it. A lesson without a package gets a page of its notes alone; one with
+neither gets no page (exit 2 when no date gave one).
+
+Tabs, each only when it has data: words (the table of the screen: only new by default, lists, «?», search, sorting,
+column widths dragged and kept in the viewer's browser), grammar, topics (a strip per recording), examples, homework
+(a JSON block of a note is shown as named parts with tasks to tick), summary, practice (cards of the new words, of all
+words and of the `es;ru` lines of card notes; a gap quiz on the phrases of the words), notes. Template:
+`page_template.html` (`{{title}}`, `{{data}}`; the data is JSON with every `<` written `<`). Tests:
+`builder/tests/test_page.py`.
+
 ## Days
 
 `days` takes a group of lesson days from a recording to a package. It can be run again and again: every call reads

@@ -1,4 +1,4 @@
-"""Command line: `python -m builder build <date> ... --work <folder> --mode ...` and `publish`."""
+"""Command line: `python -m builder build <date> ... --work <folder> --mode ...`, `days`, `page` and `publish`."""
 import argparse
 import concurrent.futures
 import os
@@ -118,6 +118,22 @@ def cmd_publish(a):
     return 0
 
 
+def cmd_page(a):
+    from .page import Agent05, write_page
+    api = Agent05(a.agent05)
+    made = 0
+    for date in a.dates:
+        res = write_page(api, date, a.out)
+        if res is None:
+            say('%s: no package and no note - no page' % date)
+            continue
+        path, size, left_out = res
+        made += 1
+        say('%s: %s, %.1f MB%s' % (date, path, size / 1048576.0,
+                                    ', %d media file(s) left out' % len(left_out) if left_out else ''))
+    return 0 if made else EXIT_ERROR
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='python -m builder', description='Builder of the lesson package.')
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -143,6 +159,10 @@ def main(argv=None):
     d.add_argument('--retry-failed', action='store_true', help='start a track again whose runs ended without a transcript (paid)')
     d.add_argument('--publish', action='store_true', help='publish the packages that are done (never replaces one)')
     d.add_argument('--packages', help='packages folder (required with --publish)')
+    g = sub.add_parser('page', help='the package page of a lesson (read only, for a claude.ai Artifact); free, GET only')
+    g.add_argument('dates', nargs='+', metavar='date', help='YYYY-MM-DD')
+    g.add_argument('--out', required=True, help='folder the pages are written to: <out>/<date>.html')
+    g.add_argument('--agent05', default=DEFAULT_URL)
     p = sub.add_parser('publish', help='copy a built package.json to the packages folder')
     p.add_argument('date')
     p.add_argument('--work', required=True)
@@ -155,6 +175,8 @@ def main(argv=None):
         if a.cmd == 'days':
             from .days import cmd_days
             return cmd_days(a)
+        if a.cmd == 'page':
+            return cmd_page(a)
         return cmd_build(a) if a.cmd == 'build' else cmd_publish(a)
     except SystemExit:
         raise

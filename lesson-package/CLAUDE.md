@@ -63,6 +63,7 @@ These are requirements, not ideas. A change that breaks one of them needs the ow
 | Words of the UI | `agent05-ui-control/UI/src/contexts/I18nContext.tsx`, keys `lessonPackage*` and `pkg*`, three languages |
 | Tests | `agent05-ui-control/API.Tests/` — `LessonWordRulesTests.cs`, `SaidTextTests.cs`, `HeardElsewhereTests.cs`, `LessonPackageViewBuilderTests.cs`, `LessonPackagesTests.cs`; `agent05-ui-control/UI/src/utils/lessonPackage.spec.ts` |
 | Builder | `lesson-package/builder/` — `python -m builder build <date>…` ([README](builder/README.md), how it builds: [BUILDER.md](BUILDER.md)); tests `builder/tests/` (`python -m unittest discover` from `lesson-package/`) |
+| Package page | `lesson-package/builder/page.py` + `page_template.html` — `python -m builder page <date>… --out <folder>`: one read-only HTML file of a lesson (its package as the app shows it and the notes of its vault copy, homework first, with practice cards and a gap quiz) for a claude.ai Artifact; GET only, free. The address of a published page is kept by `PUT /api/sessions/{date}/pages` (the root `CLAUDE.md`, "Lesson pages"); the page is never the place of an edit — edit in XtractManager, make the page again and publish it to the same address |
 
 ## Rules that must hold
 
