@@ -119,11 +119,12 @@ def cmd_publish(a):
 
 
 def cmd_page(a):
-    from .page import Agent05, write_page
+    from .page import Agent05, day_page, write_page
     api = Agent05(a.agent05)
     made = 0
     for date in a.dates:
-        res = write_page(api, date, a.out)
+        path = day_page(a.packages, date) if a.packages else os.path.join(a.out, '%s.html' % date)
+        res = write_page(api, date, path)
         if res is None:
             say('%s: no package and no note - no page' % date)
             continue
@@ -157,11 +158,14 @@ def main(argv=None):
     build_options(d)
     d.add_argument('--transcribe-max-usd', type=float, help='start the missing transcriptions (paid) when their estimate is within this')
     d.add_argument('--retry-failed', action='store_true', help='start a track again whose runs ended without a transcript (paid)')
-    d.add_argument('--publish', action='store_true', help='publish the packages that are done (never replaces one)')
+    d.add_argument('--publish', action='store_true',
+                   help='publish the packages that are done (never replaces one) and make the page of each day')
     d.add_argument('--packages', help='packages folder (required with --publish)')
-    g = sub.add_parser('page', help='the package page of a lesson (read only, for a claude.ai Artifact); free, GET only')
+    g = sub.add_parser('page', help='the page of a lesson day: one HTML file made from its data (read only); free, GET only')
     g.add_argument('dates', nargs='+', metavar='date', help='YYYY-MM-DD')
-    g.add_argument('--out', required=True, help='folder the pages are written to: <out>/<date>.html')
+    where = g.add_mutually_exclusive_group(required=True)
+    where.add_argument('--packages', help='packages folder: the page of a day is <packages>/<date>/lesson.html')
+    where.add_argument('--out', help='any folder: <out>/<date>.html (to look at a page before it is put in place)')
     g.add_argument('--agent05', default=DEFAULT_URL)
     p = sub.add_parser('publish', help='copy a built package.json to the packages folder')
     p.add_argument('date')

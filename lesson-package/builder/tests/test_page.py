@@ -116,15 +116,15 @@ class NoteMarkdown(unittest.TestCase):
         self.assertEqual(md, '[Deberes](#note-0)')
 
 
-def answers_of(package=None, notes=()):
+def answers_of(package=None, notes=(), date=DATE):
     """agent05 of one lesson with a recording of two minutes; notes are (path, title, kind, text)."""
-    a = {'/api/sessions': lessons(lesson_row(periods=[period('2026-01-07T18:00:00', track('mixed', 120))]))}
+    a = {'/api/sessions': lessons(lesson_row(date=date, periods=[period(date + 'T18:00:00', track('mixed', 120))]))}
     if package is not None:
-        a['/api/sessions/%s/package' % DATE] = package
-    a['/api/sessions/%s/notes' % DATE] = {'date': DATE, 'notes': [
+        a['/api/sessions/%s/package' % date] = package
+    a['/api/sessions/%s/notes' % date] = {'date': date, 'notes': [
         {'path': p, 'title': t, 'kind': k} for p, t, k, _ in notes]}
     for p, _, _, text in notes:
-        a[notes_path(DATE, 'text', p)] = text
+        a[notes_path(date, 'text', p)] = text
     return a
 
 
@@ -133,7 +133,7 @@ class PageData(unittest.TestCase):
     def test_nothing_to_show_gives_no_page(self):
         self.assertIsNone(page.page_data(api_of(answers_of()), DATE))
         with tempfile.TemporaryDirectory() as out:
-            self.assertIsNone(page.write_page(api_of(answers_of()), DATE, out))
+            self.assertIsNone(page.write_page(api_of(answers_of()), DATE, page.day_page(out, DATE)))
             self.assertEqual(os.listdir(out), [])
 
     def test_items_taken_out_by_the_owner_are_not_shown(self):
@@ -178,18 +178,24 @@ class Render(unittest.TestCase):
         self.assertIn('{{title}}', text)
         self.assertIn('{{data}}', text)
 
+    def test_the_page_is_a_whole_document_that_opens_from_disk(self):
+        html = page.render({'date': DATE, 'package': None, 'notes': []})
+        self.assertTrue(html.startswith('<!doctype html>'))
+        self.assertIn('<meta charset="utf-8">', html[:300])
+        self.assertTrue(html.rstrip().endswith('</html>'))
+
     def test_written_page_is_whole(self):
         view = package_view(newWords=[{'es': 'casa', 'id': 'w1'}])
         api = api_of(answers_of(view))
         with tempfile.TemporaryDirectory() as out:
-            path, size, left_out = page.write_page(api, DATE, out)
-            self.assertEqual(path, os.path.join(out, DATE + '.html'))
+            path, size, left_out = page.write_page(api, DATE, page.day_page(out, DATE))
+            self.assertEqual(path, os.path.join(out, DATE, 'lesson.html'))
             with io.open(path, encoding='utf-8') as f:
                 html = f.read()
             self.assertEqual(size, len(html.encode('utf-8')))
             self.assertEqual(left_out, [])
             self.assertNotIn('{{data}}', html)
-            self.assertEqual(sorted(os.listdir(out)), [DATE + '.html'])
+            self.assertEqual(sorted(os.listdir(os.path.join(out, DATE))), ['lesson.html'])
 
 
 if __name__ == '__main__':

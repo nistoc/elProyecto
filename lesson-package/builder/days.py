@@ -2,7 +2,8 @@
 
 One call asks agent05 what each lesson still misses to have its text (`POST /api/sessions/batch`, `dryRun: true`),
 starts the transcription only when `--transcribe-max-usd` is given, builds the lessons whose text is whole (the same
-code as `build`) and, with `--publish`, copies the finished packages to the packages folder.
+code as `build`) and, with `--publish`, copies the finished packages to the packages folder and makes the page
+of each day there (`page.py`).
 """
 import argparse
 import json
@@ -156,3 +157,18 @@ def publish_all(a, dates):
             say('%s: already published, left as it is' % date)
         else:
             cmd_publish(argparse.Namespace(date=date, work=a.work, packages=a.packages, replace=False))
+    write_day_pages(a, dates)
+
+
+def write_day_pages(a, dates):
+    """The page of every day made anew from what agent05 gives now (free, GET only); a day it cannot be made for is
+    reported and the call goes on."""
+    from .page import Agent05, day_page, write_page
+    api = Agent05(a.agent05)
+    for date in dates:
+        try:
+            res = write_page(api, date, day_page(a.packages, date))
+        except Exception as e:  # the page is not worth stopping the call for
+            say('%s: page not made: %s: %s' % (date, type(e).__name__, e))
+            continue
+        say('%s: page %s' % (date, res[0]) if res else '%s: no package and no note - no page' % date)

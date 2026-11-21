@@ -1,4 +1,4 @@
-"""The package page of a lesson: one self-contained HTML file for a claude.ai Artifact, read only.
+"""The page of a lesson day: one self-contained HTML file, read only, made anew from the data of the lesson.
 
 It is made of what agent05 already gives (GET only, nothing is asked of a model):
   GET /api/sessions                       the lesson: its title, recordings, stage
@@ -7,10 +7,12 @@ It is made of what agent05 already gives (GET only, nothing is asked of a model)
   GET /api/sessions/{date}/notes/text     one note's markdown
   GET /api/sessions/{date}/notes/file     a picture or a sound a note embeds
 
-A lesson without a package gets a page of its notes alone; a lesson with neither gets no page. Pictures are made
-smaller (Pillow when it is installed, else kept as they are while they fit) and put into the page as data URIs; a
-sound is put in only while the page stays under its limit. The page is never the place of an edit: edits are made
-in XtractManager and the page is made again.
+The page of a day lies next to its package: `<packages folder>/<YYYY-MM-DD>/lesson.html` (agent05 lists a day of
+that folder as a package only by its `package.json`, so a day of notes alone does not become one). A lesson without a
+package gets a page of its notes alone; a lesson with neither gets no page. Pictures are made smaller (Pillow when it
+is installed, else kept as they are while they fit) and put into the page as data URIs; a sound is put in only while
+the page stays under its limit. The page is never the place of an edit: edits are made in XtractManager and the page
+is made again.
 """
 import base64
 import io
@@ -24,7 +26,8 @@ import urllib.request
 from .source import DEFAULT_URL
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'page_template.html')
-PAGE_LIMIT = 14 * 1024 * 1024          # the Artifact limit is 16 MB; room is left for the page itself
+PAGE_NAME = 'lesson.html'             # the page of a day in its folder of the packages folder
+PAGE_LIMIT = 14 * 1024 * 1024          # pictures and sounds put in; a page larger than this opens slowly
 PICTURE_WIDTH = 1400
 PICTURE_QUALITY = 80
 SOUND_LIMIT = 3 * 1024 * 1024          # one sound larger than this is not put in
@@ -52,9 +55,9 @@ def http_get(url, accept='application/json'):
 class Agent05:
     """The GETs the page needs; `get` is replaced in the tests."""
 
-    def __init__(self, base=DEFAULT_URL, get=http_get):
+    def __init__(self, base=DEFAULT_URL, get=None):
         self.base = base.rstrip('/')
-        self.get = get
+        self.get = get or (lambda url, accept='application/json': http_get(url, accept))
         self._sessions = None
 
     def _json(self, path):
@@ -251,14 +254,19 @@ def render(data, template=None):
     return template.replace('{{title}}', title).replace('{{data}}', blob)
 
 
-def write_page(api, date, out_dir):
-    """Writes `<out_dir>/<date>.html`; returns (path, size, media left out) or None when there is nothing to show."""
+def day_page(packages, date):
+    """Where the page of a day lies in the packages folder."""
+    return os.path.join(packages, date, PAGE_NAME)
+
+
+def write_page(api, date, path):
+    """Writes the page of `date` to `path` (in place, through a temporary file); returns (path, size, media left out)
+    or None when there is nothing to show (then nothing is written)."""
     data = page_data(api, date)
     if data is None:
         return None
     html = render(data)
-    os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, '%s.html' % date)
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     tmp = path + '.tmp'
     with io.open(tmp, 'w', encoding='utf-8', newline='') as f:
         f.write(html)

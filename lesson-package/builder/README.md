@@ -75,22 +75,21 @@ stored and reused like answers, so a stored build can be replayed exactly. Delet
 ## Page
 
 ```bash
-python -m builder page <date>... --out <folder>          # writes <folder>/<date>.html; GET only, free
+python -m builder page <date>... --packages <packages folder>   # writes <packages>/<date>/lesson.html; GET only, free
+python -m builder page <date>... --out <folder>                 # <folder>/<date>.html, to look at a page first
 ```
 
-The package page of a lesson: one self-contained HTML file (the shape of a claude.ai Artifact page: no `<html>`,
-`<head>` or `<body>` of its own; marked and DOMPurify from cdnjs) made of what agent05 gives — the package as the app
-shows it (the owner's edits on, items taken out left out, "said before" and «?» as counted at that moment) and the
-notes of the vault copy of the lesson (`GET /api/sessions/{date}/notes`), homework first. Pictures of the notes are
-made at most 1400 px wide (Pillow, when installed) and put in as data URIs; a sound is put in while it is under 3 MB and
-the page under 14 MB, else the page names it. A lesson without a package gets a page of its notes alone; one with
-neither gets no page (exit 2 when no date gave one).
+The page of a lesson day: one self-contained HTML file (a whole document; marked and DOMPurify from cdnjs, the fonts
+from Google Fonts, everything else inside) made anew from what agent05 gives — the package as the app shows it (the
+owner's edits on, items taken out left out, "said before" and «?» as counted at that moment) and the notes of the
+vault copy of the lesson (`GET /api/sessions/{date}/notes`). It lies next to the package of the day; a day folder
+without `package.json` is not a package for agent05, so a day of notes alone may have one. `days --publish` makes
+the page of every day it built. Pictures of the notes are made at most 1400 px wide (Pillow, when installed) and put
+in as data URIs; a sound is put in while it is under 3 MB and the page under 14 MB, else the page names it. A day
+with neither a package nor a note gets no page (exit 2 when no date gave one).
 
-Tabs, each only when it has data: words (the table of the screen: only new by default, lists, «?», search, sorting,
-column widths dragged and kept in the viewer's browser), grammar, topics (a strip per recording), examples, homework
-(a JSON block of a note is shown as named parts with tasks to tick), summary, practice (cards of the new words, of all
-words and of the `es;ru` lines of card notes; a gap quiz on the phrases of the words), notes. Template:
-`page_template.html` (`{{title}}`, `{{data}}`; the data is JSON with every `<` written `<`). Tests:
+The page is not published anywhere (the owner's word of 2026-11-21: files on the disk, not claude.ai Artifacts).
+Template: `page_template.html` (`{{title}}`, `{{data}}`; the data is JSON with every `<` written `<`). Tests:
 `builder/tests/test_page.py`.
 
 ## Days

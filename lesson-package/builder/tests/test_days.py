@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from builder import cli, days
+from builder import cli, days, page
+from builder.tests.test_page import FakeGet, answers_of, package_view
 from builder.tests.test_pipeline import DATE, make_input
 
 OTHER = '2026-02-02'
@@ -37,9 +38,11 @@ class Fake:
         return [c for c in self.calls if not c['dryRun']]
 
 
-def run(fake, *argv):
+def run(fake, *argv, agent05=None):
+    """`agent05` answers the GETs of the day pages by path (see test_page); without it every GET is 404."""
     out = io.StringIO()
-    with mock.patch.object(days, 'http_post_json', fake), contextlib.redirect_stdout(out):
+    get = FakeGet(agent05 or {})
+    with mock.patch.object(days, 'http_post_json', fake),             mock.patch.object(page, 'http_get', lambda url, accept: get('http://agent05.test' + url.split(':5010', 1)[1], accept)),             contextlib.redirect_stdout(out):
         code = cli.main(['days', *argv])
     return code, out.getvalue()
 
@@ -51,8 +54,8 @@ class Days(unittest.TestCase):
         make_input(self.work)  # the input of DATE is stored: a build reads nothing from agent05
         self.addCleanup(self.tmp.cleanup)
 
-    def go(self, fake, *dates, extra=()):
-        return run(fake, *dates, '--work', self.work, '--mode', 'dry', *extra)
+    def go(self, fake, *dates, extra=(), agent05=None):
+        return run(fake, *dates, '--work', self.work, '--mode', 'dry', *extra, agent05=agent05)
 
     def test_nothing_missing_goes_to_the_build(self):
         fake = Fake([lesson(DATE, step('done'))])
@@ -117,6 +120,18 @@ class Days(unittest.TestCase):
         code, out = self.go(fake, DATE, extra=('--publish', '--packages', packages))
         self.assertEqual(code, 0, out)
         self.assertIn('already published', out)
+        self.assertIn('no package and no note - no page', out)
+        self.assertEqual(os.listdir(os.path.join(packages, DATE)), ['package.json'])
+
+    def test_publish_makes_the_page_of_the_day_next_to_its_package(self):
+        packages = os.path.join(self.work, 'pk')
+        with open(os.path.join(self.work, DATE, 'package.json'), 'w') as f:
+            f.write('{}')
+        fake = Fake([lesson(DATE, step('done'))])
+        agent05 = answers_of(package_view(newWords=[{'es': 'casa', 'id': 'w1'}]), date=DATE)
+        code, out = self.go(fake, DATE, extra=('--publish', '--packages', packages), agent05=agent05)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(sorted(os.listdir(os.path.join(packages, DATE))), ['lesson.html', 'package.json'])
 
 
 if __name__ == '__main__':

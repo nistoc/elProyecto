@@ -1,5 +1,9 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{title}}</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
@@ -30,7 +34,10 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.5; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.5; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--sheet); }
 .wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 header.top { padding-block: 28px 18px; display: grid; gap: 10px; }
@@ -154,6 +161,8 @@ button.act:disabled { opacity: 0.5; cursor: default; }
 .panel-title { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
 footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
 </style>
+</head>
+<body>
 
 <header class="top wrap" id="top"></header>
 <nav class="tabs" aria-label="Разделы"><div class="wrap" id="tabs"></div></nav>
@@ -809,3 +818,5 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
   document.getElementById('foot').textContent = 'Страница собрана сборщиком пакета урока из данных XtractManager и заметок урока.';
 })();
 </script>
+</body>
+</html>
