@@ -123,14 +123,14 @@ time (agent05 logs the time). The next reads take a fraction of a second.
   A prompt is checked only by a paid run — rule 7.
 - **A new kind of list**: its model and ids first (rule 2), then the screen.
 
-## State (2026-11-20) and what is next
+## State (2026-11-21) and what is next
 
 Done: the screen with four tabs; the words table (only new by default, lists, search, recording, sorting,
 columns dragged and remembered); every text edited in place and put back; a row taken out and returned; a
-phrase played from the recording; "said before" counted against all earlier lessons; eighteen lessons have
+phrase played from the recording; "said before" counted against all earlier lessons; twenty-six lessons have
 a package; the builder in the repository (`builder/`, see BUILDER.md, "State"), reading the lesson with its
-speakers from agent05 — fourteen lessons built by it, pass 3 answered by a Claude subagent, eleven of them
-through `python -m builder days` from the batch plan to the published package (the last four with speakers
+speakers from agent05 — twenty-two lessons built by it, pass 3 answered by Claude subagents, eleven of them
+through `python -m builder days` from the batch plan to the published package (the last twelve with speakers
 told by voice, `voice-speakers/`). By the owner's pick of 2026-11-20 a
 build asks only request A of the first form (`--first-form a`, the default; BUILDER.md, "What is weak", 6).
 

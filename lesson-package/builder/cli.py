@@ -85,8 +85,11 @@ def cmd_build(a):
                 continue
             results.append(res)
             report(res)
-    total = sum(r.ledger.cost for r in results)
-    say('total paid in this call: $%.4f in %d lesson(s)' % (total, len(results)))
+    reported = sum(r.ledger.cost for r in results)
+    total = max(budget.spent, reported) if budget else reported  # the budget saw every paid request
+    lost = total - reported
+    say('total paid in this call: $%.4f in %d lesson(s)%s' % (total, len(results), (
+        '; $%.4f of it in lessons that stopped (their answers are stored)' % lost) if lost >= 0.00005 else ''))
     if code:
         return EXIT_BUDGET if code == EXIT_BUDGET else EXIT_ERROR
     if any(r.status not in ('done', 'ready') for r in results):

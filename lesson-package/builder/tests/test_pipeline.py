@@ -206,6 +206,35 @@ class FilesMode(unittest.TestCase):
             self.assertFalse(any(f.endswith('.json') and not f.startswith(('recordings', 'earlier')) for _, _, fs in os.walk(work) for f in fs))
 
 
+class PaidTotal(unittest.TestCase):
+    def test_a_lesson_that_stops_after_paying_is_in_the_total(self):
+        with tempfile.TemporaryDirectory() as work:
+            make_input(work)
+            env = os.path.join(work, 'env')
+            with open(env, 'w') as f:
+                f.write('%s=%s\n' % (ask.KEY_NAME, 'not-a-key'))
+
+            def fake_call(asker, req):
+                if req.pass_key == 'pass2':  # cut before its first whole item: the lesson stops with an error
+                    a = reply({})
+                    a['choices'][0]['message']['content'] = '{"new_words": [{"es": "ven'
+                    a['choices'][0]['finish_reason'] = 'length'
+                    return a
+                return reply(hand_answer(req.request_path, {'messages': [{'content': ''}]}))
+
+            saved = ask.Asker._call
+            ask.Asker._call = fake_call
+            try:
+                code, out = run('build', DATE, '--work', work, '--mode', 'openai', '--max-usd', '5', '--env', env)
+            finally:
+                ask.Asker._call = saved
+            self.assertEqual(code, 2)
+            self.assertIn('error', out)
+            total = float(out.split('total paid in this call: $')[1].split()[0])
+            self.assertGreater(total, 0)  # what the lesson paid before it stopped
+            self.assertIn('in lessons that stopped', out)
+
+
 class Publish(unittest.TestCase):
     def test_publish_refuses_to_overwrite_and_leaves_marks(self):
         with tempfile.TemporaryDirectory() as work, tempfile.TemporaryDirectory() as packages:

@@ -4,7 +4,7 @@ The lists of `package.json` are built by models that read the transcripts of a l
 them that picks what to ask and checks what comes back. This file tells how; the text of every prompt is in
 [prompts/](prompts/).
 
-## State (2026-11-20)
+## State (2026-11-21)
 
 - The builder is in the repository: [builder/](builder/README.md), `python -m builder build <date>…` from
   `lesson-package/` (Python 3, standard library only). It reads the prompts from [prompts/](prompts/), the
@@ -21,7 +21,9 @@ them that picks what to ask and checks what comes back. This file tells how; the
   were taken from real lessons — those are replaced by made-up ones — and for one phrase of
   `03-word-in-doubt.md` written in other words of the same meaning («стоят под вопросом»). A replay does not
   ask anything, so it does not see these changes.
-- Fourteen lessons have a package. Ten were built by `builder/` itself on 2026-11-20 with pass 3 answered
+- Twenty-six lessons have a package; the twelve of 2026-11-20 evening and 2026-11-21 (four of autumn 2025,
+  eight of December 2025 and 2026) are in "Price and time". Of the fourteen before them, ten were built by
+  `builder/` itself on 2026-11-20 with pass 3 answered
   by a Claude subagent (see "What was measured"): three of 2025 recorded as one mixed file, and seven with
   participant tracks, taken through `python -m builder days` from the batch plan to the published package
   in two calls. All ten asked the whole first form (A, B, C); since the owner's pick of 2026-11-20 a build
@@ -164,6 +166,28 @@ a copy of one recording under another name lay in its day folder, and the lesson
 agent05 learned to give such a file once (`8f4fbb9`); the second build took every answer of the other
 recordings as stored (all 44 pass-3 requests came out the same byte for byte) and asked only passes 5–7
 again ($0.03).
+
+Eight lessons of December 2025 and 2026 (one mixed recording a period, transcribed anew by `gpt-transcribe`,
+speakers told by voice), built the same way on 2026-11-21; the subagents (one sonnet agent a lesson, eight in
+all) read 1.18 million Claude tokens for 221 pass-3 requests, and every quote of a taught word was found letter
+for letter in its lines:
+
+| Lines of the lesson | Requests (of them pass 3) | OpenAI price | First form | Passes 1–2 | Pass 3 | Pass 4 | Passes 5–7 |
+|---|---|---|---|---|---|---|---|
+| 791 | 45 (25) | $0.37 | $0.08 | $0.22 | — | $0.05 | $0.02 |
+| 848 | 58 (38) | $0.40 | $0.09 | $0.23 | — | $0.05 | $0.02 |
+| 862 | 50 (29) | $0.39 | $0.09 | $0.23 | — | $0.05 | $0.03 |
+| 883 | 52 (32) | $0.42 | $0.10 | $0.24 | — | $0.05 | $0.03 |
+| 969 | 56 (35) | $0.38 | $0.08 | $0.21 | — | $0.05 | $0.03 |
+| 970 | 49 (31) | $0.50 | $0.11 | $0.30 | — | $0.06 | $0.03 |
+| 1031 | 50 (30) | $0.51 | $0.12 | $0.29 | — | $0.06 | $0.03 |
+| 180 (two recordings, nearly all Russian) | 10 (1) | $0.07 | $0.02 | $0.04 | — | $0.01 | $0.00 |
+
+The eight cost $3.04 in OpenAI. For seven of them the dry run's estimate of what was known to be asked (the
+first form and passes 1–2), $2.94, was 37 % over what those requests cost ($2.15).
+The lesson of 970 lines holds the answer that looped (see "What the code does around the models"): its cut
+answer is paid in the table. The last lesson is a talk in Russian (25 of its 2651 words in Latin letters): its
+package has no word, as it should.
 
 The price follows the words of the answers more than the lines of the lesson (the middle lesson has fewer
 lines and costs more): before a build name the estimate with a margin of a quarter. A build takes under
