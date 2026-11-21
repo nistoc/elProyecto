@@ -426,6 +426,8 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
     if (!drawn[id]) { drawn[id] = true; TABS.filter(function (t) { return t.id === id; })[0].draw(sections[id]); }
     if (noteId) {
       var n = document.getElementById('note-' + noteId);
+      var closed = n && n.querySelector('details');
+      if (closed && !closed.open) closed.open = true;
       if (n) { n.scrollIntoView({ block: 'start' }); n.classList.add('flash'); setTimeout(function () { n.classList.remove('flash'); }, 1600); }
     }
   }
@@ -651,8 +653,10 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
   function drawNotes(s, notes, lede) {
     s.appendChild(el('p', { class: 'note-line', text: lede }));
     var grid = el('div', { class: 'notes' });
-    notes.forEach(function (n) {
-      var long = (n.markdown || '').length > 12000 || n.kind === 'transcript' || n.kind === 'log';
+    notes.forEach(function (n, i) {
+      var size = (n.markdown || '').length, study = n.kind === 'homework' || n.kind === 'summary';
+      var long = n.kind === 'transcript' || n.kind === 'log' || size > (study ? 60000 : 12000);
+      if (i === 0 && study && size < 200000) long = false;  // the first homework or summary is open at once
       var card = el('article', { class: 'note', id: 'note-' + n.id });
       card.appendChild(el('div', { class: 'head' }, [el('h3', { text: n.title }), el('span', { class: 'badge', text: KIND[n.kind] || n.kind })]));
       if (long) {
