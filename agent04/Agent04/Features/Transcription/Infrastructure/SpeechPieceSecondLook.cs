@@ -29,6 +29,13 @@ namespace Agent04.Features.Transcription.Infrastructure;
 /// than anything in the answer sounds like the line (<see cref="SaidAsHeardAround"/>).
 /// </para>
 /// <para>
+/// More often only a part of a line is given so: «Sí, claro, y es otra cosa» where the piece heard «Sí,
+/// claro, это другое дело». The line as a whole is then as Latin as a mixed line is, and the doubt above
+/// does not see it; the words of the line and of the piece set side by side by sound do — a run of the
+/// line's Latin words with no partner stands where the piece has a run of Cyrillic words with no partner,
+/// and the two runs do not sound alike (<see cref="LooksPartlyTranslated"/>). It is settled the same way.
+/// </para>
+/// <para>
 /// The mirror of that doubt is rarer: asked with Russian named first, the text of a whole chunk now and
 /// then gives Spanish speech in Russian («Tal vez mañana» as «Может быть, mañana»). The line
 /// is Russian, the piece alone is Spanish, they do not sound alike (<see cref="LooksWrittenInRussian"/>),
@@ -86,6 +93,18 @@ internal static class SpeechPieceSecondLook
     /// the word has at least this many letters: «а», «да», «ну» stand in any ten seconds of a lesson.
     /// </summary>
     public const int HeardRussianLetters = 3;
+
+    /// <summary>
+    /// A part of a line in another language than its piece holds at least this many Latin words and the
+    /// piece's run at its place this many Cyrillic ones: one word apart («Bueno» for «Ну») is not a part.
+    /// </summary>
+    public const int MinPartWords = 2;
+
+    /// <summary>…and the Latin words of the part this many letters of sound: «Sí, ya» says too little.</summary>
+    public const int MinPartLetters = 8;
+
+    /// <summary>The words of each run are at least this share in their script: a run of both is not one language.</summary>
+    public const double PartScriptShare = 0.7;
 
     public static bool HasCyrillic(string? text) => (text ?? "").Any(IsCyrillic);
 
@@ -152,6 +171,58 @@ internal static class SpeechPieceSecondLook
         // heard, word for word («Vale. Y...» of «Угу, угу, vale. И...»): that is not another language.
         var (_, alikeAsPart) = ClosestRun(lineWords, ownWords, spanishOnly: false);
         return alikeAsPart < PartSimilarity;
+    }
+
+    /// <summary>
+    /// True when a part of the line the whole text gave to a piece is Spanish where the piece asked alone
+    /// is Russian: set side by side by sound, the line has a run of words with no partner in the piece —
+    /// at least <see cref="MinPartWords"/> Latin words of <see cref="MinPartLetters"/> letters — at the
+    /// place where the piece has a run of at least <see cref="MinPartWords"/> Cyrillic words with no partner
+    /// in the line, and the two runs do not sound alike. The same speech in two spellings sounds alike
+    /// («aire acondicionado» and «айре акондисионадо»); a word the whole text left out has nothing in the
+    /// line at its place, and a word the piece alone missed nothing in the piece.
+    /// </summary>
+    public static bool LooksPartlyTranslated(string? line, string? own)
+    {
+        var lineWords = Words(line);
+        var ownWords = Words(own);
+        if (lineWords.Count < MinPartWords || ownWords.Count < MinPartWords)
+            return false;
+
+        var lineRun = new List<string>();
+        var ownRun = new List<string>();
+        var steps = SpeechPieceWordAlignment.Align(
+            lineWords.Select(SpeechPieceWordAlignment.Normalize).ToArray(),
+            ownWords.Select(SpeechPieceWordAlignment.Normalize).ToArray());
+        foreach (var (i, j, partners) in steps.Append((-1, -1, true)))
+        {
+            if (!partners)
+            {
+                if (i >= 0)
+                    lineRun.Add(lineWords[i]);
+                if (j >= 0)
+                    ownRun.Add(ownWords[j]);
+                continue;
+            }
+
+            if (IsOtherLanguage(lineRun, ownRun))
+                return true;
+            lineRun.Clear();
+            ownRun.Clear();
+        }
+
+        return false;
+    }
+
+    private static bool IsOtherLanguage(List<string> lineRun, List<string> ownRun)
+    {
+        var latin = lineRun.Where(IsLatinWord).ToList();
+        if (latin.Count < MinPartWords || latin.Count < PartScriptShare * lineRun.Count || Letters(latin).Length < MinPartLetters)
+            return false;
+        var cyrillic = ownRun.Count(HasCyrillic);
+        if (cyrillic < MinPartWords || cyrillic < PartScriptShare * ownRun.Count)
+            return false;
+        return SpeechPieceWordAlignment.Similarity(Letters(lineRun), Letters(ownRun)) < UnlikeSimilarity;
     }
 
     /// <summary>

@@ -67,68 +67,13 @@ internal static class SpeechPieceWordAlignment
 
         if (m > 0)
         {
-            var a = whole.Select(Normalize).ToArray();
-            var b = pieceWords.Select(Normalize).ToArray();
-
-            var score = new float[n + 1, m + 1];
-            var back = new byte[n + 1, m + 1]; // 0 both words, 1 word of the whole text alone, 2 word of a piece alone
-            for (var i = 1; i <= n; i++)
+            foreach (var (i, j, partners) in Align(whole.Select(Normalize).ToArray(), pieceWords.Select(Normalize).ToArray()))
             {
-                score[i, 0] = (float)(i * GapScore);
-                back[i, 0] = 1;
-            }
-
-            for (var j = 1; j <= m; j++)
-            {
-                score[0, j] = (float)(j * GapScore);
-                back[0, j] = 2;
-            }
-
-            for (var i = 1; i <= n; i++)
-            {
-                for (var j = 1; j <= m; j++)
-                {
-                    var s = Similarity(a[i - 1], b[j - 1]);
-                    var both = score[i - 1, j - 1] + (float)(s >= PartnerSimilarity ? 2 * s - 0.6 : MismatchScore);
-                    var wholeAlone = score[i - 1, j] + (float)GapScore;
-                    var pieceAlone = score[i, j - 1] + (float)GapScore;
-                    if (both >= wholeAlone && both >= pieceAlone)
-                    {
-                        score[i, j] = both;
-                        back[i, j] = 0;
-                    }
-                    else if (wholeAlone >= pieceAlone)
-                    {
-                        score[i, j] = wholeAlone;
-                        back[i, j] = 1;
-                    }
-                    else
-                    {
-                        score[i, j] = pieceAlone;
-                        back[i, j] = 2;
-                    }
-                }
-            }
-
-            for (int i = n, j = m; i > 0 || j > 0;)
-            {
-                var step = back[i, j];
-                if (i > 0 && j > 0 && step == 0)
-                {
-                    owner[i - 1] = pieceWordOwner[j - 1];
-                    if (Similarity(a[i - 1], b[j - 1]) >= PartnerSimilarity)
-                        matched++;
-                    i--;
-                    j--;
-                }
-                else if (i > 0 && (j == 0 || step == 1))
-                {
-                    i--;
-                }
-                else
-                {
-                    j--;
-                }
+                if (i < 0 || j < 0)
+                    continue;
+                owner[i] = pieceWordOwner[j];
+                if (partners)
+                    matched++;
             }
         }
 
@@ -173,6 +118,81 @@ internal static class SpeechPieceWordAlignment
             texts[p] = builders[p]?.ToString() ?? "";
 
         return new Result(texts, n, m, matched);
+    }
+
+    /// <summary>
+    /// A global alignment (Needleman–Wunsch) of two lists of sound forms, in order: a step of both words
+    /// (<c>I</c> and <c>J</c> set; <c>Partners</c> when they sound alike, at least <see cref="PartnerSimilarity"/>),
+    /// or of a word of one list alone (the other index is -1).
+    /// </summary>
+    internal static IReadOnlyList<(int I, int J, bool Partners)> Align(IReadOnlyList<string> a, IReadOnlyList<string> b)
+    {
+        var n = a.Count;
+        var m = b.Count;
+        var score = new float[n + 1, m + 1];
+        var back = new byte[n + 1, m + 1]; // 0 both words, 1 word of a alone, 2 word of b alone
+        for (var i = 1; i <= n; i++)
+        {
+            score[i, 0] = (float)(i * GapScore);
+            back[i, 0] = 1;
+        }
+
+        for (var j = 1; j <= m; j++)
+        {
+            score[0, j] = (float)(j * GapScore);
+            back[0, j] = 2;
+        }
+
+        for (var i = 1; i <= n; i++)
+        {
+            for (var j = 1; j <= m; j++)
+            {
+                var s = Similarity(a[i - 1], b[j - 1]);
+                var both = score[i - 1, j - 1] + (float)(s >= PartnerSimilarity ? 2 * s - 0.6 : MismatchScore);
+                var aAlone = score[i - 1, j] + (float)GapScore;
+                var bAlone = score[i, j - 1] + (float)GapScore;
+                if (both >= aAlone && both >= bAlone)
+                {
+                    score[i, j] = both;
+                    back[i, j] = 0;
+                }
+                else if (aAlone >= bAlone)
+                {
+                    score[i, j] = aAlone;
+                    back[i, j] = 1;
+                }
+                else
+                {
+                    score[i, j] = bAlone;
+                    back[i, j] = 2;
+                }
+            }
+        }
+
+        var steps = new List<(int, int, bool)>(n + m);
+        for (int i = n, j = m; i > 0 || j > 0;)
+        {
+            var step = back[i, j];
+            if (i > 0 && j > 0 && step == 0)
+            {
+                steps.Add((i - 1, j - 1, Similarity(a[i - 1], b[j - 1]) >= PartnerSimilarity));
+                i--;
+                j--;
+            }
+            else if (i > 0 && (j == 0 || step == 1))
+            {
+                steps.Add((i - 1, -1, false));
+                i--;
+            }
+            else
+            {
+                steps.Add((-1, j - 1, false));
+                j--;
+            }
+        }
+
+        steps.Reverse();
+        return steps;
     }
 
     /// <summary>

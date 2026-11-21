@@ -383,10 +383,12 @@ public sealed class SpeechPiecesTranscription
             }
 
             // A line of the whole text that is Spanish where its piece alone is Russian, and does not sound
-            // like it, may be a translation of what was said. The piece asked with audio around it tells.
-            // The mirror — a Russian line over a Spanish piece — is doubted and settled the same way.
+            // like it, may be a translation of what was said; so may a line that is so in a part of it. The
+            // piece asked with audio around it tells. The mirror — a Russian line over a Spanish piece — is
+            // doubted and settled the same way.
             var doubted = new List<int>();
             var doubtedAsRussian = new HashSet<int>();
+            var doubt = new string?[pieces.Count];
             if (placed != null && settings.ContextSec > 0)
             {
                 for (var k = 0; k < pieces.Count; k++)
@@ -395,13 +397,20 @@ public sealed class SpeechPiecesTranscription
                         continue;
                     if (SpeechPieceSecondLook.LooksTranslated(asPlaced[k], own[k]))
                     {
-                        doubted.Add(k);
+                        doubt[k] = "translated";
                     }
                     else if (SpeechPieceSecondLook.LooksWrittenInRussian(asPlaced[k], own[k]))
                     {
-                        doubted.Add(k);
+                        doubt[k] = "written_in_russian";
                         doubtedAsRussian.Add(k);
                     }
+                    else if (SpeechPieceSecondLook.LooksPartlyTranslated(asPlaced[k], own[k]))
+                    {
+                        doubt[k] = "translated_in_part";
+                    }
+
+                    if (doubt[k] != null)
+                        doubted.Add(k);
                 }
             }
 
@@ -485,6 +494,8 @@ public sealed class SpeechPiecesTranscription
                     ["end"] = Round(piece.EndSec),
                     ["own_text"] = own.Length > k ? own[k] : null,
                 };
+                if (doubt[k] != null)
+                    item["doubt"] = doubt[k];
                 if (contextText[k] != null)
                     item["context_text"] = contextText[k];
                 if (wholeTextLine[k] != null)

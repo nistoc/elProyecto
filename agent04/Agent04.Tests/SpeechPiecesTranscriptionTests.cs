@@ -577,6 +577,69 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
         string own, string line, string around, string? expected) =>
         Assert.Equal(expected, SpeechPieceSecondLook.SaidAsHeardAround(own, line, around));
 
+    // ---- a line the whole text gave in Spanish in a part where the piece alone is Russian ----
+
+    [Theory]
+    [InlineData("Sí, claro, y es otra cosa, vamos.", "Sí, claro, это другое дело, vamos.", true)]
+    [InlineData("Mira la tabla, y ahora otra vez la tabla.", "Mira la tabla, а теперь ещё раз la tabla.", true)]
+    [InlineData("Tengo aire acondicionado en casa.", "Тенго айре акондисионадо эн каса.", false)]   // the same speech in two spellings sounds alike
+    [InlineData("Bueno, давай дальше.", "Ну, давай дальше.", false)]                               // one word apart is not a part
+    [InlineData("Vamos. Muy bien, vale.", "Vamos.", false)]                                         // the piece alone missed words: nothing of it stands there
+    [InlineData("Vamos.", "Vamos. Это всё на сегодня.", false)]                                     // the whole text left words out: nothing of the line stands there
+    [InlineData("Sí, ya, vale.", "Да, ну, vale.", false)]                                           // too few letters to doubt a part by them
+    [InlineData("Esto ya es pasado.", "Это уже прошлое.", true)]                                     // a line translated whole is so in its every part
+    [InlineData("Sí, claro, y es otra cosa.", null, false)]
+    [InlineData("", "Sí, claro, это другое дело.", false)]
+    public void A_line_Spanish_in_a_part_where_the_piece_is_Russian_may_be_translated_in_that_part(string? line, string? own, bool expected) =>
+        Assert.Equal(expected, SpeechPieceSecondLook.LooksPartlyTranslated(line, own));
+
+    [Fact]
+    public async Task A_line_translated_in_a_part_is_taken_from_the_piece_asked_again_with_the_audio_around_it()
+    {
+        // the whole text gives a Russian part of the middle piece in Spanish; with its surroundings it is Russian
+        const string withSurroundings = "Buenos días. Sí, claro, это другое дело. Hasta";
+        var audio = ThreePieces();
+        var server = new ScriptedServer(seen => (HttpStatusCode.OK,
+            seen.Whole ? Answer("Buenos días. Sí, claro, y es otra cosa. Hasta luego.", 60)
+            : seen.Context ? Answer(withSurroundings, 21)
+            : Answer(new[] { "Buenos dias", "Sí, claro, это другое дело.", "Hasta luego" }[seen.Piece], 5)));
+        var config = await LoadConfigAsync();
+
+        var answer = await CreateWay(audio, server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config));
+
+        Assert.Equal(new[] { "Buenos días.", "Sí, claro, это другое дело.", "Hasta luego." }, answer.Segments.Select(s => s.Text));
+        Assert.Equal(new[] { (1, 4.0, 21.0) }, audio.ContextCuts);
+        var block = Block(answer.RawResponse);
+        Assert.Equal(5, block["requests"]);
+        Assert.Equal(1, block["lines_asked_with_context"]);
+        Assert.Equal(1, block["lines_taken_from_context"]);
+        var item = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(((object?[])block["items"]!)[1]);
+        Assert.Equal("translated_in_part", item["doubt"]);
+        Assert.Equal("Sí, claro, y es otra cosa.", item["whole_text_line"]);
+        Assert.Equal("line", item["second_look"]);
+    }
+
+    [Fact]
+    public async Task A_line_doubted_in_a_part_stays_when_the_piece_asked_again_with_the_audio_around_it_says_the_same()
+    {
+        // the piece alone misheard the Spanish part: with its surroundings it is the line of the whole text
+        var server = new ScriptedServer(seen => (HttpStatusCode.OK,
+            seen.Whole ? Answer("Buenos días. Sí, claro, y es otra cosa. Hasta luego.", 60)
+            : seen.Context ? Answer("Buenos días. Sí, claro, y es otra cosa. Hasta", 21)
+            : Answer(new[] { "Buenos dias", "Sí, claro, это другое дело.", "Hasta luego" }[seen.Piece], 5)));
+        var config = await LoadConfigAsync();
+
+        var answer = await CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config));
+
+        Assert.Equal(new[] { "Buenos días.", "Sí, claro, y es otra cosa.", "Hasta luego." }, answer.Segments.Select(s => s.Text));
+        var block = Block(answer.RawResponse);
+        Assert.Equal(1, block["lines_asked_with_context"]);
+        Assert.Equal(0, block["lines_taken_from_context"]);
+        var item = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(((object?[])block["items"]!)[1]);
+        Assert.Equal("translated_in_part", item["doubt"]);
+        Assert.False(item.ContainsKey("second_look"));
+    }
+
     // ---- the mirror: a line the whole text gave in Russian where the piece alone is Spanish ----
 
     [Theory]
