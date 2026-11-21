@@ -1,10 +1,12 @@
-"""Quote check, candidates, prompts, input mapping, budget. Made-up words only."""
+"""Quote check, candidates, prompts, input mapping, budget, cut answers. Made-up words only."""
+import json
 import os
 import tempfile
 import unittest
 
 from builder import prompts, source
-from builder.ask import Budget, BudgetExceeded
+from builder.ask import (Asker, BadAnswer, Budget, BudgetExceeded, Ledger, Request, complete_prefix, content, is_cut,
+                         read_answer, salvage, write_json)
 from builder.earlier import Earlier, candidates, seen_before
 from builder.textutil import verdict
 
@@ -139,6 +141,77 @@ class BudgetTest(unittest.TestCase):
         b.before('b', 0.4)
         with self.assertRaises(BudgetExceeded):
             b.before('c', 0.5)  # 0.35 spent + 0.4 still known + 0.5 > 1.0
+
+
+LIST_SCHEMA = {'type': 'object', 'properties': {
+    'new_words': {'type': 'array', 'items': {'type': 'object', 'properties': {'es': {'type': 'string'}}}},
+    'vocabulary': {'type': 'array', 'items': {'type': 'object', 'properties': {'es': {'type': 'string'}}}},
+    'note': {'type': 'string'}}}
+
+
+def chat_answer(text, finish='stop'):
+    return {'choices': [{'message': {'role': 'assistant', 'content': text}, 'finish_reason': finish}],
+            'usage': {'prompt_tokens': 100, 'completion_tokens': 50}}
+
+
+class CutAnswer(unittest.TestCase):
+    """An answer stopped at its max_tokens: the whole items are kept, a looping list loses its repeats."""
+
+    LOOPED = ('{"new_words": [{"es": "gato"}], "vocabulary": [{"es": "mesa"}, {"es": "silla"}, '
+              '{"es": "mesa"}, {"es": "silla"}, {"es": "mesa"}, {"es": "si')
+
+    def test_the_whole_start_of_a_cut_text(self):
+        self.assertEqual(complete_prefix('{"a": [{"b": "x}"}, {"b": "y'), '{"a": [{"b": "x}"}]}')
+        self.assertEqual(complete_prefix('{"a": [1, 2]}'), '{"a": [1, 2]}')
+        self.assertIsNone(complete_prefix('{"a": [{"b": "x'))
+
+    def test_a_looped_answer_keeps_its_items_once_and_the_fields_after_the_cut_are_empty(self):
+        mended = salvage(chat_answer(self.LOOPED, 'length'), LIST_SCHEMA)
+        self.assertEqual(content(mended), {'new_words': [{'es': 'gato'}],
+                                           'vocabulary': [{'es': 'mesa'}, {'es': 'silla'}], 'note': ''})
+        self.assertEqual(mended['_cut']['repeats_dropped'], 3)
+        self.assertEqual(mended['usage'], {'prompt_tokens': 100, 'completion_tokens': 50})
+
+    def _asker(self, d, mode='replay', dry_run=False):
+        req = Request(d, 'task2', 'pass2', 'gpt-4.1', 100, 'system', ['task'], LIST_SCHEMA, 0.01)
+        return Asker('2030-01-01', {}, mode, Ledger(), dry_run=dry_run), req
+
+    def test_a_cut_answer_stored_as_it_came_is_mended_and_kept_aside(self):
+        with tempfile.TemporaryDirectory() as d:
+            write_json(os.path.join(d, 'task2.json'), chat_answer(self.LOOPED, 'length'))
+            asker, req = self._asker(d, dry_run=True)  # a pre-flight mends too: the later stages read the file
+            self.assertEqual(len(content(asker.ask(req))['vocabulary']), 2)
+            with open(req.cut_path, encoding='utf-8') as f:
+                self.assertTrue(is_cut(json.load(f)))
+            self.assertIn('_cut', read_answer(req.path))
+            row = asker.ledger.rows['pass2']
+            self.assertEqual((row['stored'], row['cut'], row['repeats']), (1, 1, 3))
+
+            asker, req = self._asker(d)  # the next read takes the mended answer as it is
+            self.assertEqual(len(content(asker.ask(req))['vocabulary']), 2)
+            self.assertEqual(asker.ledger.rows['pass2']['cut'], 1)
+
+    def test_a_cut_answer_that_came_now_is_paid_once_and_stored_mended(self):
+        with tempfile.TemporaryDirectory() as d:
+            asker, req = self._asker(d, mode='openai')
+            asker.budget = Budget(1.0, {})
+            calls = []
+            asker._call = lambda r: calls.append(r) or chat_answer(self.LOOPED, 'length')
+            self.assertEqual(content(asker.ask(req))['new_words'], [{'es': 'gato'}])
+            self.assertEqual(len(calls), 1)
+            self.assertGreater(asker.budget.spent, 0)
+            self.assertTrue(os.path.exists(req.cut_path))
+            self.assertEqual(content(asker.ask(req))['new_words'], [{'es': 'gato'}])
+            self.assertEqual(len(calls), 1)  # stored: never asked again
+
+    def test_a_cut_before_the_first_whole_item_is_an_error_and_frees_the_place(self):
+        with tempfile.TemporaryDirectory() as d:
+            write_json(os.path.join(d, 'task2.json'), chat_answer('{"new_words": [{"es": "ga', 'length'))
+            asker, req = self._asker(d)
+            with self.assertRaises(BadAnswer):
+                asker.ask(req)
+            self.assertFalse(os.path.exists(req.path))
+            self.assertTrue(os.path.exists(req.cut_path))
 
 
 if __name__ == '__main__':

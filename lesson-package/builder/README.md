@@ -34,6 +34,13 @@ since 2026-11-20, by the owner's pick; `all` asks A, B and C, as every package b
 A stored answer is never asked again, in any mode. Stages whose input is not answered yet are `blocked`; the
 others still write their request files, so a `files` round trip answers as much as it can at once.
 
+An answer cut at its `max_tokens` (`finish_reason` `length`: its content is not whole JSON) is not asked again
+either. The cut answer is kept as `<name>.cut.json`; the answer stored in its place holds its whole items, exact
+repeats of an item dropped, the fields after the cut empty, and a block `_cut` that says so. The report names it per
+pass — "the model looped" when repeats were dropped, else "the list was longer than the room": then raise that
+`max_tokens` in the code, move the two files aside and run again (paid). A builder before this rule stored a cut
+answer as it came; the next run mends it the same way, for free.
+
 Exit codes: 0 done, 2 error, 3 answers are to be written (files mode), 4 stopped by `--max-usd`.
 
 ## Work folder

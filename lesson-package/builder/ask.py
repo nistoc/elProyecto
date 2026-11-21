@@ -6,6 +6,11 @@ Modes (per pass, see cli.py):
   files   a missing answer is written as `<name>.request.json` and not asked; the answer is the file `<name>.json`.
   replay  stored answers only; a missing one is an error.
 A stored answer is never asked again, in any mode.
+
+An answer cut at its max_tokens (finish_reason "length") has a content that is not whole JSON. It is never asked
+again either: its whole items are the answer (`salvage`), exact repeats of an item dropped, and the cut answer is kept
+next to it as `<name>.cut.json`. Asked at temperature 0, a model that looped loops again; and a list that was only
+longer than the room is reported (the ledger counts it), so a person can raise the room and ask that one again.
 """
 import json
 import os
@@ -48,6 +53,10 @@ class Request:
     def request_path(self):
         return os.path.join(self.folder, self.name + '.request.json')
 
+    @property
+    def cut_path(self):
+        return os.path.join(self.folder, self.name + '.cut.json')
+
     def file_form(self):
         return {'model': self.model, 'temperature': 0, 'max_tokens': self.max_tokens,
                 'messages': [{'role': 'system', 'content': self.system}] +
@@ -75,6 +84,108 @@ def read_answer(path):
     except (ValueError, KeyError, IndexError, TypeError) as e:
         raise BadAnswer('%s is not an answer in the chat-completions shape (%s: %s)' % (path, type(e).__name__, e))
     return answer
+
+
+def is_cut(answer):
+    """The answer stopped at its max_tokens: its content is the start of a JSON text, not a whole one."""
+    try:
+        return answer['choices'][0].get('finish_reason') == 'length'
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return False
+
+
+def complete_prefix(text):
+    """The longest start of a cut JSON text that ends right after a whole object or list inside another one, with
+    the brackets still open closed; None when there is no such place."""
+    stack, in_str, esc, best = [], False, False, None
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == '\\':
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in '{[':
+            stack.append(ch)
+        elif ch in '}]':
+            if not stack:
+                return None
+            stack.pop()
+            if not stack:
+                return text[:i + 1]
+            best = text[:i + 1] + ''.join('}' if c == '{' else ']' for c in reversed(stack))
+    return best
+
+
+def _empty(schema):
+    kind = schema.get('type')
+    kind = kind[0] if isinstance(kind, list) else kind
+    if kind == 'object':
+        return _fill({}, schema)
+    return {'array': [], 'string': '', 'integer': 0, 'number': 0, 'boolean': False}.get(kind)
+
+
+def _fill(value, schema):
+    """The fields the schema has and a cut value lacks (those after the cut), each empty."""
+    if not isinstance(schema, dict):
+        return value
+    if isinstance(value, dict):
+        for k, s in (schema.get('properties') or {}).items():
+            value[k] = _fill(value[k], s) if k in value else _empty(s)
+    elif isinstance(value, list) and isinstance(schema.get('items'), dict):
+        value[:] = [_fill(v, schema['items']) for v in value]
+    return value
+
+
+def drop_repeats(value):
+    """Exact repeats of an item of a list are dropped (a looping answer writes the same items again); their count."""
+    dropped = 0
+    if isinstance(value, dict):
+        for v in value.values():
+            dropped += drop_repeats(v)
+    elif isinstance(value, list):
+        seen, kept = set(), []
+        for v in value:
+            key = json.dumps(v, sort_keys=True, ensure_ascii=False)
+            if key in seen:
+                dropped += 1
+                continue
+            seen.add(key)
+            kept.append(v)
+            dropped += drop_repeats(v)
+        value[:] = kept
+    return dropped
+
+
+def salvage(answer, schema):
+    """A cut answer made whole: its whole items, exact repeats dropped, the fields after the cut empty. The usage
+    stays (it is what was paid); `_cut` tells what was done. None when not one whole item came."""
+    text = answer['choices'][0]['message'].get('content') or ''
+    prefix = complete_prefix(text)
+    if prefix is None:
+        return None
+    try:
+        value = json.loads(prefix)
+    except ValueError:
+        return None
+    value = _fill(value, schema)
+    dropped = drop_repeats(value)
+    mended = json.loads(json.dumps(answer))
+    mended['choices'][0]['message']['content'] = json.dumps(value, ensure_ascii=False)
+    mended['_cut'] = {'content_chars': len(text), 'kept_chars': len(prefix), 'repeats_dropped': dropped}
+    return mended
+
+
+def _load_raw(path):
+    try:
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+    except ValueError:
+        return None
 
 
 def write_json(path, data):
@@ -143,7 +254,8 @@ class Ledger:
         self.rows = {}
 
     def row(self, key):
-        return self.rows.setdefault(key, {'stored': 0, 'asked': 0, 'written': 0, 'missing': 0, 'cost': 0.0, 'est': 0.0})
+        return self.rows.setdefault(key, {'stored': 0, 'asked': 0, 'written': 0, 'missing': 0, 'cost': 0.0, 'est': 0.0,
+                                          'cut': 0, 'repeats': 0})
 
     @property
     def cost(self):
@@ -169,7 +281,14 @@ class Asker:
         row = self.ledger.row(req.pass_key)
         if os.path.exists(req.path):
             row['stored'] += 1
-            return read_answer(req.path)
+            stored = _load_raw(req.path)
+            if stored is not None and is_cut(stored) and '_cut' not in stored:
+                return self._mend(req, row, stored)  # stored by a builder that kept cut answers as they came
+            answer = read_answer(req.path)
+            if '_cut' in answer:
+                row['cut'] += 1
+                row['repeats'] += answer['_cut'].get('repeats_dropped', 0)
+            return answer
         mode = self.mode(req.pass_key)
         key = '%s|%s' % (self.lesson, req.path)
         if mode == 'replay':
@@ -188,13 +307,30 @@ class Asker:
         if self.budget:
             self.budget.before(key, req.est)
         answer = self._call(req)
-        write_json(req.path, answer)
         c = cost(answer, req.model)
         row['asked'] += 1
         row['cost'] += c
         if self.budget:
             self.budget.after(key, c)
+        if is_cut(answer):
+            return self._mend(req, row, answer)
+        write_json(req.path, answer)
         return answer
+
+    def _mend(self, req, row, cut):
+        """A cut answer: kept as `<name>.cut.json`, its salvaged form stored as the answer. Done in every mode, also
+        by a pre-flight: it costs nothing, gives the same each time, and the later stages read the stored file."""
+        mended = salvage(cut, req.schema)
+        write_json(req.cut_path, cut)
+        if mended is None:
+            if os.path.exists(req.path):
+                os.remove(req.path)  # the cut answer is in .cut.json; the place of the answer stays free
+            raise BadAnswer('%s: the answer was cut at max_tokens %s before its first whole item (kept as %s)'
+                            % (req.path, req.max_tokens, req.cut_path))
+        row['cut'] += 1
+        row['repeats'] += mended['_cut']['repeats_dropped']
+        write_json(req.path, mended)
+        return mended
 
     def _call(self, req):
         http = urllib.request.Request(API_URL, data=json.dumps(req.api_body()).encode('utf-8'),

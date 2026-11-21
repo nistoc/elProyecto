@@ -38,6 +38,10 @@ def report(res):
     for key, r in res.ledger.rows.items():
         lines.append('   %-6s stored %3d, asked %3d, request files %3d, missing %3d, paid $%.4f, to ask about $%.4f' % (
             key, r['stored'], r['asked'], r['written'], r['missing'], r['cost'], r['est']))
+        if r.get('cut'):
+            lines.append('   %-6s %d answer(s) cut at max_tokens: whole items kept, %d repeat(s) dropped%s' % (
+                key, r['cut'], r['repeats'], ' (the model looped)' if r['repeats'] else
+                ' - the list was longer than the room: items after the cut are missing (see <name>.cut.json)'))
     if res.status == 'done':
         lines.append('   package: %d requests, $%.2f by the usage of the answers' % (res.requests, res.cost))
     lines.append('   paid $%.4f%s' % (res.ledger.cost, '' if res.status == 'done' else '; still to ask about $%.3f' % sum(

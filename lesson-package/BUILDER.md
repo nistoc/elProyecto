@@ -104,6 +104,11 @@ of the 61–68 requests and 35–39 % of the price (see "What is weak", 6).
 - **Lists the words found only by code.** Every Latin-letter word of the lesson that no list holds and
   that no earlier lesson had at build time, with how many times it was said and its first line. Pass 7
   tells what each is; a word it calls a name is left out of the list.
+- **Mends an answer cut at its `max_tokens`** (`builder/README.md`, "Modes"). It happened once in about
+  forty lessons (2026-11-21, pass 2 of one recording of 2025-12-18): the vocabulary list looped — 403
+  entries, 99 different — until the 12000 tokens ran out. The whole entries before the cut, repeats
+  dropped, are the answer (34 new words and 65 words of vocabulary, as many as a recording usually gives);
+  asking the same at temperature 0 again would loop again.
 
 ## Price and time
 
