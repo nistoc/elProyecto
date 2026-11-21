@@ -88,9 +88,22 @@ the page of every day it built. Pictures of the notes are made at most 1400 px w
 in as data URIs; a sound is put in while it is under 3 MB and the page under 14 MB, else the page names it. A day
 with neither a package nor a note gets no page (exit 2 when no date gave one).
 
+The notes are not shown as they lie (long documents of an earlier parse) but cut into small study items by code
+(`study.py`, free, made anew on every build; the owner's word of 2026-11-21: small blocks, more interactive). Every
+note is cut at its headings, each section is told by its headings what it holds, and lines of known shapes are taken
+out: words (`**es** — ru`, `es;ru`, a table row of a Spanish and a Russian cell), phrases (`ES: …; RU: …`), mistakes
+(`wrong → right` under a heading of corrections), grammar and other cards (a section: title, text, its ES/RU lines as
+examples), tasks (a homework or practice section: its text, the numbered lines with a gap to answer, the keys of its
+keys section or of a "Keys:" line). Sections that only tell how the notes were made are dropped; logs and transcripts
+give nothing. The page shows them in tabs: words (the package's and the notes' in one table), phrases, grammar,
+mistakes, homework and exercises (answers, "done" and the keys behind a click), practice (cards with spaced repetition,
+typing the Spanish, matching pairs, a word left out of a phrase; the browser's own Spanish voice), materials, and the
+notes themselves folded under "sources". What a learner does there (answers, ticks, repetition boxes) is kept by the
+browser only (`localStorage`).
+
 The page is not published anywhere (the owner's word of 2026-11-21: files on the disk, not claude.ai Artifacts).
 Template: `page_template.html` (`{{title}}`, `{{data}}`; the data is JSON with every `<` written `<`). Tests:
-`builder/tests/test_page.py`.
+`builder/tests/test_page.py`, `builder/tests/test_study.py`.
 
 ## Days
 

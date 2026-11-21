@@ -160,6 +160,47 @@ button.act:disabled { opacity: 0.5; cursor: default; }
 .options button.wrong { background: var(--bad-soft); border-color: var(--bad); }
 .panel-title { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
 footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
+.cards.small { grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); align-items: start; }
+.block { gap: 6px; scroll-margin-top: 70px; }
+.block .path, .mistake .path { font-size: 12px; color: var(--muted); }
+.block .md { font-size: 14.5px; line-height: 1.55; }
+.block .md h1, .block .md h2, .block .md h3, .block .md h4 { font-size: 1em; margin: 0.6em 0 0.2em; }
+button.more { justify-self: start; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; padding: 2px 0; }
+button.say { border: 0; background: none; cursor: pointer; font-size: 14px; padding: 0 4px; line-height: 1; opacity: 0.7; vertical-align: baseline; }
+button.say:hover { opacity: 1; }
+ul.pairs { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+ul.pairs li { border-left: 3px solid var(--accent-soft); padding-left: 10px; display: grid; gap: 1px; }
+ul.pairs .es { font-family: var(--read); font-weight: 600; }
+.hide-ru .ru-hideable { filter: blur(5px); cursor: pointer; transition: filter 0.15s; }
+.hide-ru .ru-hideable.shown { filter: none; }
+.mistake .wrong { color: var(--bad); text-decoration: line-through; font-family: var(--read); font-size: 15px; }
+.mistake .right { color: var(--good); font-weight: 600; font-family: var(--read); font-size: 15px; }
+.task.done { opacity: 0.6; }
+.doneline { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); cursor: pointer; }
+ol.items { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; counter-reset: it; }
+ol.items li { display: grid; gap: 4px; counter-increment: it; }
+ol.items .p { font-family: var(--read); font-size: 15px; }
+ol.items .p::before { content: counter(it) ". "; color: var(--muted); font-weight: 600; font-family: var(--sans); }
+ol.items input, textarea.answer, .typing input { width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--rule-strong); background: var(--bg); color: var(--ink); font: inherit; }
+textarea.answer { min-height: 72px; resize: vertical; margin-top: 6px; }
+details.keys { background: var(--good-soft); border-radius: 8px; padding: 6px 10px; }
+.progress { height: 8px; border-radius: 99px; background: var(--chip); overflow: hidden; }
+.progress > span { display: block; height: 100%; width: 0; background: var(--good); transition: width 0.2s; }
+.srs-stats { display: flex; flex-wrap: wrap; gap: 6px; }
+.match { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.match button { text-align: left; overflow-wrap: anywhere; }
+.match button.sel { border-color: var(--accent); background: var(--accent-soft); }
+.match button.ok { background: var(--good-soft); border-color: var(--good); opacity: 0.6; cursor: default; }
+.match button.bad { background: var(--bad-soft); border-color: var(--bad); }
+.typing .ask { font-size: 20px; font-weight: 600; color: var(--ru); }
+.verdict.ok { color: var(--good); font-weight: 600; }
+.verdict.bad { color: var(--bad); font-weight: 600; }
+.block .md img { max-height: 160px; width: auto; margin: 2px; vertical-align: top; cursor: zoom-in; }
+.block .md img.big { max-height: none; width: 100%; cursor: zoom-out; }
+.card { grid-template-columns: minmax(0, 1fr); }
+.card .where, .note .where { white-space: normal; }
+button.act, .options button { overflow-wrap: anywhere; white-space: normal; }
+.blank-inline { display: inline-block; min-width: 3em; border-bottom: 2px solid var(--accent); margin: 0 2px; }
 </style>
 </head>
 <body>
@@ -326,6 +367,7 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
   }
   function norm(s) { return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
   function seenCell(r) {
+    if (r.list === 'notes') return el('span', { class: 'muted', text: '—' });
     var n = (r.seenIn || []).length;
     if (!n) return el('span', { class: 'badge new', text: 'новое' });
     var s = el('span', { class: 'seen', text: plural(n, 'урок', 'урока', 'уроков') });
@@ -336,6 +378,8 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
     var w = el('span', { class: 'es', text: r.es });
     withTip(w, r.said || r.quote || '', where(r) + (r.sec != null ? '' : ''));
     box.appendChild(w);
+    var sb = sayBtn(r.es);
+    if (sb) box.appendChild(sb);
     if (r.heardElsewhere === false) {
       box.appendChild(document.createTextNode(' '));
       box.appendChild(withTip(el('span', { class: 'badge doubt', text: '?' }), 'Ни одно другое прослушивание этой речи не слышит слова — возможно, его не говорили.', 'Проверьте по записи; убрать слово можно в XtractManager.'));
@@ -350,25 +394,35 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
     (P.newWords || []).forEach(function (w) { WORDS.push({ list: 'new', es: w.es, ru: w.ru, kind: HOW[w.how] || w.how || (POS[w.pos] || w.pos || ''), note: w.note, seenIn: w.seenIn || [], heardElsewhere: w.heardElsewhere, period: w.period, at: w.at, sec: w.sec, who: w.who, quote: w.quote, said: w.said }); });
     (P.vocabulary || []).forEach(function (w) { WORDS.push({ list: 'vocab', es: w.es, ru: w.ru, kind: POS[w.pos] || w.pos || '', note: w.note, seenIn: w.seenIn || [], heardElsewhere: w.heardElsewhere, period: w.period, at: w.at, sec: w.sec, who: w.who, quote: w.quote, said: w.said }); });
     (P.otherWords || []).forEach(function (w) { WORDS.push({ list: 'code', es: w.word, ru: w.ru, kind: OKIND[w.kind] || w.kind || '', rawKind: w.kind, lemma: w.lemma, count: w.count, seenIn: w.seenIn || [], heardElsewhere: w.heardElsewhere, period: w.period, at: w.at, sec: w.sec, who: w.who, quote: null, said: w.said }); });
-    WORDS.forEach(function (r) { if (r.list === 'code') r.kind = r.kind; });
   }
-  var LIST = { 'new': 'объяснено на уроке', vocab: 'лексика урока', code: 'нашёл код' };
+  var ST = D.study || { words: [], phrases: [], mistakes: [], cards: [], tasks: [] };
+  (function () {  // the words of the notes that the package has not got
+    var have = {};
+    WORDS.forEach(function (r) { have[norm(r.es)] = 1; });
+    ST.words.forEach(function (w) {
+      if (have[norm(w.es)]) return;
+      have[norm(w.es)] = 1;
+      WORDS.push({ list: 'notes', es: w.es, ru: w.ru, kind: '', group: w.group, seenIn: null });
+    });
+  })();
+  var LIST = { 'new': 'объяснено на уроке', vocab: 'лексика урока', code: 'нашёл код', notes: 'из заметок' };
   function timeKey(r) { return (r.period || 0) * 100000 + (r.sec || 0); }
 
   /* ---------- tabs ---------- */
-  var notesBy = {};
-  (D.notes || []).forEach(function (n) { (notesBy[n.kind] = notesBy[n.kind] || []).push(n); });
-  var otherNotes = (D.notes || []).filter(function (n) { return n.kind !== 'homework' && n.kind !== 'summary'; });
-  var cardPairs = parseCards(notesBy.cards || []);
+  var GCARDS = ST.cards.filter(function (c) { return c.kind === 'grammar'; });
+  var MCARDS = ST.cards.filter(function (c) { return c.kind !== 'grammar'; });
+  var DECKS = decksOf();
   var TABS = [];
-  if (P) TABS.push({ id: 'words', title: 'Слова', count: WORDS.length, draw: drawWords });
-  if (P && (P.grammar.length || P.wordNotes.length)) TABS.push({ id: 'grammar', title: 'Грамматика', count: P.grammar.length, draw: drawGrammar });
+  if (WORDS.length) TABS.push({ id: 'words', title: 'Слова', count: WORDS.length, draw: drawWords });
+  if (ST.phrases.length) TABS.push({ id: 'phrases', title: 'Фразы', count: ST.phrases.length, draw: drawPhrases });
+  if ((P && (P.grammar.length || P.wordNotes.length)) || GCARDS.length) TABS.push({ id: 'grammar', title: 'Грамматика', count: (P ? P.grammar.length : 0) + GCARDS.length, draw: drawGrammar });
+  if (ST.mistakes.length) TABS.push({ id: 'mistakes', title: 'Ошибки', count: ST.mistakes.length, draw: drawMistakes });
   if (P && P.topics.length) TABS.push({ id: 'topics', title: 'Темы', count: P.topics.length, draw: drawTopics });
   if (P && P.examples.length) TABS.push({ id: 'examples', title: 'Примеры', count: P.examples.length, draw: drawExamples });
-  if (notesBy.homework) TABS.push({ id: 'homework', title: 'ДЗ', count: notesBy.homework.length, draw: function (s) { drawNotes(s, notesBy.homework, 'Домашние задания из прежнего разбора урока. Отмеченные пункты запоминает этот браузер.'); } });
-  if (notesBy.summary) TABS.push({ id: 'summary', title: 'Конспект', count: notesBy.summary.length, draw: function (s) { drawNotes(s, notesBy.summary, 'Конспект урока из прежнего разбора.'); } });
-  if (WORDS.some(function (r) { return r.ru; }) || cardPairs.length) TABS.push({ id: 'practice', title: 'Тренировка', count: null, draw: drawPractice });
-  if (otherNotes.length) TABS.push({ id: 'notes', title: 'Заметки', count: otherNotes.length, draw: function (s) { drawNotes(s, otherNotes, 'Остальные заметки урока: карточки, диалоги, темы, журнал и прочее.'); } });
+  if (ST.tasks.length) TABS.push({ id: 'homework', title: 'ДЗ и упражнения', count: ST.tasks.length, draw: drawTasks });
+  if (DECKS.length) TABS.push({ id: 'practice', title: 'Тренировка', count: null, draw: drawPractice });
+  if (MCARDS.length) TABS.push({ id: 'materials', title: 'Материалы', count: MCARDS.length, draw: drawMaterials });
+  if ((D.notes || []).length) TABS.push({ id: 'sources', title: 'Источники', count: D.notes.length, draw: drawSources });
   var drawn = {};
   var sections = {};
   var tabLinks = {};
@@ -381,7 +435,7 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
     var day = new Date(D.date + 'T12:00:00');
     var weekday = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'][day.getDay()];
     top.appendChild(el('div', { class: 'eyebrow', text: 'Урок испанского · ' + fmtDate(D.date) + ' · ' + weekday }));
-    top.appendChild(el('h1', { text: (P ? 'Пакет урока ' : 'Заметки урока ') + fmtDate(D.date) + ((L.titles || []).length ? ' — ' + L.titles.join(', ') : '') }));
+    top.appendChild(el('h1', { text: (P ? 'Пакет урока ' : 'Материалы урока ') + fmtDate(D.date) + ((L.titles || []).length ? ' — ' + L.titles.join(', ') : '') }));
     var lede = [];
     if (rec.length) lede.push(plural(rec.length, 'запись', 'записи', 'записей') + ' · ' + Math.round(minutes) + ' мин' + (rec.some(function (r) { return r.participantTracks; }) ? ' · дорожки участников' : ''));
     else lede.push('Записи урока нет');
@@ -391,19 +445,22 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
     function fact(n, label) { if (n == null) return; facts.appendChild(el('li', null, [el('b', { text: String(n) }), ' ' + label])); }
     if (P) {
       var C = P.counts || {};
-      fact(WORDS.filter(function (r) { return !(r.seenIn || []).length; }).length, 'слов, которых не было раньше');
-      fact(WORDS.length, 'слов в пакете');
+      fact(WORDS.filter(function (r) { return r.list !== 'notes' && !(r.seenIn || []).length; }).length, 'слов, которых не было раньше');
+      fact(WORDS.filter(function (r) { return r.list !== 'notes'; }).length, 'слов в пакете');
       fact(P.grammar.length, 'тем грамматики');
       fact(P.examples.length, 'примеров');
       var doubt = WORDS.filter(function (r) { return r.heardElsewhere === false; }).length;
       if (doubt) fact(doubt, 'слов под «?»');
     }
-    if (notesBy.homework) fact(notesBy.homework.length, 'ДЗ');
-    if ((D.notes || []).length) fact(D.notes.length, 'заметок');
+    if (!P && WORDS.length) fact(WORDS.length, 'слов из заметок');
+    if (ST.phrases.length) fact(ST.phrases.length, 'фраз');
+    if (!P && GCARDS.length) fact(GCARDS.length, 'карточек грамматики');
+    if (ST.mistakes.length) fact(ST.mistakes.length, 'ошибок с поправкой');
+    if (ST.tasks.length) fact(ST.tasks.length, 'заданий');
     top.appendChild(facts);
     if (!P) {
       var stage = (L.stages || [])[0];
-      var why = stage === 'no_recording' ? 'Записи урока нет, поэтому пакета нет: здесь только заметки урока.'
+      var why = stage === 'no_recording' ? 'Записи урока нет, поэтому пакета нет. Ниже — заметки прежнего разбора, разложенные по учебным вкладкам.'
         : stage === 'no_text' ? 'Пакета нет: у записей урока нет нашего текста. Сначала нужно распознавание (платно), потом сборка пакета.'
         : 'Пакета нет: текст урока записан старым способом, пакет ещё не собран (платно).';
       top.appendChild(el('div', { class: 'banner', text: why }));
@@ -444,14 +501,14 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
     var h = (location.hash || '').slice(1);
     if (h.indexOf('note-') === 0) {
       var id = h.slice(5), note = (D.notes || []).filter(function (n) { return n.id === id; })[0];
-      if (note) { open(note.kind === 'homework' ? 'homework' : note.kind === 'summary' ? 'summary' : 'notes', id); return; }
+      if (note) { open('sources', id); return; }
     }
     open(h);
   }
 
   /* ---------- words ---------- */
   function drawWords(s) {
-    var f = store('words-filter') || { onlyNew: true, list: 'all', onlyDoubt: false, q: '' };
+    var f = store('words-filter') || { onlyNew: !!P, list: 'all', onlyDoubt: false, q: '' };
     var count = el('span', { class: 'count' });
     var cols = [
       { key: 'es', title: 'Слово', width: 210, cell: wordCell },
@@ -459,7 +516,7 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
       { key: 'kind', title: 'Вид', width: 130, cell: function (r) { return r.kind ? el('span', { class: 'badge', text: r.kind }) : ''; } },
       { key: 'list', title: 'Список', width: 150, cell: function (r) { return LIST[r.list]; }, sortValue: function (r) { return LIST[r.list]; } },
       { key: 'seen', title: 'Раньше', width: 110, cell: seenCell, sortValue: function (r) { return (r.seenIn || []).length; } },
-      { key: 'where', title: 'Где', width: 210, cell: function (r) { return el('span', { class: 'where', text: where(r) }); }, sortValue: timeKey },
+      { key: 'where', title: 'Где', width: 210, cell: function (r) { return el('span', { class: 'where', text: r.list === 'notes' ? 'заметки · ' + (r.group || '') : where(r) }); }, sortValue: timeKey },
       { key: 'quote', title: 'Фраза', width: 460, cell: function (r) { var q = r.quote || r.said || ''; return q ? el('span', { class: 'quote', text: q }) : ''; } },
       { key: 'note', title: 'Заметка', width: 260, cell: function (r) { return r.note ? el('span', { class: 'muted', text: r.note }) : (r.lemma && r.lemma !== r.es ? el('span', { class: 'muted', text: 'словарная форма: ' + r.lemma }) : ''); } },
     ];
@@ -469,19 +526,21 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
       store('words-filter', f);
       var nq = norm(f.q);
       t.filter(function (r) {
-        if (f.onlyNew && (r.seenIn || []).length) return false;
+        if (f.onlyNew && (r.list === 'notes' || (r.seenIn || []).length)) return false;
         if (f.list !== 'all' && r.list !== f.list) return false;
         if (f.onlyDoubt && r.heardElsewhere !== false) return false;
-        if (nq && norm([r.es, r.ru, r.quote, r.said, r.note, r.lemma].join(' ')).indexOf(nq) < 0) return false;
+        if (nq && norm([r.es, r.ru, r.quote, r.said, r.note, r.lemma, r.group].join(' ')).indexOf(nq) < 0) return false;
         return true;
       });
     }
     q.addEventListener('input', function () { f.q = q.value; apply(); });
     var bar = el('div', { class: 'bar' }, [q,
-      chip('Только новое', f.onlyNew, function (v) { f.onlyNew = v; apply(); }, 'Слова, которых нет ни в одном прежнем уроке'),
+      P ? chip('Только новое', f.onlyNew, function (v) { f.onlyNew = v; apply(); }, 'Слова, которых нет ни в одном прежнем уроке') : null,
     ]);
     var listChips = [];
-    [['all', 'Все списки'], ['new', LIST['new']], ['vocab', LIST.vocab], ['code', LIST.code]].forEach(function (x) {
+    var lists = [['all', 'Все списки'], ['new', LIST['new']], ['vocab', LIST.vocab], ['code', LIST.code], ['notes', LIST.notes]]
+      .filter(function (x) { return x[0] === 'all' || WORDS.some(function (r) { return r.list === x[0]; }); });
+    if (lists.length > 2) lists.forEach(function (x) {
       var c = chip(x[1], f.list === x[0], function () { f.list = x[0]; listChips.forEach(function (o) { o.b.setAttribute('aria-pressed', o.k === f.list ? 'true' : 'false'); }); apply(); });
       listChips.push({ k: x[0], b: c });
       bar.appendChild(c);
@@ -491,7 +550,7 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
       store('words-filter', null); store('words-table', null); s.innerHTML = ''; drawWords(s);
     } }));
     bar.appendChild(count);
-    s.appendChild(el('div', { class: 'panel-title' }, [el('h2', { text: 'Слова урока' }), el('span', { class: 'count', text: 'Наведите на слово — фраза, в которой оно прозвучало, и время.' })]));
+    s.appendChild(el('div', { class: 'panel-title' }, [el('h2', { text: 'Слова урока' }), el('span', { class: 'count', text: P ? 'Наведите на слово — фраза, в которой оно прозвучало, и время. 🔊 — произнести.' : 'Слова из заметок прежнего разбора урока. 🔊 — произнести.' })]));
     s.appendChild(bar);
     s.appendChild(t.node);
     apply();
@@ -520,13 +579,19 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
     return card;
   }
   function drawGrammar(s) {
-    if (P.grammar.length) {
+    if (P && P.grammar.length) {
       s.appendChild(el('div', { class: 'panel-title' }, [el('h2', { text: 'Грамматика, о которой шла речь' }), el('span', { class: 'count', text: plural(P.grammar.length, 'тема', 'темы', 'тем') })]));
       var g = el('div', { class: 'cards' }); P.grammar.forEach(function (x) { g.appendChild(grammarCard(x)); }); s.appendChild(g);
     }
-    if (P.wordNotes.length) {
+    if (P && P.wordNotes.length) {
       s.appendChild(el('div', { class: 'panel-title' }, [el('h2', { text: 'Заметки о словах' }), el('span', { class: 'count', text: plural(P.wordNotes.length, 'заметка', 'заметки', 'заметок') })]));
       var w = el('div', { class: 'cards' }); P.wordNotes.forEach(function (x) { w.appendChild(grammarCard(x)); }); s.appendChild(w);
+    }
+    if (GCARDS.length) {
+      s.appendChild(el('div', { class: 'panel-title' }, [el('h2', { text: P ? 'Грамматика из заметок урока' : 'Грамматика урока' }), el('span', { class: 'count', text: plural(GCARDS.length, 'карточка', 'карточки', 'карточек') + ' · одно правило на карточку, длинное раскрывается' })]));
+      var hide = chip('Скрыть перевод примеров', false, function (v) { g2.classList.toggle('hide-ru', v); }, 'Вспомните перевод сами; нажмите на размытую строку, чтобы проверить');
+      s.appendChild(el('div', { class: 'bar' }, [hide]));
+      var g2 = el('div', { class: 'cards small' }); GCARDS.forEach(function (c) { g2.appendChild(studyCard(c)); }); s.appendChild(g2);
     }
   }
 
@@ -576,14 +641,20 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
     t.draw();
   }
 
-  /* ---------- notes ---------- */
+  /* ---------- notes: markdown, sources ---------- */
   var KIND = { homework: 'ДЗ', summary: 'конспект', cards: 'карточки', dialogues: 'диалоги', topics: 'темы', transcript: 'расшифровка', log: 'журнал', other: 'заметка' };
+  var SKIND = { grammar: 'грамматика', topic: 'тема', dialogue: 'диалог', reading: 'текст', homework: 'ДЗ', practice: 'упражнение' };
+  var NOTE_TITLE = {};
+  (D.notes || []).forEach(function (n) { NOTE_TITLE[n.id] = n.title; });
+  var CARD_LINES = 8;
   function renderMarkdown(md, noteId) {
     var box = el('div', { class: 'md' });
     var text = (md || '').replace(/==([^=\n]+)==/g, '<mark>$1</mark>');
     if (window.marked && window.DOMPurify) {
       var html = window.marked.parse(text, { gfm: true, breaks: true, mangle: false, headerIds: false });
-      box.innerHTML = window.DOMPurify.sanitize(html, { ADD_ATTR: ['controls', 'preload'] });
+      // a picture or a sound of the notes is in the page once (D.media); the text names it #media-<n>
+      box.innerHTML = window.DOMPurify.sanitize(html, { ADD_ATTR: ['controls', 'preload'] })
+        .replace(/src="#media-(\d+)"/g, function (m, i) { return D.media && D.media[+i] ? 'src="' + D.media[+i] + '"' : m; });
     } else {
       box.appendChild(el('pre', { style: 'white-space:pre-wrap', text: md || '' }));
       return box;
@@ -600,8 +671,7 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
       q.insertBefore(el('div', { class: 'ct', text: m[2] || m[1] }), first);
     });
     Array.prototype.forEach.call(box.querySelectorAll('pre > code'), function (code) {
-      var raw = code.textContent || '';
-      var t = raw.trim();
+      var t = (code.textContent || '').trim();
       if (!/^[\[{]/.test(t)) return;
       var value;
       try { value = JSON.parse(t); } catch (e) { return; }
@@ -659,116 +729,480 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
     });
     return box;
   }
-  function drawNotes(s, notes, lede) {
-    s.appendChild(el('p', { class: 'note-line', text: lede }));
+  /* a short text shows its first lines; the rest opens on a click (a table is never cut) */
+  function folded(md, noteId) {
+    var lines = (md || '').split('\n');
+    var real = lines.filter(function (l) { return l.trim(); }).length;
+    if (real <= CARD_LINES + 2) return renderMarkdown(md, noteId);
+    var cut = 0, n = 0;
+    while (cut < lines.length && n < CARD_LINES) { if (lines[cut].trim()) n++; cut++; }
+    while (cut < lines.length && /^\s*\|/.test(lines[cut])) cut++;
+    var box = el('div', { style: 'display:grid;gap:4px' }, [renderMarkdown(lines.slice(0, cut).join('\n'), noteId)]);
+    var rest = lines.slice(cut).filter(function (l) { return l.trim(); }).length;
+    var more = el('button', { class: 'more', type: 'button', text: 'Показать всё · ещё ' + plural(rest, 'строка', 'строки', 'строк') });
+    more.addEventListener('click', function () { box.innerHTML = ''; box.appendChild(renderMarkdown(md, noteId)); });
+    box.appendChild(more);
+    return box;
+  }
+  function sizeText(n) { return n < 1000 ? plural(n, 'знак', 'знака', 'знаков') : Math.round(n / 1000) + ' тыс. знаков'; }
+  function srcLink(noteId) { return NOTE_TITLE[noteId] ? el('a', { class: 'where', href: '#note-' + noteId, text: 'источник: ' + NOTE_TITLE[noteId] }) : null; }
+  function drawSources(s) {
+    s.appendChild(el('p', { class: 'note-line', text: 'Заметки прежнего разбора урока как они есть. Всё, что из них можно учить, уже разложено по вкладкам выше; здесь — оригиналы, свёрнутые.' }));
     var grid = el('div', { class: 'notes' });
-    notes.forEach(function (n, i) {
-      var size = (n.markdown || '').length, study = n.kind === 'homework' || n.kind === 'summary';
-      var long = n.kind === 'transcript' || n.kind === 'log' || size > (study ? 60000 : 12000);
-      if (i === 0 && study && size < 200000) long = false;  // the first homework or summary is open at once
+    (D.notes || []).forEach(function (n) {
       var card = el('article', { class: 'note', id: 'note-' + n.id });
       card.appendChild(el('div', { class: 'head' }, [el('h3', { text: n.title }), el('span', { class: 'badge', text: KIND[n.kind] || n.kind })]));
-      if (long) {
-        var d = el('details', null, [el('summary', { text: 'Открыть (' + Math.round((n.markdown || '').length / 1000) + ' тыс. знаков)' })]);
-        d.addEventListener('toggle', function () { if (d.open && !d.dataset.done) { d.dataset.done = '1'; d.appendChild(renderMarkdown(n.markdown, n.id)); } }, { once: false });
-        card.appendChild(d);
-      } else card.appendChild(renderMarkdown(n.markdown, n.id));
+      var d = el('details', null, [el('summary', { text: 'Открыть (' + sizeText((n.markdown || '').length) + ')' })]);
+      d.addEventListener('toggle', function () { if (d.open && !d.dataset.done) { d.dataset.done = '1'; d.appendChild(renderMarkdown(n.markdown, n.id)); } });
+      card.appendChild(d);
       grid.appendChild(card);
     });
     s.appendChild(grid);
   }
 
-  /* ---------- practice ---------- */
-  function parseCards(notes) {
-    var pairs = [];
-    notes.forEach(function (n) {
-      (n.markdown || '').split(/\r?\n/).forEach(function (line) {
-        var l = line.replace(/^\s*[-*+]\s+/, '').trim();
-        if (!l || l.charAt(0) === '#' || l.charAt(0) === '|') return;
-        var parts = l.split(';');
-        if (parts.length === 2 && parts[0].trim() && parts[1].trim() && parts[0].length < 120 && parts[1].length < 160)
-          pairs.push({ es: parts[0].trim(), ru: parts[1].trim(), quote: null, where: 'карточки из заметок' });
-      });
+  /* ---------- saying a Spanish text aloud (the browser's own voice) ---------- */
+  var VOICE = null;
+  function esVoice() {
+    if (VOICE) return VOICE;
+    var vs = (window.speechSynthesis && window.speechSynthesis.getVoices()) || [];
+    VOICE = vs.filter(function (v) { return /^es[-_]ES/i.test(v.lang); })[0] || vs.filter(function (v) { return /^es/i.test(v.lang); })[0] || null;
+    return VOICE;
+  }
+  function speak(text) {
+    try {
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = 'es-ES'; u.rate = 0.9;
+      var v = esVoice(); if (v) u.voice = v;
+      window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
+    } catch (e) { /* no voice in this browser */ }
+  }
+  function sayBtn(text) {
+    if (!text || !('speechSynthesis' in window)) return null;
+    return el('button', { class: 'say', type: 'button', title: 'Произнести по-испански', 'aria-label': 'Произнести: ' + text, text: '🔊', onclick: function (e) { e.stopPropagation(); speak(text); } });
+  }
+  function pairList(pairs) {
+    var ul = el('ul', { class: 'pairs' });
+    pairs.forEach(function (p) {
+      ul.appendChild(el('li', null, [el('span', null, [el('span', { class: 'es', text: p.es }), sayBtn(p.es)]), p.ru ? el('span', { class: 'ru ru-hideable', text: p.ru }) : null]));
     });
-    return pairs;
+    return ul;
   }
-  function shuffle(a) { for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
-  function drawPractice(s) {
-    var decks = [];
-    var fresh = WORDS.filter(function (r) { return r.ru && r.list !== 'code' && !(r.seenIn || []).length; });
-    var all = WORDS.filter(function (r) { return r.ru && !(r.list === 'code' && r.rawKind && r.rawKind !== 'spanish'); });
-    if (fresh.length) decks.push({ id: 'fresh', title: 'Новые слова урока', cards: fresh.map(function (r) { return { es: r.es, ru: r.ru, quote: r.quote || r.said, where: where(r) }; }) });
-    if (all.length) decks.push({ id: 'all', title: 'Все слова урока', cards: all.map(function (r) { return { es: r.es, ru: r.ru, quote: r.quote || r.said, where: where(r) }; }) });
-    if (cardPairs.length) decks.push({ id: 'notes', title: 'Карточки из заметок', cards: cardPairs });
-    s.appendChild(el('div', { class: 'panel-title' }, [el('h2', { text: 'Тренировка' }), el('span', { class: 'count', text: 'Что вы уже знаете, запоминает этот браузер.' })]));
-    var grid = el('div', { class: 'practice' });
-    if (decks.length) grid.appendChild(flashcards(decks));
-    var gap = gapQuiz();
-    if (gap) grid.appendChild(gap);
+
+  /* ---------- a card of a section of the notes: a rule, a topic, a dialogue part ---------- */
+  function studyCard(c) {
+    var card = el('article', { class: 'card block', id: 'study-' + c.id });
+    card.appendChild(el('div', { class: 'head' }, [el('h3', { text: c.title }), el('span', { class: 'badge', text: SKIND[c.kind] || c.kind })]));
+    if ((c.path || []).length) card.appendChild(el('div', { class: 'path', text: c.path.join(' › ') }));
+    if (c.md) card.appendChild(folded(c.md, 'card-' + c.id));
+    if ((c.examples || []).length) card.appendChild(pairList(c.examples));
+    var src = srcLink(c.note);
+    if (src) card.appendChild(src);
+    return card;
+  }
+
+  /* ---------- phrases ---------- */
+  function drawPhrases(s) {
+    var count = el('span', { class: 'count' });
+    var rows = ST.phrases.map(function (p) { return { es: p.es, ru: p.ru, group: p.group }; });
+    var cols = [
+      { key: 'es', title: 'Фраза', width: 460, cell: function (r) { return el('span', null, [el('span', { class: 'es quote', text: r.es }), sayBtn(r.es)]); } },
+      { key: 'ru', title: 'Перевод', width: 400, cell: function (r) { return el('span', { class: 'ru ru-hideable', text: r.ru || '' }); } },
+      { key: 'group', title: 'Раздел заметок', width: 240, cell: function (r) { return el('span', { class: 'muted', text: r.group || '' }); } },
+    ];
+    var t = Table('phrases-table', cols, rows, { onCount: function (n, all) { count.textContent = n + ' из ' + all; } });
+    var q = el('input', { type: 'search', placeholder: 'Поиск по фразе, переводу…', 'aria-label': 'Поиск' });
+    q.addEventListener('input', function () { var nq = norm(q.value); t.filter(function (r) { return !nq || norm([r.es, r.ru, r.group].join(' ')).indexOf(nq) >= 0; }); });
+    var hide = chip('Скрыть перевод', false, function (v) { t.node.classList.toggle('hide-ru', v); }, 'Вспомните перевод сами; нажмите на размытую строку, чтобы проверить');
+    s.appendChild(el('div', { class: 'panel-title' }, [el('h2', { text: 'Фразы-образцы из заметок' }), el('span', { class: 'count', text: 'Готовые реплики целиком: их удобно учить, как слова. 🔊 — произнести.' })]));
+    s.appendChild(el('div', { class: 'bar' }, [q, hide, el('button', { class: 'chip quiet', type: 'button', text: 'Сбросить', onclick: function () { q.value = ''; t.reset(); t.filter(function () { return true; }); } }), count]));
+    s.appendChild(t.node);
+    t.draw();
+  }
+
+  /* ---------- mistakes ---------- */
+  function drawMistakes(s) {
+    var grid = el('div', { class: 'cards small' });
+    var count = el('span', { class: 'count' });
+    var items = ST.mistakes.map(function (m) {
+      var card = el('article', { class: 'card mistake' });
+      if (m.group) card.appendChild(el('div', { class: 'path', text: m.group }));
+      if (m.wrong) card.appendChild(el('div', { class: 'wrong', text: m.wrong }));
+      card.appendChild(el('div', { class: 'right ru-hideable' }, [(m.wrong ? '→ ' : '') + m.right, sayBtn(m.right)]));
+      if (m.note) card.appendChild(el('div', { class: 'ru', text: m.note }));
+      return { card: card, text: norm([m.wrong, m.right, m.note, m.group].join(' ')) };
+    });
+    var q = el('input', { type: 'search', placeholder: 'Поиск…', 'aria-label': 'Поиск' });
+    function apply() {
+      var nq = norm(q.value), n = 0;
+      grid.innerHTML = '';
+      items.forEach(function (x) { if (nq && x.text.indexOf(nq) < 0) return; grid.appendChild(x.card); n++; });
+      count.textContent = n + ' из ' + items.length;
+    }
+    q.addEventListener('input', apply);
+    var hide = chip('Скрыть поправку', false, function (v) { grid.classList.toggle('hide-ru', v); }, 'Посмотрите на ошибку, скажите правильно сами, потом нажмите на размытую строку');
+    s.appendChild(el('div', { class: 'panel-title' }, [el('h2', { text: 'Ошибки и поправки' }), el('span', { class: 'count', text: 'Как было сказано → как правильно. Свои ошибки — лучший материал для повторения.' })]));
+    s.appendChild(el('div', { class: 'bar' }, [q, hide, count]));
     s.appendChild(grid);
+    apply();
   }
-  function flashcards(decks) {
-    var known = store('known') || {};
-    var deck = decks[0], dir = 'es', order = [], i = 0, flipped = false;
+
+  /* ---------- homework and exercises ---------- */
+  function gapLine(text) {
+    var span = el('span', { class: 'p' });
+    String(text).split(/(_{2,}|…)/).forEach(function (part) {
+      if (/^(_{2,}|…)$/.test(part)) span.appendChild(el('span', { class: 'blank-inline', text: '  ' }));
+      else if (part) span.appendChild(document.createTextNode(part));
+    });
+    return span;
+  }
+  function drawTasks(s) {
+    var done = store('done') || {}, answers = store('answers') || {};
+    var f = store('tasks-filter') || { hideDone: false, kind: 'all', q: '' };
+    var bar = el('div', { class: 'bar' });
+    var prog = el('div', { class: 'progress', role: 'progressbar', 'aria-label': 'Сделано заданий' }, [el('span')]);
+    var progText = el('span', { class: 'count' });
+    var list = el('div', { class: 'cards small' });
+    function progress() {
+      var n = ST.tasks.filter(function (t) { return done[t.id]; }).length;
+      prog.firstChild.style.width = (ST.tasks.length ? Math.round(100 * n / ST.tasks.length) : 0) + '%';
+      progText.textContent = 'сделано ' + n + ' из ' + ST.tasks.length;
+    }
+    var nodes = ST.tasks.map(function (t) {
+      var card = el('article', { class: 'card block task' + (done[t.id] ? ' done' : ''), id: 'study-' + t.id });
+      var cb = el('input', { type: 'checkbox' });
+      cb.checked = !!done[t.id];
+      cb.addEventListener('change', function () { if (cb.checked) done[t.id] = 1; else delete done[t.id]; store('done', done); card.classList.toggle('done', cb.checked); progress(); if (f.hideDone) apply(); });
+      card.appendChild(el('div', { class: 'head' }, [el('h3', { text: t.title }), el('span', { class: 'badge', text: SKIND[t.kind] || t.kind })]));
+      if ((t.path || []).length) card.appendChild(el('div', { class: 'path', text: t.path.join(' › ') }));
+      if (t.md) card.appendChild(folded(t.md, 'task-' + t.id));
+      if ((t.items || []).length) {
+        var ol = el('ol', { class: 'items' });
+        t.items.forEach(function (it, i) {
+          var key = t.id + '#' + i;
+          var inp = el('input', { type: 'text', placeholder: 'ваш ответ', 'aria-label': 'Ответ ' + (i + 1), value: answers[key] || '' });
+          inp.addEventListener('input', function () { if (inp.value) answers[key] = inp.value; else delete answers[key]; store('answers', answers); });
+          ol.appendChild(el('li', null, [gapLine(it), inp]));
+        });
+        card.appendChild(ol);
+      } else {
+        var key = t.id + '#text';
+        var ta = el('textarea', { class: 'answer', placeholder: 'Ваш ответ — его запоминает этот браузер', 'aria-label': 'Ответ' });
+        ta.value = answers[key] || '';
+        ta.addEventListener('input', function () { if (ta.value) answers[key] = ta.value; else delete answers[key]; store('answers', answers); });
+        card.appendChild(ta);
+      }
+      if (t.keys) {
+        var d = el('details', { class: 'keys' }, [el('summary', { text: 'Ключи — проверить себя' })]);
+        d.addEventListener('toggle', function () { if (d.open && !d.dataset.done) { d.dataset.done = '1'; d.appendChild(renderMarkdown(t.keys, 'keys-' + t.id)); } });
+        card.appendChild(d);
+      }
+      card.appendChild(el('label', { class: 'doneline' }, [cb, 'Сделано']));
+      var src = srcLink(t.note);
+      if (src) card.appendChild(src);
+      return { t: t, card: card, text: norm([t.title, (t.path || []).join(' '), t.md, (t.items || []).join(' ')].join(' ')) };
+    });
+    var q = el('input', { type: 'search', placeholder: 'Поиск по заданиям…', 'aria-label': 'Поиск', value: f.q || '' });
+    function apply() {
+      store('tasks-filter', f);
+      var nq = norm(f.q), n = 0;
+      list.innerHTML = '';
+      nodes.forEach(function (x) {
+        if (f.hideDone && done[x.t.id]) return;
+        if (f.kind !== 'all' && x.t.kind !== f.kind) return;
+        if (nq && x.text.indexOf(nq) < 0) return;
+        list.appendChild(x.card); n++;
+      });
+      if (!n) list.appendChild(el('div', { class: 'empty', text: f.hideDone ? 'Всё сделано — или ничего не подходит под фильтр.' : 'Ничего не подходит под фильтр.' }));
+    }
+    q.addEventListener('input', function () { f.q = q.value; apply(); });
+    bar.appendChild(q);
+    var kinds = {};
+    ST.tasks.forEach(function (t) { kinds[t.kind] = 1; });
+    if (Object.keys(kinds).length > 1) {
+      var kc = [];
+      [['all', 'Все'], ['homework', 'ДЗ'], ['practice', 'Упражнения']].forEach(function (x) {
+        var c = chip(x[1], f.kind === x[0], function () { f.kind = x[0]; kc.forEach(function (o) { o.b.setAttribute('aria-pressed', o.k === f.kind ? 'true' : 'false'); }); apply(); });
+        kc.push({ k: x[0], b: c }); bar.appendChild(c);
+      });
+    }
+    bar.appendChild(chip('Скрыть сделанные', f.hideDone, function (v) { f.hideDone = v; apply(); }));
+    bar.appendChild(progText);
+    s.appendChild(el('div', { class: 'panel-title' }, [el('h2', { text: 'ДЗ и упражнения' }), el('span', { class: 'count', text: 'Каждое задание — отдельная карточка: впишите ответы, сверьтесь с ключами, отметьте «Сделано». Ответы и отметки запоминает этот браузер.' })]));
+    s.appendChild(bar);
+    s.appendChild(prog);
+    s.appendChild(list);
+    progress();
+    apply();
+  }
+
+  /* ---------- materials: topics, dialogues, texts of the notes ---------- */
+  function drawMaterials(s) {
+    var f = { kind: 'all', q: '' };
+    var grid = el('div', { class: 'cards small' });
+    var count = el('span', { class: 'count' });
+    var nodes = MCARDS.map(function (c) { return { c: c, n: null, text: norm([c.title, (c.path || []).join(' '), c.md, (c.examples || []).map(function (e) { return e.es + ' ' + e.ru; }).join(' ')].join(' ')) }; });
+    function apply() {
+      grid.innerHTML = '';
+      var nq = norm(f.q), n = 0;
+      nodes.forEach(function (x) {
+        if (f.kind !== 'all' && x.c.kind !== f.kind) return;
+        if (nq && x.text.indexOf(nq) < 0) return;
+        if (!x.n) x.n = studyCard(x.c);
+        grid.appendChild(x.n); n++;
+      });
+      count.textContent = n + ' из ' + nodes.length;
+      if (!n) grid.appendChild(el('div', { class: 'empty', text: 'Ничего не подходит под фильтр.' }));
+    }
+    var q = el('input', { type: 'search', placeholder: 'Поиск по темам, диалогам, текстам…', 'aria-label': 'Поиск' });
+    q.addEventListener('input', function () { f.q = q.value; apply(); });
+    var bar = el('div', { class: 'bar' }, [q]);
+    var kinds = {};
+    MCARDS.forEach(function (c) { kinds[c.kind] = (kinds[c.kind] || 0) + 1; });
+    if (Object.keys(kinds).length > 1) {
+      var kc = [];
+      [['all', 'Всё']].concat(Object.keys(kinds).map(function (k) { return [k, (SKIND[k] || k) + ' · ' + kinds[k]]; })).forEach(function (x) {
+        var c = chip(x[1], f.kind === x[0], function () { f.kind = x[0]; kc.forEach(function (o) { o.b.setAttribute('aria-pressed', o.k === f.kind ? 'true' : 'false'); }); apply(); });
+        kc.push({ k: x[0], b: c }); bar.appendChild(c);
+      });
+    }
+    bar.appendChild(chip('Скрыть перевод', false, function (v) { grid.classList.toggle('hide-ru', v); }, 'Вспомните перевод примеров сами'));
+    bar.appendChild(count);
+    s.appendChild(el('div', { class: 'panel-title' }, [el('h2', { text: 'Материалы урока' }), el('span', { class: 'count', text: 'Темы, диалоги и тексты заметок — по разделу на карточку; длинное раскрывается.' })]));
+    s.appendChild(bar);
+    s.appendChild(grid);
+    apply();
+  }
+
+  /* ---------- practice ---------- */
+  function shuffle(a) { for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  function decksOf() {
+    var decks = [];
+    function card(r) { return { es: r.es, ru: r.ru, quote: r.quote || r.said || null, where: r.list === 'notes' ? 'заметки · ' + (r.group || '') : where(r) }; }
+    var pk = WORDS.filter(function (r) { return r.ru && r.list !== 'notes' && !(r.list === 'code' && r.rawKind && r.rawKind !== 'spanish'); });
+    var fresh = pk.filter(function (r) { return r.list !== 'code' && !(r.seenIn || []).length; });
+    if (fresh.length) decks.push({ id: 'fresh', title: 'Новые слова урока', cards: fresh.map(card) });
+    if (pk.length) decks.push({ id: 'all', title: 'Все слова пакета', cards: pk.map(card) });
+    var nw = WORDS.filter(function (r) { return r.ru && r.list === 'notes'; });
+    if (nw.length) decks.push({ id: 'notes', title: 'Слова из заметок', cards: nw.map(card) });
+    if (ST.phrases.length) decks.push({ id: 'phrases', title: 'Фразы', cards: ST.phrases.filter(function (p) { return p.ru; }).map(function (p) { return { es: p.es, ru: p.ru, quote: null, where: 'заметки · ' + (p.group || '') }; }) });
+    return decks.filter(function (d) { return d.cards.length; });
+  }
+  var KEYS = null;  // the keys of the exercise on screen
+  document.addEventListener('keydown', function (e) {
+    if (!KEYS || !sections.practice || sections.practice.hidden) return;
+    var tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'SELECT') return;
+    KEYS(e);
+  });
+  function cardKey(c) { return c.es + '|' + c.ru; }
+
+  /* cards with spaced repetition (Leitner boxes): forgotten - again in a minute, remembered - in 1, 2, 4, 8, 16 days */
+  function srsMode(deck) {
+    var DAY = Math.floor(Date.now() / 864e5);
+    var GAP = [0, 1, 2, 4, 8, 16];
+    var srs = store('srs') || {};
+    var dir = store('srs-dir') || 'es';
+    var queue = [], flipped = false;
     var box = el('div', { class: 'card', style: 'gap:12px' });
-    var head = el('div', { class: 'row' });
-    var deckChips = [];
-    decks.forEach(function (d) { var c = chip(d.title + ' · ' + d.cards.length, d === deck, function () { deck = d; deckChips.forEach(function (o) { o.b.setAttribute('aria-pressed', o.d === deck ? 'true' : 'false'); }); restart(); }); deckChips.push({ d: d, b: c }); head.appendChild(c); });
-    var dirBtn = el('button', { class: 'chip', type: 'button', text: 'es → ru' });
-    dirBtn.addEventListener('click', function () { dir = dir === 'es' ? 'ru' : 'es'; dirBtn.textContent = dir === 'es' ? 'es → ru' : 'ru → es'; flipped = false; show(); });
-    head.appendChild(dirBtn);
-    var onlyUnknown = true;
-    head.appendChild(chip('Без знакомых', true, function (v) { onlyUnknown = v; restart(); }, 'Не показывать слова, отмеченные «Знаю»'));
+    var stats = el('div', { class: 'srs-stats' });
     var face = el('div', { class: 'flash-card', role: 'button', tabindex: '0', 'aria-label': 'Карточка: нажмите, чтобы перевернуть' });
-    var progress = el('span', { class: 'count' });
-    var knowBtn = el('button', { class: 'act primary', type: 'button', text: 'Знаю' });
-    var againBtn = el('button', { class: 'act', type: 'button', text: 'Ещё раз' });
-    var mixBtn = el('button', { class: 'act', type: 'button', text: 'Перемешать' });
-    var clearBtn = el('button', { class: 'chip quiet', type: 'button', text: 'Забыть отметки' });
-    function k(c) { return c.es + '|' + c.ru; }
-    function restart() { order = deck.cards.filter(function (c) { return !onlyUnknown || !known[k(c)]; }); shuffle(order); i = 0; flipped = false; show(); }
+    var forgot = el('button', { class: 'act', type: 'button', text: '1 · Не помню' });
+    var hard = el('button', { class: 'act', type: 'button', text: '2 · С трудом' });
+    var good = el('button', { class: 'act primary', type: 'button', text: '3 · Помню' });
+    var dirBtn = el('button', { class: 'chip', type: 'button', text: dir === 'es' ? 'es → ru' : 'ru → es', title: 'С какой стороны показывать карточку' });
+    function due(c) { var r = srs[cardKey(c)]; return !r || r.due <= DAY; }
+    function build() { queue = shuffle(deck.cards.filter(due)); flipped = false; show(); }
+    function drawStats() {
+      stats.innerHTML = '';
+      var b = [0, 0, 0, 0, 0, 0];
+      deck.cards.forEach(function (c) { var r = srs[cardKey(c)]; b[r ? r.box : 0]++; });
+      stats.appendChild(el('span', { class: 'badge new', text: 'на сегодня: ' + queue.length }));
+      stats.appendChild(el('span', { class: 'badge', text: 'новых: ' + b[0] }));
+      for (var i = 1; i <= 5; i++) if (b[i]) stats.appendChild(el('span', { class: 'badge', title: 'Карточка этого ящика вернётся через ' + plural(GAP[i], 'день', 'дня', 'дней'), text: 'ящик ' + i + ': ' + b[i] }));
+    }
     function show() {
       face.innerHTML = '';
-      var knownN = deck.cards.filter(function (c) { return known[k(c)]; }).length;
-      progress.textContent = 'знаю ' + knownN + ' из ' + deck.cards.length + (order.length ? ' · карточка ' + Math.min(i + 1, order.length) + ' из ' + order.length : '');
-      if (!order.length || i >= order.length) {
-        face.appendChild(el('div', { class: 'back' }, [el('div', { class: 'meaning', text: order.length ? 'Колода пройдена 🎉' : 'Все слова колоды отмечены как знакомые' }), el('div', { class: 'muted', text: 'Перемешайте или снимите фильтр «Без знакомых».' })]));
-        knowBtn.disabled = againBtn.disabled = true; return;
+      drawStats();
+      var c = queue[0];
+      forgot.disabled = hard.disabled = good.disabled = !c || !flipped;
+      if (!c) {
+        face.appendChild(el('div', { class: 'back' }, [el('div', { class: 'meaning', text: 'На сегодня всё 🎉' }), el('div', { class: 'muted', text: 'Карточки вернутся в свой день. Можно взять другую колоду или другое упражнение.' })]));
+        return;
       }
-      knowBtn.disabled = againBtn.disabled = false;
-      var c = order[i];
-      var front = dir === 'es' ? c.es : c.ru, backText = dir === 'es' ? c.ru : c.es;
+      var front = dir === 'es' ? c.es : c.ru, back = dir === 'es' ? c.ru : c.es;
       if (!flipped) {
         face.appendChild(el('div', { class: 'front ' + (dir === 'es' ? 'es' : 'ru'), text: front }));
-        face.appendChild(el('div', { class: 'hint', text: 'нажмите или пробел — перевернуть' }));
+        face.appendChild(el('div', { class: 'hint', text: 'вспомните, потом нажмите или пробел — перевернуть' }));
       } else {
-        face.appendChild(el('div', { class: 'back' }, [el('div', { class: 'muted', text: front }), el('div', { class: 'meaning ' + (dir === 'es' ? 'ru' : 'es'), text: backText }), c.quote ? el('div', { class: 'quote', text: '«' + c.quote + '»' }) : null, c.where ? el('div', { class: 'where', text: c.where }) : null]));
+        face.appendChild(el('div', { class: 'back' }, [el('div', { class: 'muted', text: front }), el('div', { class: 'meaning ' + (dir === 'es' ? 'ru' : 'es') }, [back, dir === 'ru' ? sayBtn(c.es) : null]), c.quote ? el('div', { class: 'quote', text: '«' + c.quote + '»' }) : null, c.where ? el('div', { class: 'where', text: c.where }) : null]));
+        speak(c.es);
       }
     }
-    face.addEventListener('click', function () { flipped = !flipped; show(); });
-    face.addEventListener('keydown', function (e) { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flipped = !flipped; show(); } });
-    knowBtn.addEventListener('click', function () { known[k(order[i])] = 1; store('known', known); i++; flipped = false; show(); });
-    againBtn.addEventListener('click', function () { order.push(order[i]); i++; flipped = false; show(); });
-    mixBtn.addEventListener('click', restart);
-    clearBtn.addEventListener('click', function () { known = {}; store('known', null); restart(); });
-    box.appendChild(el('h3', { text: 'Карточки' }));
-    box.appendChild(head);
+    function flip() { if (queue.length) { flipped = !flipped; show(); } }
+    function grade(g) {
+      var c = queue[0];
+      if (!c || !flipped) return;
+      var k = cardKey(c), r = srs[k] || { box: 0 };
+      queue.shift();
+      if (g === 0) { r.box = 1; r.due = DAY; queue.splice(Math.min(queue.length, 3), 0, c); }
+      else if (g === 1) { r.box = Math.max(1, r.box); r.due = DAY + 1; }
+      else { r.box = Math.min(5, r.box + 1); r.due = DAY + GAP[r.box]; }
+      srs[k] = r; store('srs', srs);
+      flipped = false; show();
+    }
+    face.addEventListener('click', flip);
+    face.addEventListener('keydown', function (e) { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } });
+    forgot.addEventListener('click', function () { grade(0); });
+    hard.addEventListener('click', function () { grade(1); });
+    good.addEventListener('click', function () { grade(2); });
+    dirBtn.addEventListener('click', function () { dir = dir === 'es' ? 'ru' : 'es'; store('srs-dir', dir); dirBtn.textContent = dir === 'es' ? 'es → ru' : 'ru → es'; flipped = false; show(); });
+    KEYS = function (e) {
+      if (e.key === ' ') { e.preventDefault(); flip(); }
+      else if (e.key === '1') grade(0); else if (e.key === '2') grade(1); else if (e.key === '3') grade(2);
+    };
+    var reset = el('button', { class: 'chip quiet', type: 'button', text: 'Начать колоду заново', onclick: function () { deck.cards.forEach(function (c) { delete srs[cardKey(c)]; }); store('srs', srs); build(); } });
+    box.appendChild(el('div', { class: 'row' }, [el('h3', { text: 'Карточки с повторением' }), dirBtn]));
+    box.appendChild(el('p', { class: 'muted', style: 'margin:0', text: 'Сначала вспомните сами, потом переверните и честно оцените. Забытое вернётся через пару карточек, вспомненное — через 1, 2, 4, 8, 16 дней. Клавиши: пробел, 1, 2, 3.' }));
+    box.appendChild(stats);
     box.appendChild(face);
-    box.appendChild(el('div', { class: 'row' }, [againBtn, knowBtn, mixBtn, clearBtn, progress]));
-    restart();
+    box.appendChild(el('div', { class: 'row' }, [forgot, hard, good, reset]));
+    build();
     return box;
   }
-  function gapQuiz() {
-    var pool = WORDS.filter(function (r) { return r.es && r.list !== 'code' && (r.quote || r.said); });
+
+  /* typing the Spanish for the Russian: recall is stronger than recognition */
+  var PUNCT = /[¿¡!?.,;:«»"“”()…]/g;
+  function exactEs(s) { return (s || '').toLowerCase().replace(PUNCT, ' ').replace(/\s+/g, ' ').trim(); }
+  function plainEs(s) { return norm(s).replace(PUNCT, ' ').replace(/\s+/g, ' ').trim(); }
+  function bare(s) { return s.replace(/^(el|la|los|las|un|una|unos|unas|lo) /, ''); }
+  function alts(es) {
+    var out = [es], noPar = es.replace(/\s*\([^)]*\)/g, '').trim();
+    if (noPar && noPar !== es) out.push(noPar);
+    noPar.split(/\s*[\/,;]\s*|\s+o\s+/).forEach(function (p) { if (p && out.indexOf(p) < 0) out.push(p); });
+    return out;
+  }
+  function typingMode(deck) {
+    var order = shuffle(deck.cards.filter(function (c) { return c.es && c.ru; }).slice());
+    if (!order.length) return null;
+    var i = 0, score = { ok: 0, all: 0 }, checked = false, hints = 0;
+    var box = el('div', { class: 'card typing', style: 'gap:12px' });
+    var ask = el('div', { class: 'ask' });
+    var ctx = el('div', { class: 'where' });
+    var inp = el('input', { type: 'text', placeholder: 'по-испански…', 'aria-label': 'Ответ по-испански', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
+    var verdict = el('div', { class: 'verdict' });
+    var stat = el('span', { class: 'count' });
+    var checkBtn = el('button', { class: 'act primary', type: 'button', text: 'Проверить' });
+    var hintBtn = el('button', { class: 'act', type: 'button', text: 'Подсказка' });
+    var nextBtn = el('button', { class: 'act', type: 'button', text: 'Дальше' });
+    function cur() { return order[i % order.length]; }
+    function draw() {
+      var c = cur();
+      ask.textContent = c.ru;
+      ctx.textContent = c.where || '';
+      inp.value = ''; verdict.textContent = ''; verdict.className = 'verdict'; checked = false; hints = 0;
+      stat.textContent = score.all ? 'верно ' + score.ok + ' из ' + score.all : plural(order.length, 'карточка', 'карточки', 'карточек') + ' в колоде';
+      inp.focus({ preventScroll: true });
+    }
+    function check() {
+      var c = cur(), v = inp.value;
+      if (!v.trim()) return;
+      if (checked) { next(); return; }
+      checked = true; score.all++;
+      var A = alts(c.es);
+      var exact = A.some(function (a) { return exactEs(a) === exactEs(v) || bare(exactEs(a)) === bare(exactEs(v)); });
+      var loose = A.some(function (a) { return plainEs(a) === plainEs(v) || bare(plainEs(a)) === bare(plainEs(v)); });
+      verdict.innerHTML = '';
+      if (exact) { score.ok++; verdict.className = 'verdict ok'; verdict.appendChild(document.createTextNode('Верно ✓ ')); }
+      else if (loose) { score.ok++; verdict.className = 'verdict ok'; verdict.appendChild(document.createTextNode('Верно, только ударения и ñ: ' + c.es + ' ')); }
+      else { verdict.className = 'verdict bad'; verdict.appendChild(document.createTextNode('Нужно: ' + c.es + ' ')); }
+      var sb = sayBtn(c.es); if (sb) verdict.appendChild(sb);
+      speak(c.es);
+      stat.textContent = 'верно ' + score.ok + ' из ' + score.all;
+    }
+    function next() { i++; if (i % order.length === 0) shuffle(order); draw(); }
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); check(); } });
+    checkBtn.addEventListener('click', check);
+    nextBtn.addEventListener('click', next);
+    hintBtn.addEventListener('click', function () { var es = cur().es; hints = Math.min(es.length, hints + 1); verdict.className = 'verdict'; verdict.textContent = 'начинается так: ' + es.slice(0, hints) + '…'; inp.focus(); });
+    KEYS = null;
+    box.appendChild(el('h3', { text: 'Напишите по-испански' }));
+    box.appendChild(el('p', { class: 'muted', style: 'margin:0', text: 'Перевод → испанское слово или фраза. Артикль и ударения можно не писать — подскажу, как точно. Enter — проверить, ещё Enter — дальше.' }));
+    box.appendChild(ask); box.appendChild(ctx); box.appendChild(inp); box.appendChild(verdict);
+    box.appendChild(el('div', { class: 'row' }, [checkBtn, hintBtn, nextBtn, stat]));
+    draw();
+    return box;
+  }
+
+  /* matching: six pairs at a time */
+  function matchMode(deck) {
+    var pool = deck.cards.filter(function (c) { return c.es && c.ru && c.es.length <= 70 && c.ru.length <= 90; });
+    if (pool.length < 4) return null;
+    var box = el('div', { class: 'card', style: 'gap:12px' });
+    var grid = el('div', { class: 'match' });
+    var stat = el('span', { class: 'count' });
+    var again = el('button', { class: 'act primary', type: 'button', text: 'Новый раунд' });
+    var rounds = 0, misses = 0;
+    function round() {
+      grid.innerHTML = ''; misses = 0;
+      var seenEs = {}, seenRu = {}, pick = [];
+      shuffle(pool.slice()).forEach(function (c) { if (pick.length < 6 && !seenEs[norm(c.es)] && !seenRu[norm(c.ru)]) { seenEs[norm(c.es)] = seenRu[norm(c.ru)] = 1; pick.push(c); } });
+      var left = el('div', { class: 'col', style: 'display:grid;gap:8px;align-content:start' });
+      var right = el('div', { class: 'col', style: 'display:grid;gap:8px;align-content:start' });
+      var sel = null, left_n = pick.length;
+      function mk(c, side) {
+        var b = el('button', { class: 'act' + (side === 'es' ? ' es' : ' ru'), type: 'button', text: side === 'es' ? c.es : c.ru });
+        b.dataset.k = cardKey(c);
+        b.addEventListener('click', function () {
+          if (b.classList.contains('ok')) return;
+          if (side === 'es') { if (sel) sel.classList.remove('sel'); sel = b; b.classList.add('sel'); speak(c.es); return; }
+          if (!sel) return;
+          if (sel.dataset.k === b.dataset.k) {
+            sel.classList.remove('sel'); sel.classList.add('ok'); b.classList.add('ok'); sel.disabled = b.disabled = true; sel = null; left_n--;
+            if (!left_n) { rounds++; stat.textContent = 'раунд ' + rounds + ' · ' + (misses ? plural(misses, 'промах', 'промаха', 'промахов') : 'без промахов 🎉'); }
+          } else {
+            misses++; var a = sel; a.classList.add('bad'); b.classList.add('bad');
+            setTimeout(function () { a.classList.remove('bad'); b.classList.remove('bad'); }, 600);
+          }
+        });
+        return b;
+      }
+      shuffle(pick.slice()).forEach(function (c) { left.appendChild(mk(c, 'es')); });
+      shuffle(pick.slice()).forEach(function (c) { right.appendChild(mk(c, 'ru')); });
+      grid.appendChild(left); grid.appendChild(right);
+      stat.textContent = 'найдите пары: слева испанское, справа перевод';
+    }
+    again.addEventListener('click', round);
+    KEYS = null;
+    box.appendChild(el('h3', { text: 'Найдите пару' }));
+    box.appendChild(grid);
+    box.appendChild(el('div', { class: 'row' }, [again, stat]));
+    round();
+    return box;
+  }
+
+  /* a phrase with a word left out: the word in its living context */
+  var LETTER = 'A-Za-zÁÉÍÓÚÑÜáéíóúñü';
+  function gapItems(cards) {
     var items = [];
-    pool.forEach(function (r) {
-      var q = r.quote || r.said;
-      var idx = norm(q).indexOf(norm(r.es));
-      if (idx < 0 || r.es.length < 3) return;
-      items.push({ r: r, before: q.slice(0, idx), after: q.slice(idx + r.es.length), answer: q.substr(idx, r.es.length) });
+    cards.forEach(function (c) {
+      var q = c.quote, idx = q && c.es && c.es.length >= 3 ? norm(q).indexOf(norm(c.es)) : -1;
+      if (idx >= 0) { items.push({ before: q.slice(0, idx), after: q.slice(idx + c.es.length), answer: q.substr(idx, c.es.length), hint: c.ru, where: c.where }); return; }
+      var words = (c.es || '').split(/\s+/);
+      if (words.length < 4) return;
+      var long = [];
+      words.forEach(function (w, i) { if (w.replace(new RegExp('[^' + LETTER + ']', 'g'), '').length >= 4) long.push(i); });
+      if (!long.length) return;
+      var k = long[Math.floor(Math.random() * long.length)];
+      var m = new RegExp('^([^' + LETTER + ']*)(.*?)([^' + LETTER + ']*)$').exec(words[k]);
+      items.push({ before: words.slice(0, k).join(' ') + (k ? ' ' : '') + m[1], after: m[3] + (k < words.length - 1 ? ' ' : '') + words.slice(k + 1).join(' '), answer: m[2], hint: c.ru, where: c.where });
     });
+    return items;
+  }
+  function gapMode(deck) {
+    var items = gapItems(deck.cards);
     if (items.length < 4) return null;
-    var words = pool.map(function (r) { return r.es; }).filter(function (w, i, a) { return a.indexOf(w) === i; });
+    var answersAll = items.map(function (it) { return it.answer; }).filter(function (w, i, a) { return a.map(norm).indexOf(norm(w)) === i; });
+    if (answersAll.length < 4) return null;
     var box = el('div', { class: 'card', style: 'gap:12px' });
     var score = { right: 0, all: 0 };
     var stat = el('span', { class: 'count' });
@@ -783,8 +1217,8 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
       qBox.appendChild(document.createTextNode(it.before));
       qBox.appendChild(el('span', { class: 'blank', text: '…' }));
       qBox.appendChild(document.createTextNode(it.after));
-      info.textContent = (it.r.ru ? 'подсказка: ' + it.r.ru + ' · ' : '') + where(it.r);
-      var choices = shuffle(words.filter(function (w) { return norm(w) !== norm(it.r.es); })).slice(0, 3).concat([it.r.es]);
+      info.textContent = (it.hint ? 'перевод: ' + it.hint : '') + (it.where ? (it.hint ? ' · ' : '') + it.where : '');
+      var choices = shuffle(answersAll.filter(function (w) { return norm(w) !== norm(it.answer); })).slice(0, 3).concat([it.answer]);
       shuffle(choices);
       opts.innerHTML = '';
       var answered = false;
@@ -792,30 +1226,73 @@ footer { padding-block: 0 32px; color: var(--muted); font-size: 12.5px; }
         var b = el('button', { class: 'act', type: 'button', text: w });
         b.addEventListener('click', function () {
           if (answered) return; answered = true; score.all++;
-          var ok = norm(w) === norm(it.r.es);
+          var ok = norm(w) === norm(it.answer);
           if (ok) score.right++;
           b.classList.add(ok ? 'right' : 'wrong');
-          Array.prototype.forEach.call(opts.children, function (o) { if (norm(o.textContent) === norm(it.r.es)) o.classList.add('right'); });
+          Array.prototype.forEach.call(opts.children, function (o) { if (norm(o.textContent) === norm(it.answer)) o.classList.add('right'); });
           qBox.querySelector('.blank').textContent = it.answer;
+          speak(it.before + it.answer + it.after);
           stat.textContent = 'верно ' + score.right + ' из ' + score.all;
         });
         opts.appendChild(b);
       });
     }
     next.addEventListener('click', function () { i++; draw(); });
-    box.appendChild(el('h3', { text: 'Слово в фразе' }));
-    box.appendChild(el('p', { class: 'muted', style: 'margin:0', text: 'Фраза из урока, в ней пропущено слово. Выберите, какое.' }));
+    KEYS = null;
+    box.appendChild(el('h3', { text: 'Пропущенное слово' }));
+    box.appendChild(el('p', { class: 'muted', style: 'margin:0', text: 'Фраза, в ней пропущено слово. Выберите, какое; после ответа фраза звучит целиком.' }));
     box.appendChild(qBox); box.appendChild(info); box.appendChild(opts);
     box.appendChild(el('div', { class: 'row' }, [next, stat]));
     draw();
     return box;
   }
 
+  var MODES = [
+    { id: 'srs', title: 'Карточки с повторением', draw: srsMode },
+    { id: 'type', title: 'Напишите по-испански', draw: typingMode },
+    { id: 'match', title: 'Найдите пару', draw: matchMode },
+    { id: 'gap', title: 'Пропущенное слово', draw: gapMode },
+  ];
+  function drawPractice(s) {
+    var st = store('practice') || {};
+    var deck = DECKS.filter(function (d) { return d.id === st.deck; })[0] || DECKS[0];
+    var mode = MODES.filter(function (m) { return m.id === st.mode; })[0] || MODES[0];
+    var stage = el('div', { class: 'practice' });
+    var deckRow = el('div', { class: 'bar' }, [el('span', { class: 'count', text: 'Что учить:' })]);
+    var modeRow = el('div', { class: 'bar' }, [el('span', { class: 'count', text: 'Как:' })]);
+    var dc = [], mc = [];
+    function mark() {
+      dc.forEach(function (o) { o.b.setAttribute('aria-pressed', o.d === deck ? 'true' : 'false'); });
+      mc.forEach(function (o) { o.b.setAttribute('aria-pressed', o.m === mode ? 'true' : 'false'); });
+      store('practice', { deck: deck.id, mode: mode.id });
+    }
+    function render() {
+      mark();
+      stage.innerHTML = '';
+      KEYS = null;
+      var node = mode.draw(deck);
+      stage.appendChild(node || el('div', { class: 'empty', text: 'Для этого упражнения в колоде «' + deck.title + '» мало подходящих карточек — выберите другую колоду или другое упражнение.' }));
+    }
+    DECKS.forEach(function (d) { var b = chip(d.title + ' · ' + d.cards.length, false, function () { deck = d; render(); }); dc.push({ d: d, b: b }); deckRow.appendChild(b); });
+    MODES.forEach(function (m) { var b = chip(m.title, false, function () { mode = m; render(); }); mc.push({ m: m, b: b }); modeRow.appendChild(b); });
+    s.appendChild(el('div', { class: 'panel-title' }, [el('h2', { text: 'Тренировка' }), el('span', { class: 'count', text: 'Как учить: карточки каждый день по чуть-чуть, потом написать по-испански — вспомнить труднее, чем узнать, и потому прочнее. Прогресс запоминает этот браузер.' })]));
+    s.appendChild(deckRow);
+    s.appendChild(modeRow);
+    s.appendChild(stage);
+    render();
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target && e.target.closest ? e.target.closest('.ru-hideable') : null;
+    if (t && t.closest('.hide-ru')) t.classList.toggle('shown');
+    var img = e.target && e.target.closest ? e.target.closest('.block .md img') : null;
+    if (img) img.classList.toggle('big');  // a picture of a card is small until clicked
+  });
   drawHeader();
   drawTabs();
   window.addEventListener('hashchange', route);
   route();
-  document.getElementById('foot').textContent = 'Страница собрана сборщиком пакета урока из данных XtractManager и заметок урока.';
+  document.getElementById('foot').textContent = 'Страница собрана сборщиком пакета урока из данных XtractManager и заметок урока; заметки разложены по учебным вкладкам кодом, без модели.';
 })();
 </script>
 </body>

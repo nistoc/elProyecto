@@ -94,14 +94,16 @@ class NoteMarkdown(unittest.TestCase):
     def test_picture_is_put_in_and_a_missing_one_is_named(self):
         embeds = self.embeds({'casa.png': b'not really a picture'})
         md = page.note_markdown('![[casa.png]] ![[gato.png|200]]', {}, embeds)
-        self.assertIn('![casa](data:image/png;base64,', md)
+        self.assertIn('![casa](#media-0)', md)
+        self.assertTrue(embeds.media[0].startswith('data:image/png;base64,'))
         self.assertIn('gato.png', md)
         self.assertEqual(embeds.left_out, ['gato.png'])
 
     def test_large_sound_is_left_out_and_a_small_one_plays(self):
         embeds = self.embeds({'a.mp3': b'x' * 10, 'b.mp3': b'x' * (page.SOUND_LIMIT + 1)})
         md = page.note_markdown('![[a.mp3]]\n![[b.mp3]]', {}, embeds)
-        self.assertIn('<audio controls preload="none" src="data:audio/mpeg;base64,', md)
+        self.assertIn('<audio controls preload="none" src="#media-0"></audio>', md)
+        self.assertTrue(embeds.media[0].startswith('data:audio/mpeg;base64,'))
         self.assertIn('b.mp3', md)
         self.assertEqual(embeds.left_out, ['b.mp3'])
 
@@ -170,7 +172,7 @@ class Render(unittest.TestCase):
 
     def test_notes_alone_are_named_so(self):
         html = page.render({'date': DATE, 'package': None, 'notes': []}, self.TEMPLATE)
-        self.assertIn('<title>Заметки урока 07.01.2026</title>', html)
+        self.assertIn('<title>Материалы урока 07.01.2026</title>', html)
 
     def test_the_template_of_the_repository_has_both_places(self):
         with io.open(page.TEMPLATE, encoding='utf-8') as f:

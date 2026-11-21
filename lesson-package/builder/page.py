@@ -24,6 +24,7 @@ import urllib.parse
 import urllib.request
 
 from .source import DEFAULT_URL
+from .study import study_of
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'page_template.html')
 PAGE_NAME = 'lesson.html'             # the page of a day in its folder of the packages folder
@@ -141,13 +142,16 @@ def data_uri(data, kind):
 
 
 class Embeds:
-    """Pictures and sounds of the notes of one lesson, each read once, within the size budget of the page."""
+    """Pictures and sounds of the notes of one lesson, each read once, within the size budget of the page. Each is
+    put into the page once (`media`); the markdown names it `#media-<n>`, so a note shown twice (as a study card
+    and among the sources) does not carry it twice."""
 
     def __init__(self, api, date, budget=PAGE_LIMIT):
         self.api, self.date, self.budget = api, date, budget
         self.used = 0
         self.cache = {}
         self.left_out = []
+        self.media = []
 
     def uri(self, name):
         if name in self.cache:
@@ -166,7 +170,8 @@ class Embeds:
                     self.left_out.append(name)
                 else:
                     self.used += size
-                    uri = data_uri(data, kind)
+                    self.media.append(data_uri(data, kind))
+                    uri = '#media-%d' % (len(self.media) - 1)
             else:
                 self.left_out.append(name)
         self.cache[name] = uri
@@ -220,7 +225,8 @@ def page_data(api, date):
             continue
         out_notes.append({'id': str(i), 'title': n.get('title') or n['path'], 'kind': n.get('kind') or 'other',
                           'markdown': note_markdown(text, titles, embeds)})
-    data = {'date': date, 'lesson': lesson, 'notes': out_notes, 'leftOutMedia': embeds.left_out, 'package': None}
+    data = {'date': date, 'lesson': lesson, 'notes': out_notes, 'leftOutMedia': embeds.left_out, 'media': embeds.media,
+            'study': study_of(out_notes), 'package': None}
     if view is not None:
         p = view['package']
         data['package'] = {
@@ -250,7 +256,7 @@ def render(data, template=None):
         with io.open(TEMPLATE, encoding='utf-8') as f:
             template = f.read()
     blob = json.dumps(data, ensure_ascii=False, separators=(',', ':')).replace('<', '\\u003c')
-    title = 'Пакет урока %s' % human_date(data['date']) if data.get('package') else 'Заметки урока %s' % human_date(data['date'])
+    title = 'Пакет урока %s' % human_date(data['date']) if data.get('package') else 'Материалы урока %s' % human_date(data['date'])
     return template.replace('{{title}}', title).replace('{{data}}', blob)
 
 
