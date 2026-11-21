@@ -412,6 +412,11 @@ const messages: Record<Locale, Record<string, string>> = {
     pkgResizeHint: 'Drag to change the width; double click puts it back',
     pkgLemma: 'dictionary form',
     pkgHeard: 'in the recording',
+    pkgOnlyUnheard: 'Doubtful',
+    pkgOnlyUnheardHint:
+      'Words no other hearing of the same audio has (the piece heard alone, the piece asked again with the audio around it, the other model): they may not have been said',
+    pkgUnheardHint:
+      'No other hearing of this audio has the word: it may not have been said. Listen to the place.',
     pkgTeacher: 'teacher',
     pkgStudent: 'student',
     pkgPlay: 'Listen to this place',
@@ -858,6 +863,11 @@ const messages: Record<Locale, Record<string, string>> = {
       'Потяните, чтобы изменить ширину; двойной щелчок возвращает её',
     pkgLemma: 'словарная форма',
     pkgHeard: 'в записи',
+    pkgOnlyUnheard: 'Сомнительные',
+    pkgOnlyUnheardHint:
+      'Слова, которых нет ни в одном другом прослушивании того же звука (кусок, услышанный отдельно, кусок, переспрошенный вместе с соседним звуком, другая модель): возможно, их не говорили',
+    pkgUnheardHint:
+      'Ни одно другое прослушивание этого места не слышит слово: возможно, его не говорили. Послушайте место.',
     pkgTeacher: 'преподаватель',
     pkgStudent: 'ученик',
     pkgPlay: 'Послушать это место',
@@ -1306,6 +1316,11 @@ const messages: Record<Locale, Record<string, string>> = {
     pkgResizeHint: 'Arrastre para cambiar el ancho; doble clic lo restablece',
     pkgLemma: 'forma de diccionario',
     pkgHeard: 'en la grabación',
+    pkgOnlyUnheard: 'Dudosas',
+    pkgOnlyUnheardHint:
+      'Palabras que no aparecen en ninguna otra escucha del mismo audio (el fragmento oído solo, el fragmento preguntado de nuevo con el audio de alrededor, el otro modelo): quizá no se dijeron',
+    pkgUnheardHint:
+      'Ninguna otra escucha de este lugar tiene la palabra: quizá no se dijo. Escuche el lugar.',
     pkgTeacher: 'profesor',
     pkgStudent: 'alumno',
     pkgPlay: 'Escuchar este lugar',

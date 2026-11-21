@@ -138,9 +138,23 @@ These fields are in the answer of the API only (camel case there), never in `pac
 - `seenIn` of every word: the dates of the earlier lessons that have it, oldest first. Empty — no earlier
   lesson has it (the word is **new**). `null` — the entry is a pattern with no word of its own to look for.
   The word is looked for as it reads now, after the owner's edits.
+- `heardElsewhere` of every word of the three lists: `true` — another hearing of the same speech has the word;
+  `false` — none of the hearings there are has it, the word may not have been said; `null` — nothing to tell by
+  (no Latin word of four letters and more, its line not found, no other hearing of the line) or the owner wrote
+  the word anew (`es`, `raw`). `counts.notHeardElsewhere` counts the `false` ones that are not taken out.
 - `audioTrack` of every period: the id of the mixed track of its recording, or `null`.
 
 How they are counted:
+
+- "Heard elsewhere" (`HeardElsewhere`): the line of the word is the line of the text runs of the recording
+  (the tracks of the newest dialogue, else the text run of each track) within 40 s of `sec` that holds at
+  least 0.6 of the words of `said` (then of `quote`) in order — its text or the text it had before a second
+  look replaced it. The word (`heard` when the builder wrote it, else `es`; `raw` of a word found by code) is
+  taken in the form the line has it and looked for by sound (`SaidText.SoundForm`; a letter or two apart, two
+  words written as one) in three hearings: what the piece of the line heard alone (`own_text`), what the piece
+  asked again with the audio around it gave (`context_text`), and the lines of the newest diarize run of the
+  track within 20 s (a participant track with none takes the mixed file's). One hearing that has every word is
+  enough for `true`.
 
 - The rule (`LessonWordRules`): words are compared in lower case without accents. A form counts as known
   when the lesson has it, or — for a form of five letters and more — a form with the same beginning but for

@@ -221,6 +221,45 @@ public sealed class LessonPackageViewBuilderTests
         Assert.Equal(0, view.Counts.Edited);
     }
 
+    private static IReadOnlyDictionary<int, LessonHearing> HeardInPeriodOne() => new Dictionary<int, LessonHearing>
+    {
+        [1] = new(
+            new[]
+            {
+                new XtractManager.Features.Jobs.Application.HeardLine(5, 8, "Abre la ventana.", "абре ла вентана", null, null),
+                new XtractManager.Features.Jobs.Application.HeardLine(20, 23, "Mira el tejado.", "смотри на крышу", null, null),
+            },
+            Array.Empty<XtractManager.Features.Jobs.Application.TimedLine>()),
+    };
+
+    [Fact]
+    public void Build_tells_which_words_another_hearing_has()
+    {
+        var view = LessonPackageViewBuilder.Build(Day, Package(), Marks(), Array.Empty<LessonWords>(), hearingsByPeriod: HeardInPeriodOne());
+
+        Assert.True(view.Package.NewWords[0].HeardElsewhere);
+        Assert.False(view.Package.NewWords[1].HeardElsewhere);
+        Assert.Null(view.Package.Vocabulary[0].HeardElsewhere); // period 2 has no hearing
+        Assert.Null(view.Package.OtherWords[0].HeardElsewhere); // no line to find it in
+        Assert.Equal(1, view.Counts.NotHeardElsewhere);
+    }
+
+    [Fact]
+    public void A_word_the_owner_wrote_anew_or_took_out_is_not_counted_as_unheard()
+    {
+        var edited = LessonPackageViewBuilder.Build(
+            Day, Package(), Marks(("n-tejado", Fields(("es", "tejado rojo")))), Array.Empty<LessonWords>(), hearingsByPeriod: HeardInPeriodOne());
+        var takenOut = LessonPackageViewBuilder.Build(
+            Day, Package(), Marks(("n-tejado", new LessonMark { LeftOut = true, At = At })), Array.Empty<LessonWords>(), hearingsByPeriod: HeardInPeriodOne());
+        var unknown = LessonPackageViewBuilder.Build(Day, Package(), Marks(), Array.Empty<LessonWords>());
+
+        Assert.Null(edited.Package.NewWords[1].HeardElsewhere);
+        Assert.Equal(0, edited.Counts.NotHeardElsewhere);
+        Assert.False(takenOut.Package.NewWords[1].HeardElsewhere);
+        Assert.Equal(0, takenOut.Counts.NotHeardElsewhere);
+        Assert.All(unknown.Package.NewWords, w => Assert.Null(w.HeardElsewhere));
+    }
+
     [Fact]
     public void A_word_taken_out_is_marked_and_not_counted()
     {

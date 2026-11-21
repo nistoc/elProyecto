@@ -185,4 +185,52 @@ public sealed class JobTimedLinesReaderTests : IDisposable
 
         Assert.Null(JobLanguageShareReader.ReadReport(JobDir("job1"), JobDir).Conversation);
     }
+
+    // ---------- the other hearings of a line of the plain-text model ----------
+
+    [Fact]
+    public void A_line_of_the_plain_model_carries_what_its_piece_heard()
+    {
+        Put("job1", "timeline/chunks.json", Chunks(("track_part_000.wav", 0, 0), ("track_part_001.wav", 100, 2)));
+        Put("job1", "chunks_json/track_part_000.json", """
+            {"segments":[
+              {"id":0,"start":1.0,"end":4.0,"text":"Abre la ventana."},
+              {"id":1,"start":9.5,"end":12.25,"text":"мне нужно купить хлеб"}],
+             "speech_pieces":{"items":[
+              {"start":1.0,"end":4.0,"own_text":"абре ла вентана"},
+              {"start":5.0,"end":8.0,"own_text":"  "},
+              {"start":9.5,"end":12.25,"own_text":"мне нужно купить хлеб","doubt":"translated",
+               "context_text":"да мне нужно купить хлеб","whole_text_line":"Necesito comprar pan.","second_look":"line"}]}}
+            """);
+        // A line inside the guard is left out; the line after it still finds its own piece.
+        Put("job1", "chunks_json/track_part_001.json", """
+            {"segments":[
+              {"id":0,"start":0.5,"end":1.5,"text":"Repetido."},
+              {"id":1,"start":3.0,"end":6.0,"text":"Cierra la puerta."}],
+             "speech_pieces":{"items":[
+              {"start":0.5,"end":1.5,"own_text":"репетидо"},
+              {"start":3.0,"end":6.0,"own_text":"сьерра ла пуэрта"}]}}
+            """);
+
+        var lines = JobTimedLinesReader.ReadHeard(JobDir("job1"));
+
+        Assert.NotNull(lines);
+        Assert.Equal(3, lines!.Count);
+        Assert.Equal(new HeardLine(1, 4, "Abre la ventana.", "абре ла вентана", null, null), lines[0]);
+        Assert.Equal(new HeardLine(9.5, 12.25, "мне нужно купить хлеб", "мне нужно купить хлеб", "да мне нужно купить хлеб", "Necesito comprar pan."), lines[1]);
+        Assert.Equal(new HeardLine(103, 106, "Cierra la puerta.", "сьерра ла пуэрта", null, null), lines[2]);
+        // the plain reading of the same job is what it was
+        Assert.Equal(lines.Select(l => (l.Start, l.End, l.Text)), JobTimedLinesReader.Read(JobDir("job1"))!.Select(l => (l.Start, l.End, l.Text)));
+    }
+
+    [Fact]
+    public void A_line_of_another_model_has_no_piece()
+    {
+        Put("job1", "timeline/chunks.json", Chunks(("track_part_000.wav", 0, 0)));
+        Put("job1", "chunks_json/track_part_000.json", Answer((1, 4, "Abre la ventana.")));
+
+        var line = Assert.Single(JobTimedLinesReader.ReadHeard(JobDir("job1"))!);
+
+        Assert.Equal(new HeardLine(1, 4, "Abre la ventana.", null, null, null), line);
+    }
 }

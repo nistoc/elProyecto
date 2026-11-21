@@ -192,6 +192,13 @@ public sealed class LessonWord : LessonPlace
     /// before; null — the entry is a pattern with no word of its own to look for.
     /// </summary>
     public IReadOnlyList<string>? SeenIn { get; set; }
+
+    /// <summary>
+    /// Counted on read (<see cref="HeardElsewhere"/>): true — another hearing of the same speech has the word;
+    /// false — the hearings there are have none of it, the word may not have been said; null — nothing to tell
+    /// by, or the owner wrote the word anew.
+    /// </summary>
+    public bool? HeardElsewhere { get; set; }
 }
 
 /// <summary>A word found by code and not by a model's list.</summary>
@@ -228,6 +235,9 @@ public sealed class LessonOtherWord : LessonItem
 
     /// <summary>Counted on read: dates of the earlier lessons that have the form, oldest first.</summary>
     public IReadOnlyList<string> SeenIn { get; set; } = Array.Empty<string>();
+
+    /// <summary>Counted on read, as <see cref="LessonWord.HeardElsewhere"/>.</summary>
+    public bool? HeardElsewhere { get; set; }
 }
 
 /// <summary>
@@ -280,6 +290,7 @@ public sealed record LessonsCompared(int Lessons, string? From, string? To, IRea
 /// <param name="Edited">Items with a field the owner wrote anew.</param>
 /// <param name="LeftOut">Items the owner took out.</param>
 /// <param name="Stale">Edits whose item the package no longer has (it was built anew); they stay in the file.</param>
+/// <param name="NotHeardElsewhere">Words of the three lists no other hearing of the speech has (<see cref="LessonWord.HeardElsewhere"/> false).</param>
 public sealed record LessonPackageCounts(
     int NewWords,
     int NewWordsNeverSeen,
@@ -289,7 +300,8 @@ public sealed record LessonPackageCounts(
     int OtherWordsNeverSeen,
     int Edited,
     int LeftOut,
-    int Stale);
+    int Stale,
+    int NotHeardElsewhere = 0);
 
 /// <summary>A package as it is shown: the lists of the file with the edits put on and the earlier lessons counted.</summary>
 public sealed record LessonPackageView(
@@ -334,6 +346,20 @@ public sealed record LessonsRead(
 {
     public static readonly LessonsRead Nothing =
         new(Array.Empty<LessonWords>(), new Dictionary<string, string>(StringComparer.Ordinal));
+
+    /// <summary>
+    /// For a job of a recording (a dialogue, or a run of one of its tracks) — which jobs the hearings of that
+    /// recording are read from (<see cref="HeardElsewhere"/>).
+    /// </summary>
+    public IReadOnlyDictionary<string, LessonHearingSource> HearingSources { get; init; } =
+        new Dictionary<string, LessonHearingSource>(StringComparer.Ordinal);
+}
+
+/// <summary>Reads the hearings of a recording (<see cref="LessonHearing"/>) from the job folders; the folders are only read.</summary>
+public interface ILessonHearings
+{
+    /// <summary>Null when none of the jobs can be put on the timeline of the recording.</summary>
+    LessonHearing? Read(LessonHearingSource source);
 }
 
 /// <summary>Reads the words of every lesson that has a transcript, for comparing a lesson with the earlier ones.</summary>

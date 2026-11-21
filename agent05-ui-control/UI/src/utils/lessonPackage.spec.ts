@@ -10,6 +10,7 @@ import {
   dayLabel,
   filterWordRows,
   isNewWord,
+  isUnheard,
   nextWordSort,
   plain,
   playFromSec,
@@ -255,6 +256,43 @@ describe('filterWordRows', () => {
       'o-chimenea',
     ]);
     expect(filterWordRows(rows, { ...all, query: 'balcón' })).toEqual([]);
+  });
+});
+
+describe('words no other hearing has', () => {
+  const heard = wordRows({
+    ...pkg,
+    newWords: pkg.newWords.map((w, i) => ({
+      ...w,
+      heardElsewhere: i === 0 ? true : i === 1 ? false : null,
+    })),
+  });
+
+  it('carries what the hearings told, and nothing for a package read before them', () => {
+    expect(heard.slice(0, 3).map((r) => r.heardElsewhere)).toEqual([
+      true,
+      false,
+      null,
+    ]);
+    expect(rows.every((r) => r.heardElsewhere === null)).toBe(true);
+    expect(heard.filter(isUnheard).map((r) => r.id)).toEqual(['n-tejado']);
+  });
+
+  it('keeps to the doubtful words when asked, together with the other filters', () => {
+    expect(
+      ids(filterWordRows(heard, filter({ onlyNew: false, onlyUnheard: true })))
+    ).toEqual(['n-tejado']);
+    expect(
+      ids(
+        filterWordRows(
+          heard,
+          filter({ onlyNew: false, onlyUnheard: true, period: 1 })
+        )
+      )
+    ).toEqual([]);
+    expect(
+      filterWordRows(heard, filter({ onlyNew: false })).length
+    ).toBeGreaterThan(1);
   });
 });
 

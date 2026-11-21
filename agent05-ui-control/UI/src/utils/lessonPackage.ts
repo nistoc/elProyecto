@@ -84,6 +84,8 @@ export interface PackageWord extends PackagePlace {
   note?: string | null;
   /** Dates of the earlier lessons that have the word, oldest first; null — a pattern, nothing to look for. */
   seenIn?: string[] | null;
+  /** false — no other hearing of the same speech has the word, it may not have been said; null — not known. */
+  heardElsewhere?: boolean | null;
 }
 
 export interface PackageOtherWord extends PackageItem {
@@ -101,6 +103,7 @@ export interface PackageOtherWord extends PackageItem {
   ru?: string | null;
   sure?: boolean;
   seenIn?: string[] | null;
+  heardElsewhere?: boolean | null;
 }
 
 export interface LessonPackageDocument {
@@ -141,6 +144,8 @@ export interface LessonPackageView {
     leftOut: number;
     /** Edits whose item the package no longer has. */
     stale: number;
+    /** Words no other hearing of the speech has. */
+    notHeardElsewhere?: number;
   };
 }
 
@@ -182,6 +187,8 @@ export interface WordRow {
   count: number;
   /** Earlier lessons that have the word, oldest first; null — nothing to look for. */
   seenIn: string[] | null;
+  /** false — no other hearing of the same speech has the word; true — one has; null — not known. */
+  heardElsewhere: boolean | null;
   leftOut: boolean;
   /** Field — what the builder had there. */
   edited: Record<string, string | null>;
@@ -213,6 +220,7 @@ export function wordRows(pkg: LessonPackageDocument): WordRow[] {
         line: w.said ?? '',
         count: 0,
         seenIn: w.seenIn ?? null,
+        heardElsewhere: w.heardElsewhere ?? null,
         leftOut: w.leftOut === true,
         edited: w.edited ?? {},
       });
@@ -242,6 +250,7 @@ export function wordRows(pkg: LessonPackageDocument): WordRow[] {
       line: w.said ?? '',
       count: w.count ?? 0,
       seenIn: w.seenIn ?? null,
+      heardElsewhere: w.heardElsewhere ?? null,
       leftOut: w.leftOut === true,
       edited: w.edited ?? {},
     });
@@ -254,9 +263,16 @@ export function isNewWord(row: WordRow): boolean {
   return row.seenIn !== null && row.seenIn.length === 0;
 }
 
+/** No other hearing of the same speech has the word: it may not have been said. */
+export function isUnheard(row: WordRow): boolean {
+  return row.heardElsewhere === false;
+}
+
 export interface WordFilter {
   /** Only the words no earlier lesson has. */
   onlyNew: boolean;
+  /** Only the words no other hearing of the speech has. */
+  onlyUnheard?: boolean;
   lists: ReadonlySet<WordList>;
   /** Looked for in the word, its translation, note and phrase; case and accents do not matter. */
   query: string;
@@ -289,6 +305,7 @@ export function filterWordRows(
     if (row.leftOut && !filter.showLeftOut) return false;
     if (!filter.lists.has(row.list)) return false;
     if (filter.onlyNew && !isNewWord(row)) return false;
+    if (filter.onlyUnheard && !isUnheard(row)) return false;
     if (filter.period !== 0 && row.period !== filter.period) return false;
     if (query === '') return true;
     return [row.word, row.ru, row.note, row.lemma, row.phrase].some((text) =>

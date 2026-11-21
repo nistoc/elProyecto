@@ -202,12 +202,15 @@ public static class LessonPackageViewBuilder
     /// <param name="marks">The owner's edits by item id.</param>
     /// <param name="lessons">The words of the lessons, oldest first; only the ones before the package's date are used.</param>
     /// <param name="mixedTrackByJob">For the job of a period — the mixed track of its recording, when it has one.</param>
+    /// <param name="hearingsByPeriod">The hearings of the recording of a period, by its number: whether a word was
+    /// heard elsewhere is told only for the periods given (<see cref="HeardElsewhere"/>).</param>
     public static LessonPackageView Build(
         string date,
         LessonPackageDocument package,
         IReadOnlyDictionary<string, LessonMark> marks,
         IReadOnlyList<LessonWords> lessons,
-        IReadOnlyDictionary<string, string>? mixedTrackByJob = null)
+        IReadOnlyDictionary<string, string>? mixedTrackByJob = null,
+        IReadOnlyDictionary<int, LessonHearing>? hearingsByPeriod = null)
     {
         var items = Items(package);
         var edited = 0;
@@ -247,6 +250,26 @@ public static class LessonPackageViewBuilder
         foreach (var word in package.OtherWords)
             word.SeenIn = LessonWordRules.KnownIn(word.Edited?.ContainsKey("raw") == true ? word.Raw : word.Word ?? word.Raw, earlier);
 
+        // A word the owner wrote anew is the owner's: the hearings are not asked about it.
+        if (hearingsByPeriod != null)
+        {
+            foreach (var word in package.NewWords.Concat(package.Vocabulary))
+            {
+                word.HeardElsewhere = hearingsByPeriod.TryGetValue(word.Period, out var hearing)
+                                      && word.Edited?.ContainsKey("es") != true
+                    ? HeardElsewhere.Check(hearing, string.IsNullOrWhiteSpace(word.Heard) ? word.Es : word.Heard, word.Sec, word.Said, word.Quote)
+                    : null;
+            }
+
+            foreach (var word in package.OtherWords)
+            {
+                word.HeardElsewhere = hearingsByPeriod.TryGetValue(word.Period, out var hearing)
+                                      && word.Edited?.ContainsKey("raw") != true
+                    ? HeardElsewhere.Check(hearing, word.Raw ?? word.Word, word.Sec, word.Said)
+                    : null;
+            }
+        }
+
         foreach (var period in package.Periods)
         {
             period.AudioTrack = period.Job != null && mixedTrackByJob != null && mixedTrackByJob.TryGetValue(period.Job, out var track)
@@ -263,7 +286,9 @@ public static class LessonPackageViewBuilder
             OtherWordsNeverSeen: package.OtherWords.Count(w => !w.LeftOut && w.SeenIn.Count == 0),
             Edited: edited,
             LeftOut: leftOut,
-            Stale: stale);
+            Stale: stale,
+            NotHeardElsewhere: package.NewWords.Concat(package.Vocabulary).Count(w => !w.LeftOut && w.HeardElsewhere == false)
+                               + package.OtherWords.Count(w => !w.LeftOut && w.HeardElsewhere == false));
         var compared = new LessonsCompared(
             earlier.Count,
             earlier.FirstOrDefault()?.Date,

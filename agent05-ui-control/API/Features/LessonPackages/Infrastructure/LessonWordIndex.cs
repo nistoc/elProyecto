@@ -68,6 +68,7 @@ public sealed class LessonWordIndex : ILessonWordIndex
         var sessions = await LessonSessions.WithRunsAsync(_catalog, _store, _workspace, ct);
         var files = new SortedDictionary<string, List<Source>>(StringComparer.Ordinal);
         var mixedTrackByJob = new Dictionary<string, string>(StringComparer.Ordinal);
+        var hearingSources = new Dictionary<string, LessonHearingSource>(StringComparer.Ordinal);
         foreach (var session in sessions)
         {
             var ofSession = new List<Source>();
@@ -79,6 +80,10 @@ public sealed class LessonWordIndex : ILessonWordIndex
                                  .Concat(period.Tracks.SelectMany(t => t.Runs).Select(r => r.JobId)))
                         mixedTrackByJob[jobId] = mixed.Id;
                 }
+
+                var hearing = LessonHearingSource.Of(period);
+                foreach (var jobId in period.Dialogues.Select(d => d.JobId).Concat(period.Tracks.SelectMany(t => t.Runs).Select(r => r.JobId)))
+                    hearingSources[jobId] = hearing;
 
                 foreach (var jobId in JobsToRead(period))
                 {
@@ -168,7 +173,7 @@ public sealed class LessonWordIndex : ILessonWordIndex
             }
         }
 
-        return new LessonsRead(lessons, mixedTrackByJob);
+        return new LessonsRead(lessons, mixedTrackByJob) { HearingSources = hearingSources };
     }
 
     /// <summary>The jobs whose transcripts are the text of a recording.</summary>

@@ -17,6 +17,7 @@ import {
   dayLabel,
   filterWordRows,
   isNewWord,
+  isUnheard,
   nextWordSort,
   readColumnWidths,
   sortWordRows,
@@ -108,6 +109,17 @@ export function LessonPackageWords({
       all: picked.reduce((n, l) => n + counts.byList[l], 0),
     };
   }, [counts, filter.lists]);
+  // Shown only when the recordings were heard: an old package or a lesson of another model tells nothing.
+  const anyHeard = useMemo(
+    () => rows.some((r) => r.heardElsewhere !== null),
+    [rows]
+  );
+  const unheard = useMemo(
+    () =>
+      filterWordRows(rows, { ...filter, onlyUnheard: true, showLeftOut })
+        .length,
+    [rows, filter, showLeftOut]
+  );
 
   // Written when the drag ends, not on every pixel of it.
   useEffect(() => {
@@ -256,6 +268,24 @@ export function LessonPackageWords({
             </button>
           ))}
         </div>
+        {anyHeard && (
+          <button
+            type="button"
+            className={
+              filter.onlyUnheard
+                ? 'pkg-chip pkg-chip--unheard on'
+                : 'pkg-chip pkg-chip--unheard'
+            }
+            aria-pressed={filter.onlyUnheard === true}
+            onClick={() =>
+              setFilter((f) => ({ ...f, onlyUnheard: !f.onlyUnheard }))
+            }
+            title={t('pkgOnlyUnheardHint')}
+            data-testid="package-only-unheard"
+          >
+            {t('pkgOnlyUnheard')} <b>{unheard}</b>
+          </button>
+        )}
         <input
           type="search"
           className="pkg-search"
@@ -334,6 +364,16 @@ export function LessonPackageWords({
                         onEdit(row.id, { fields: { [row.wordField]: text } })
                       }
                     />
+                    {isUnheard(row) && (
+                      <span
+                        className="pkg-unheard"
+                        title={t('pkgUnheardHint')}
+                        aria-label={t('pkgUnheardHint')}
+                        data-testid="package-unheard"
+                      >
+                        ?
+                      </span>
+                    )}
                   </div>
                   {row.wordField === 'raw' &&
                     (row.lemma !== '' || 'lemma' in row.edited) && (

@@ -737,6 +737,8 @@ function PackageStyles() {
       .pkg-word { font-size: 1.02rem; font-weight: 600; color: var(--color-heading); }
       .pkg-phrase { font-style: italic; line-height: 1.4; }
       .pkg-mark { padding: 0 0.1em; border-radius: 3px; background: color-mix(in srgb, var(--color-primary) 22%, transparent); color: inherit; font-weight: 600; }
+      .pkg-unheard { display: inline-block; margin-left: 0.35rem; padding: 0 0.4rem; border-radius: 999px; border: 1px solid var(--color-warning, #b8860b); color: var(--color-warning, #b8860b); font-size: 0.75rem; font-weight: 700; cursor: help; vertical-align: middle; }
+      .pkg-chip--unheard.on { border-color: var(--color-warning, #b8860b); box-shadow: inset 3px 0 0 var(--color-warning, #b8860b); }
       .pkg-badge-new { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; background: #2e7d32; color: #fff; font-size: 0.75rem; font-weight: 600; }
       .pkg-place { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.4rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
       .pkg-place .pkg-sub { flex-basis: 100%; }

@@ -31,7 +31,24 @@ public static class JobTimedLinesReader
     /// (a job from before that record), its audio was compressed without a speech map, or one of its chunks was
     /// split by the operator and merged (the parts have a timeline of their own, not read here).
     /// </summary>
-    public static IReadOnlyList<TimedLine>? Read(string jobDirectoryPath)
+    public static IReadOnlyList<TimedLine>? Read(string jobDirectoryPath) =>
+        ReadLines(jobDirectoryPath)?.Select(l => new TimedLine(l.From, l.To, l.Text)).ToList();
+
+    /// <summary>
+    /// The lines of <see cref="Read"/>, each with what the piece of the line heard alone, asked again with the
+    /// audio around it, and the line it replaced (<see cref="HeardLine"/>). A line pairs with the piece whose end
+    /// is its end (the transcriber writes a line per piece that got text, in piece order), else with the piece
+    /// that shares more than half of its time. Null when <see cref="Read"/> is null.
+    /// </summary>
+    public static IReadOnlyList<HeardLine>? ReadHeard(string jobDirectoryPath) =>
+        ReadLines(jobDirectoryPath)?.Select(l => new HeardLine(l.From, l.To, l.Text, l.Piece?.Own, l.Piece?.Context, l.Piece?.Was)).ToList();
+
+    /// <summary>A piece of a chunk of the plain-text model: an item of block <c>speech_pieces</c>.</summary>
+    private sealed record Piece(double Start, double End, string? Own, string? Context, string? Was);
+
+    private readonly record struct Line(double From, double To, string Text, Piece? Piece);
+
+    private static List<Line>? ReadLines(string jobDirectoryPath)
     {
         try
         {
@@ -58,7 +75,7 @@ public static class JobTimedLinesReader
                 return null;
             }
 
-            var lines = new List<TimedLine>();
+            var lines = new List<Line>();
             foreach (var path in Directory.EnumerateFiles(jsonDir, "*.json").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
             {
                 var chunkName = Path.GetFileNameWithoutExtension(path);
@@ -67,7 +84,7 @@ public static class JobTimedLinesReader
                 AddChunk(lines, path, place, map);
             }
 
-            lines.Sort((a, b) => a.Start.CompareTo(b.Start));
+            lines.Sort((a, b) => a.From.CompareTo(b.From));
             return lines;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -176,7 +193,7 @@ public static class JobTimedLinesReader
     public static bool IsWithoutTime(double startSec, double endSec) =>
         Math.Abs(startSec) < Eps && Math.Abs(endSec) < Eps;
 
-    private static void AddChunk(List<TimedLine> lines, string path, ChunkPlace place, RecordingTimeMap? map)
+    private static void AddChunk(List<Line> lines, string path, ChunkPlace place, RecordingTimeMap? map)
     {
         try
         {
@@ -187,6 +204,8 @@ public static class JobTimedLinesReader
                 || segments.ValueKind != JsonValueKind.Array)
                 return;
 
+            var pieces = Pieces(doc.RootElement);
+            var nextPiece = 0;
             foreach (var segment in segments.EnumerateArray())
             {
                 if (segment.ValueKind != JsonValueKind.Object)
@@ -194,7 +213,11 @@ public static class JobTimedLinesReader
                 var text = segment.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
                 var start = Number(segment, "start");
                 var end = Number(segment, "end");
-                if (start == null || end == null || LanguageShare.Classify(text) == LineLanguage.None)
+                if (start == null || end == null)
+                    continue;
+                // Paired before a line is left out, so that the lines after it find their own pieces.
+                var piece = PieceOf(pieces, ref nextPiece, start.Value, end.Value);
+                if (LanguageShare.Classify(text) == LineLanguage.None)
                     continue;
                 if (IsWithoutTime(start.Value, end.Value) || IsInsideGuard(start.Value, end.Value, place.EmitGuardSec))
                     continue;
@@ -208,7 +231,7 @@ public static class JobTimedLinesReader
                     from = sourceFrom;
                 }
 
-                lines.Add(new TimedLine(from, to, text!.Trim()));
+                lines.Add(new Line(from, to, text!.Trim(), piece));
             }
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
@@ -216,6 +239,61 @@ public static class JobTimedLinesReader
             // a chunk answer that cannot be read gives no lines
         }
     }
+
+    /// <summary>The items of block <c>speech_pieces</c>, in their order; empty for an answer of another model.</summary>
+    private static List<Piece> Pieces(JsonElement answer)
+    {
+        var pieces = new List<Piece>();
+        if (!answer.TryGetProperty("speech_pieces", out var block) || block.ValueKind != JsonValueKind.Object
+            || !block.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+            return pieces;
+        foreach (var item in items.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object || Number(item, "start") is not { } start || Number(item, "end") is not { } end)
+                continue;
+            pieces.Add(new Piece(start, end, Text(item, "own_text"), Text(item, "context_text"), Text(item, "whole_text_line")));
+        }
+
+        return pieces;
+    }
+
+    /// <summary>
+    /// The piece of a line: the next one whose end is the line's end, else the one that shares more than half
+    /// of the line's time.
+    /// </summary>
+    private static Piece? PieceOf(List<Piece> pieces, ref int next, double start, double end)
+    {
+        if (pieces.Count == 0)
+            return null;
+        for (var k = next; k < pieces.Count; k++)
+        {
+            if (Math.Abs(pieces[k].End - end) <= 0.002)
+            {
+                next = k + 1;
+                return pieces[k];
+            }
+        }
+
+        Piece? best = null;
+        var shared = 0.0;
+        foreach (var piece in pieces)
+        {
+            var overlap = Math.Min(end, piece.End) - Math.Max(start, piece.Start);
+            if (overlap > shared)
+            {
+                best = piece;
+                shared = overlap;
+            }
+        }
+
+        return shared > 0.5 * Math.Max(0.01, end - start) ? best : null;
+    }
+
+    private static string? Text(JsonElement obj, string name) =>
+        obj.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String && value.GetString() is { } text
+            && text.Trim() is { Length: > 0 } trimmed
+            ? trimmed
+            : null;
 
     /// <returns>The number of the unit after the chunk's last one.</returns>
     private static int AddDiarizedChunk(List<DiarizedSegment> segments, string path, ChunkPlace place, RecordingTimeMap? map, int firstUnit)

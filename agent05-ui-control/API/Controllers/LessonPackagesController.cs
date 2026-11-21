@@ -17,17 +17,20 @@ public class LessonPackagesController : ControllerBase
     private readonly ILessonWordIndex _words;
     private readonly IRecordingsCatalog _catalog;
     private readonly ILogger<LessonPackagesController> _logger;
+    private readonly ILessonHearings? _hearings;
 
     public LessonPackagesController(
         ILessonPackageStore packages,
         ILessonWordIndex words,
         IRecordingsCatalog catalog,
-        ILogger<LessonPackagesController> logger)
+        ILogger<LessonPackagesController> logger,
+        ILessonHearings? hearings = null)
     {
         _packages = packages;
         _words = words;
         _catalog = catalog;
         _logger = logger;
+        _hearings = hearings;
     }
 
     /// <summary>The package of the lesson of this date with the edits put on and the earlier lessons counted.</summary>
@@ -169,7 +172,22 @@ public class LessonPackagesController : ControllerBase
             return null;
         var marks = _packages.Marks(day);
         var read = await _words.ReadAsync(ct);
-        return LessonPackageViewBuilder.Build(day, package, marks, read.Lessons, read.MixedTrackByJob);
+        return LessonPackageViewBuilder.Build(day, package, marks, read.Lessons, read.MixedTrackByJob, HearingsOf(package, read));
+    }
+
+    /// <summary>The hearings of the recording of every period whose job is known; a recording read before is not read again.</summary>
+    private IReadOnlyDictionary<int, LessonHearing>? HearingsOf(LessonPackageDocument package, LessonsRead read)
+    {
+        if (_hearings == null)
+            return null;
+        var byPeriod = new Dictionary<int, LessonHearing>();
+        foreach (var period in package.Periods)
+        {
+            if (period.Job != null && read.HearingSources.TryGetValue(period.Job, out var source) && _hearings.Read(source) is { } hearing)
+                byPeriod[period.N] = hearing;
+        }
+
+        return byPeriod;
     }
 
     private static string AudioType(string path) => Path.GetExtension(path).ToLowerInvariant() switch

@@ -54,19 +54,20 @@ These are requirements, not ideas. A change that breaks one of them needs the ow
 | The owner's edits | `<packages folder>/<YYYY-MM-DD>/marks.json` — written by agent05 only |
 | Packages folder | config key `LessonPackages:RootPath` of agent05; without it the folder `lesson-packages` **next to** the jobs folder |
 | Model of the files, the view, the edit rule | `agent05-ui-control/API/Features/LessonPackages/Application/` — `LessonPackage.cs`, `LessonPackageViewBuilder.cs` |
+| "Was this word heard elsewhere" (`heardElsewhere`) | `…/Application/HeardElsewhere.cs` (the rule and which jobs are read), `…/Infrastructure/LessonHearingReader.cs` (the cache), `agent05-ui-control/API/Features/Jobs/Infrastructure/JobTimedLinesReader.cs` (`ReadHeard`) |
 | "Was this word said before" | `…/Application/LessonWordRules.cs` (the rule), `…/Application/SaidText.cs` (what of a refined transcript was really said), `…/Infrastructure/LessonWordIndex.cs` (which transcripts and answer files are read, the cache) |
 | Reading and writing the files | `…/Infrastructure/FileLessonPackageStore.cs` |
 | HTTP | `agent05-ui-control/API/Controllers/LessonPackagesController.cs`; the lessons list tells which lesson has a package (`SessionsController.List`) |
 | Screen | `agent05-ui-control/UI/src/components/` — `LessonPackageView.tsx` (header, tabs, grammar, topics, examples, player), `LessonPackageWords.tsx` (the words table), `EditableText.tsx` (a text edited in place), `LessonPageLinks.tsx` (the button) |
 | Rows, filter, order, widths | `agent05-ui-control/UI/src/utils/lessonPackage.ts` |
 | Words of the UI | `agent05-ui-control/UI/src/contexts/I18nContext.tsx`, keys `lessonPackage*` and `pkg*`, three languages |
-| Tests | `agent05-ui-control/API.Tests/` — `LessonWordRulesTests.cs`, `SaidTextTests.cs`, `LessonPackageViewBuilderTests.cs`, `LessonPackagesTests.cs`; `agent05-ui-control/UI/src/utils/lessonPackage.spec.ts` |
+| Tests | `agent05-ui-control/API.Tests/` — `LessonWordRulesTests.cs`, `SaidTextTests.cs`, `HeardElsewhereTests.cs`, `LessonPackageViewBuilderTests.cs`, `LessonPackagesTests.cs`; `agent05-ui-control/UI/src/utils/lessonPackage.spec.ts` |
 | Builder | `lesson-package/builder/` — `python -m builder build <date>…` ([README](builder/README.md), how it builds: [BUILDER.md](BUILDER.md)); tests `builder/tests/` (`python -m unittest discover` from `lesson-package/`) |
 
 ## Rules that must hold
 
 1. **`package.json` is never rewritten by the service.** Everything that depends on other lessons or on the
-   owner is counted on read: the ids, the edits put on, "said before", the audio track of a recording.
+   owner is counted on read: the ids, the edits put on, "said before", "heard elsewhere", the audio track of a recording.
 2. **An edit is kept by the id of its item, and the id is made of the builder's own text** (a word — of the
    word; a topic, a rule, an example — of a digest of its text). A package built anew keeps the edits of
    every item whose text did not change; the others are counted as stale and stay in the file. Do not make
@@ -127,7 +128,8 @@ time (agent05 logs the time). The next reads take a fraction of a second.
 
 Done: the screen with four tabs; the words table (only new by default, lists, search, recording, sorting,
 columns dragged and remembered); every text edited in place and put back; a row taken out and returned; a
-phrase played from the recording; "said before" counted against all earlier lessons; thirty-five lessons
+phrase played from the recording; "said before" counted against all earlier lessons; a word no other hearing
+has marked «?» (`heardElsewhere`, 2026-11-21); thirty-five lessons
 have a package; the builder in the repository (`builder/`, see BUILDER.md, "State"), reading the lesson with its
 speakers from agent05 — thirty-one lessons built by it, pass 3 answered by Claude subagents, eleven of them
 through `python -m builder days` from the batch plan to the published package (the last twenty-one with speakers
