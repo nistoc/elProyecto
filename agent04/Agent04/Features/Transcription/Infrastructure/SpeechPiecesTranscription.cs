@@ -236,15 +236,7 @@ public sealed class SpeechPiecesTranscription
                 spelledByNeighbour: 0, askedWithContext: 0, spelledByContext: 0, linesAskedWithContext: 0, linesTakenFromContext: 0);
         }
 
-        var request = options.Clone();
-        request.Model = model;
-        request.Languages = settings.Languages.Count > 0 ? settings.Languages : null;
-        request.Prompt = settings.Prompt;
-        request.Temperature = null;
-        request.ResponseFormat = "json";
-        request.ChunkingStrategy = null;
-        request.ExactRequest = true;
-        request.StopAtServerError = false;
+        var request = PieceRequest(options, model, settings);
 
         // A chunk cut into pieces is a long stretch: its request names the languages in the order kept for
         // it. A chunk that is one piece is as short as a piece and is asked as one.
@@ -395,20 +387,9 @@ public sealed class SpeechPiecesTranscription
                 {
                     if (lone.Contains(k))
                         continue;
-                    if (SpeechPieceSecondLook.LooksTranslated(asPlaced[k], own[k]))
-                    {
-                        doubt[k] = "translated";
-                    }
-                    else if (SpeechPieceSecondLook.LooksWrittenInRussian(asPlaced[k], own[k]))
-                    {
-                        doubt[k] = "written_in_russian";
+                    doubt[k] = SpeechPieceSecondLook.DoubtOf(asPlaced[k], own[k]);
+                    if (doubt[k] == SpeechPieceSecondLook.DoubtWrittenInRussian)
                         doubtedAsRussian.Add(k);
-                    }
-                    else if (SpeechPieceSecondLook.LooksPartlyTranslated(asPlaced[k], own[k]))
-                    {
-                        doubt[k] = "translated_in_part";
-                    }
-
                     if (doubt[k] != null)
                         doubted.Add(k);
                 }
@@ -545,6 +526,243 @@ public sealed class SpeechPiecesTranscription
             }
         }
     }
+
+    /// <summary>The request of a piece: the chunk's options with the fields of this way.</summary>
+    private static TranscriptionClientOptions PieceRequest(TranscriptionClientOptions options, string? model, Settings settings)
+    {
+        var request = options.Clone();
+        request.Model = model;
+        request.Languages = settings.Languages.Count > 0 ? settings.Languages : null;
+        request.Prompt = settings.Prompt;
+        request.Temperature = null;
+        request.ResponseFormat = "json";
+        request.ChunkingStrategy = null;
+        request.ExactRequest = true;
+        request.StopAtServerError = false;
+        return request;
+    }
+
+    /// <summary>Key, inside the block, of the record of every look at a kept answer (<see cref="LookAgainAsync"/>).</summary>
+    public const string LookedAgainKey = "looked_again";
+
+    /// <summary>What looking again at a kept answer did.</summary>
+    /// <param name="Answer">The answer with the lines that were settled; null when no piece was asked or none answered.</param>
+    /// <param name="LinesAsked">Pieces asked again with the audio around them.</param>
+    /// <param name="LinesTaken">Lines replaced by what those answers heard.</param>
+    /// <param name="AudioSecAsked">Seconds of audio sent: what the requests cost is counted by them.</param>
+    public sealed record LookAgainResult(TranscriptionClientResult? Answer, int LinesAsked, int LinesTaken, double AudioSecAsked);
+
+    /// <summary>A line of a kept answer the doubts of today find and that was not asked about when the chunk was transcribed.</summary>
+    internal sealed record DoubtedLine(int Item, int Segment, double StartSec, double EndSec, string Line, string Own, string Doubt);
+
+    /// <summary>
+    /// The lines of an answer of this way, kept in the job folder, that <see cref="SpeechPieceSecondLook.DoubtOf"/>
+    /// doubts today and that were not asked about when the chunk was transcribed — a rule added since, say.
+    /// A piece that was already looked at (it has a doubt, an answer with audio around it or a line taken
+    /// from one) is not doubted again, nor one that kept its own text. Nothing when the answer is not of this
+    /// way, when the whole text was missing or set aside (the lines are then the pieces' own), or when its
+    /// segments cannot be told by their pieces: such an answer is not touched.
+    /// </summary>
+    internal static IReadOnlyList<DoubtedLine> DoubtedLines(IReadOnlyDictionary<string, object?> answer)
+    {
+        if (!answer.TryGetValue(RawBlockKey, out var b) || b is not IReadOnlyDictionary<string, object?> block
+            || block.GetValueOrDefault("items") is not object?[] items || items.Length < 2
+            || block.GetValueOrDefault("whole_text_missing") is true || block.GetValueOrDefault("whole_text_rejected") is true
+            || answer.GetValueOrDefault("segments") is not object?[] segments)
+            return Array.Empty<DoubtedLine>();
+
+        // A segment was written for every piece that got a line, in the order of the pieces, ending where
+        // its piece ends.
+        var found = new List<DoubtedLine>();
+        var s = 0;
+        for (var k = 0; k < items.Length; k++)
+        {
+            if (items[k] is not IReadOnlyDictionary<string, object?> item
+                || Seconds(item.GetValueOrDefault("start")) is not { } start
+                || Seconds(item.GetValueOrDefault("end")) is not { } end)
+                return Array.Empty<DoubtedLine>();
+            if (s >= segments.Length || segments[s] is not IReadOnlyDictionary<string, object?> segment
+                || Seconds(segment.GetValueOrDefault("end")) is not { } segmentEnd || Math.Abs(segmentEnd - end) > 0.0015)
+                continue; // a piece that got no line
+            var segmentIndex = s++;
+
+            var line = segment.GetValueOrDefault("text") as string;
+            var own = item.GetValueOrDefault("own_text") as string;
+            if (string.IsNullOrWhiteSpace(line) || string.IsNullOrWhiteSpace(own)
+                || item.ContainsKey("doubt") || item.ContainsKey("context_text") || item.ContainsKey("second_look") || item.ContainsKey("whole_text_line")
+                || string.Equals(line.Trim(), own.Trim(), StringComparison.Ordinal))
+                continue;
+            if (SpeechPieceSecondLook.DoubtOf(line, own) is { } doubt)
+                found.Add(new DoubtedLine(k, segmentIndex, start, end, line, own, doubt));
+        }
+
+        return s == segments.Length ? found : Array.Empty<DoubtedLine>();
+    }
+
+    /// <summary>
+    /// The second look of <see cref="TranscribeAsync"/> once more, on an answer of this way kept from an earlier
+    /// run: every line <see cref="DoubtedLines"/> finds is asked again with the audio around its piece, cut from
+    /// the same chunk, and replaced by the same rule as at transcription. Nothing else is asked, so it costs the
+    /// seconds of those cuts only. The answer that comes back is the kept one with those pieces marked as at
+    /// transcription (<c>doubt</c>, <c>context_text</c>, <c>whole_text_line</c>, <c>second_look</c>), the
+    /// counters of the block raised and the look written into <see cref="LookedAgainKey"/>; a piece that got no
+    /// answer stays unmarked, to be asked the next time. Looking again at that answer asks nothing.
+    /// </summary>
+    public async Task<LookAgainResult> LookAgainAsync(
+        string chunkPath,
+        IReadOnlyDictionary<string, object?> answer,
+        TranscriptionConfig config,
+        TranscriptionClientOptions options,
+        Action<string>? activity = null,
+        CancellationToken ct = default)
+    {
+        var settings = Settings.FromConfig(config);
+        var doubted = settings.ContextSec > 0 ? DoubtedLines(answer) : Array.Empty<DoubtedLine>();
+        if (doubted.Count == 0)
+            return new LookAgainResult(null, 0, 0, 0);
+
+        var block = (IReadOnlyDictionary<string, object?>)answer[RawBlockKey]!;
+        var model = block.GetValueOrDefault("model") is string { Length: > 0 } kept
+            ? kept
+            : string.IsNullOrWhiteSpace(options.Model) ? config.Model : options.Model.Trim();
+        var request = PieceRequest(options, model, settings);
+        var ffmpeg = _audioUtils.WhichOr(config.FfmpegPath, "ffmpeg") ?? "ffmpeg";
+        var ffprobe = _audioUtils.WhichOr(config.FfprobePath, "ffprobe") ?? "ffprobe";
+        var durationSec = _audioUtils.GetDurationAndSize(ffprobe, chunkPath).DurationSeconds;
+        activity?.Invoke($"Speech pieces: looking again at {doubted.Count} lines that may be a translation, with the audio around them");
+
+        var workDir = Path.Combine(Path.GetTempPath(), "agent04_speech_pieces_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workDir);
+        try
+        {
+            using var gate = new SemaphoreSlim(settings.ParallelRequests, settings.ParallelRequests);
+            var dropped = new List<TranscriptionClientResult>();
+            var extension = Path.GetExtension(chunkPath);
+            var audioSec = 0.0;
+            var tasks = new List<Task<TranscriptionClientResult?>>();
+            foreach (var line in doubted)
+            {
+                var from = Math.Max(0, line.StartSec - settings.ContextSec);
+                var to = Math.Min(durationSec, line.EndSec + settings.ContextSec);
+                audioSec += Math.Max(0, to - from);
+                var contextPath = Path.Combine(workDir, $"context_{line.Item:D3}{extension}");
+                tasks.Add(AskAsync(
+                    contextPath,
+                    to - from,
+                    request,
+                    gate,
+                    () => _audioUtils.ExtractAudioSegmentCopyOrReencode(ffmpeg, chunkPath, from, to - from, contextPath),
+                    dropped,
+                    ct));
+            }
+
+            var answers = await Task.WhenAll(tasks).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+
+            var usages = new List<IReadOnlyDictionary<string, object?>>();
+            if (answer.GetValueOrDefault("usage") is IReadOnlyDictionary<string, object?> before)
+                usages.Add(before);
+            var items = ((object?[])block["items"]!).ToArray();
+            var segments = ((object?[])answer["segments"]!).ToArray();
+            int answered = 0, taken = 0;
+            for (var n = 0; n < doubted.Count; n++)
+            {
+                AddUsage(usages, answers[n]);
+                if (answers[n] == null)
+                    continue;
+
+                answered++;
+                var line = doubted[n];
+                var around = TextOf(answers[n]!);
+                var item = new Dictionary<string, object?>((IReadOnlyDictionary<string, object?>)items[line.Item]!)
+                {
+                    ["doubt"] = line.Doubt,
+                    ["context_text"] = around,
+                };
+                var said = line.Doubt == SpeechPieceSecondLook.DoubtWrittenInRussian
+                    ? SpeechPieceSecondLook.SaidInSpanishAround(line.Own, line.Line, around)
+                    : SpeechPieceSecondLook.SaidAsHeardAround(line.Own, line.Line, around);
+                if (said != null)
+                {
+                    item["whole_text_line"] = line.Line;
+                    item["second_look"] = "line";
+                    segments[line.Segment] = new Dictionary<string, object?>((IReadOnlyDictionary<string, object?>)segments[line.Segment]!)
+                    {
+                        ["text"] = said,
+                    };
+                    taken++;
+                }
+
+                items[line.Item] = item;
+            }
+
+            foreach (var runaway in dropped)
+                AddUsage(usages, runaway);
+            _logger?.LogInformation(
+                "Chunk {ChunkIndex}: looked again at {Doubted} lines that may be a translation ({Seconds:F1}s of audio around them); answered {Answered}, taken {Taken}",
+                options.ChunkIndex, doubted.Count, audioSec, answered, taken);
+            if (answered == 0)
+                return new LookAgainResult(null, doubted.Count, 0, audioSec);
+
+            var looks = block.GetValueOrDefault(LookedAgainKey) is object?[] earlier ? earlier.ToList() : new List<object?>();
+            looks.Add(new Dictionary<string, object?>
+            {
+                ["at"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture),
+                ["lines_asked"] = doubted.Count,
+                ["lines_answered"] = answered,
+                ["lines_taken"] = taken,
+                ["audio_sec"] = Round(audioSec),
+            });
+            var newBlock = new Dictionary<string, object?>(block)
+            {
+                ["items"] = items,
+                ["requests"] = Count(block, "requests") + doubted.Count + dropped.Count,
+                ["runaway_answers"] = Count(block, "runaway_answers") + dropped.Count,
+                ["lines_asked_with_context"] = Count(block, "lines_asked_with_context") + answered,
+                ["lines_taken_from_context"] = Count(block, "lines_taken_from_context") + taken,
+                [LookedAgainKey] = looks.ToArray(),
+            };
+            var raw = new Dictionary<string, object?>(answer)
+            {
+                ["segments"] = segments,
+                [RawBlockKey] = newBlock,
+            };
+            if (usages.Count > 0)
+                raw["usage"] = ServerErrorChunkSplit.SumUsage(usages);
+
+            var result = new TranscriptionClientResult
+            {
+                RawResponse = raw,
+                Segments = OpenAITranscriptionClient.ParseSegments(raw),
+            };
+            return new LookAgainResult(result, doubted.Count, taken, audioSec);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(workDir, recursive: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger?.LogWarning(ex, "Speech pieces: could not remove the piece files in {Dir}", workDir);
+            }
+        }
+
+        static int Count(IReadOnlyDictionary<string, object?> block, string key) =>
+            Seconds(block.GetValueOrDefault(key)) is { } value ? (int)Math.Round(value) : 0;
+    }
+
+    /// <summary>A number of a kept answer: read from disk it is a double, made here an int or a double.</summary>
+    private static double? Seconds(object? value) => value switch
+    {
+        double d => d,
+        int i => i,
+        long l => l,
+        float f => f,
+        decimal m => (double)m,
+        _ => null,
+    };
 
     /// <summary>What the answer says about itself: lines, and how many words stand by a partner.</summary>
     internal static string Describe(IReadOnlyDictionary<string, object?> raw)

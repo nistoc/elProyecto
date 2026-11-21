@@ -124,6 +124,8 @@ enum ChunkCommandAction {
   CHUNK_COMMAND_ACTION_DELETE_SUB_CHUNK = 7;
   /// Rebuild split_chunks/chunk_{chunk_index}/chunk_{chunk_index}_merged.json and .md (and job-level combined outputs when present). chunk_index = parent; all sub_chunk_XX_result.json required.
   CHUNK_COMMAND_ACTION_REBUILD_SPLIT_MERGED = 8;
+  /// Job of a plain-text model (gpt-transcribe): ask again, with the audio around their pieces, the lines of the kept answers the doubts of today find and that were not asked about at transcription (paid, those cuts only); write the changed answers and a new combined transcript. chunk_index = one main chunk, or -1 for every chunk. Answers when done, with what was done in message.
+  CHUNK_COMMAND_ACTION_LOOK_AGAIN = 9;
 }
 
 message ChunkCommandRequest {

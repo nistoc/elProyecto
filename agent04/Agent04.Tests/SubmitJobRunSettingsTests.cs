@@ -155,6 +155,13 @@ public sealed class SubmitJobRunSettingsTests : IDisposable
             string agentJobId,
             INodeModel? nodeModel,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<LookAgainSummary> LookAgainAtMainChunksAsync(
+            TranscriptionConfig config,
+            string artifactRoot,
+            string agentJobId,
+            int chunkIndex,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class TestHostEnvironment : IHostEnvironment

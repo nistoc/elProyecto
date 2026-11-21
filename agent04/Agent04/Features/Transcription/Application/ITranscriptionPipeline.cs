@@ -60,4 +60,29 @@ public interface ITranscriptionPipeline
         string agentJobId,
         INodeModel? nodeModel,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Looks again at the kept answers of a job transcribed by a plain-text model: the lines the doubts of
+    /// today find in them and that were not asked about then are asked again with the audio around their
+    /// pieces (paid, the seconds of those cuts only) and settled as at transcription. A changed answer is
+    /// written to <c>chunks_json</c> and the cache, its chunk md follows it unless the operator edited it,
+    /// and the combined transcript is written anew (a new file) when anything changed.
+    /// </summary>
+    /// <param name="chunkIndex">One main chunk; below zero, every chunk of the job.</param>
+    Task<LookAgainSummary> LookAgainAtMainChunksAsync(
+        TranscriptionConfig config,
+        string artifactRoot,
+        string agentJobId,
+        int chunkIndex,
+        CancellationToken cancellationToken = default);
 }
+
+/// <summary>What <see cref="ITranscriptionPipeline.LookAgainAtMainChunksAsync"/> did.</summary>
+/// <param name="Chunks">Chunks whose kept answer was read.</param>
+/// <param name="ChunksChanged">Chunks whose answer was written anew.</param>
+/// <param name="LinesAsked">Pieces asked again with the audio around them.</param>
+/// <param name="LinesTaken">Lines replaced.</param>
+/// <param name="AudioSecAsked">Seconds of audio sent.</param>
+/// <param name="MdKept">Changed chunks whose md the operator had edited: it stays, the new text is in the JSON only.</param>
+/// <param name="Rebuilt">Path of the combined transcript written anew; null when nothing changed.</param>
+public sealed record LookAgainSummary(int Chunks, int ChunksChanged, int LinesAsked, int LinesTaken, double AudioSecAsked, int MdKept, string? Rebuilt);

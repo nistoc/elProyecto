@@ -640,6 +640,112 @@ public sealed class SpeechPiecesTranscriptionTests : IDisposable
         Assert.False(item.ContainsKey("second_look"));
     }
 
+    // ---- looking again at an answer kept from an earlier run ----
+
+    /// <summary>An answer as the pipeline reads it back from <c>chunks_json</c>: numbers are doubles, objects dictionaries.</summary>
+    private static IReadOnlyDictionary<string, object?> AsKept(IReadOnlyDictionary<string, object?> raw)
+    {
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(raw));
+        return (IReadOnlyDictionary<string, object?>)FromJson(doc.RootElement)!;
+
+        static object? FromJson(JsonElement e) => e.ValueKind switch
+        {
+            JsonValueKind.String => e.GetString(),
+            JsonValueKind.Number => e.GetDouble(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Array => e.EnumerateArray().Select(FromJson).ToArray(),
+            JsonValueKind.Object => e.EnumerateObject().ToDictionary(p => p.Name, p => FromJson(p.Value)),
+            _ => null,
+        };
+    }
+
+    /// <summary>The whole text gives a Russian part of the middle piece in Spanish; with its surroundings that part is Russian.</summary>
+    private static ScriptedServer PartlyTranslatedMiddle() => new(seen => (HttpStatusCode.OK,
+        seen.Whole ? Answer("Buenos días. Sí, claro, y es otra cosa. Hasta luego.", 60)
+        : seen.Context ? Answer("Buenos días. Sí, claro, это другое дело. Hasta", 21)
+        : Answer(new[] { "Buenos dias", "Sí, claro, это другое дело.", "Hasta luego" }[seen.Piece], 5)));
+
+    [Fact]
+    public async Task A_kept_answer_is_looked_at_again_for_the_lines_the_doubts_of_today_find()
+    {
+        // transcribed when no piece was asked again (as before a rule was added): the line stayed as the whole text gave it
+        var server = PartlyTranslatedMiddle();
+        var before = await LoadConfigAsync(new Dictionary<string, object?> { [SpeechPiecesTranscription.ContextConfigKey] = 0.0 });
+        var kept = await CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, before, ChunkOptions(before));
+        Assert.Equal("Sí, claro, y es otra cosa.", kept.Segments[1].Text);
+        var requestsAtTranscription = server.Requests.Count;
+
+        var audio = ThreePieces();
+        var config = await LoadConfigAsync();
+        var look = await CreateWay(audio, server).LookAgainAsync(NewChunk(), AsKept(kept.RawResponse), config, ChunkOptions(config));
+
+        Assert.Equal(1, look.LinesAsked);
+        Assert.Equal(1, look.LinesTaken);
+        Assert.Equal(21.0, look.AudioSecAsked);   // 9–20 s and 5 s on either side: 4–25 s
+        Assert.Equal(new[] { (1, 4.0, 21.0) }, audio.ContextCuts);
+        Assert.Empty(audio.Cuts);                  // nothing else is asked: no whole chunk, no piece alone
+        Assert.Equal(requestsAtTranscription + 1, server.Requests.Count);
+        Assert.True(server.Requests[^1].Context);
+
+        var answer = Assert.IsType<TranscriptionClientResult>(look.Answer);
+        Assert.Equal(new[] { "Buenos días.", "Sí, claro, это другое дело.", "Hasta luego." }, answer.Segments.Select(s => s.Text));
+        var block = Block(answer.RawResponse);
+        Assert.Equal(5, block["requests"]);
+        Assert.Equal(1, block["lines_asked_with_context"]);
+        Assert.Equal(1, block["lines_taken_from_context"]);
+        var item = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(((object?[])block["items"]!)[1]);
+        Assert.Equal("translated_in_part", item["doubt"]);
+        Assert.Equal("Sí, claro, y es otra cosa.", item["whole_text_line"]);
+        Assert.Equal("line", item["second_look"]);
+        var record = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(Assert.Single((object?[])block[SpeechPiecesTranscription.LookedAgainKey]!));
+        Assert.Equal(1, record["lines_asked"]);
+        Assert.Equal(1, record["lines_taken"]);
+        var usage = Assert.IsAssignableFrom<IReadOnlyDictionary<string, object?>>(answer.RawResponse["usage"]);
+        Assert.Equal(60.0 + 3 * 5 + 21, usage["seconds"]);   // what the chunk cost then, and the look
+
+        // looked at once, the answer asks nothing more
+        var again = await CreateWay(ThreePieces(), server).LookAgainAsync(NewChunk(), AsKept(answer.RawResponse), config, ChunkOptions(config));
+        Assert.Null(again.Answer);
+        Assert.Equal(0, again.LinesAsked);
+        Assert.Equal(requestsAtTranscription + 1, server.Requests.Count);
+    }
+
+    [Fact]
+    public async Task A_kept_answer_whose_doubted_line_was_asked_at_transcription_is_not_asked_again()
+    {
+        var server = PartlyTranslatedMiddle();
+        var config = await LoadConfigAsync();
+        var kept = await CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, config, ChunkOptions(config));
+        var requests = server.Requests.Count;
+
+        var look = await CreateWay(ThreePieces(), server).LookAgainAsync(NewChunk(), AsKept(kept.RawResponse), config, ChunkOptions(config));
+
+        Assert.Null(look.Answer);
+        Assert.Equal(0, look.LinesAsked);
+        Assert.Equal(requests, server.Requests.Count);
+    }
+
+    [Fact]
+    public async Task A_kept_answer_without_the_whole_text_is_not_looked_at_again()
+    {
+        // the server refused the whole chunk: the lines are the pieces' own, nothing to doubt them against
+        var server = new ScriptedServer(seen => seen.Whole
+            ? (HttpStatusCode.InternalServerError, ServerError)
+            : (HttpStatusCode.OK, Answer(new[] { "Buenos dias", "Sí, claro, это другое дело.", "Hasta luego" }[seen.Piece], 5)));
+        var before = await LoadConfigAsync(new Dictionary<string, object?> { [SpeechPiecesTranscription.ContextConfigKey] = 0.0 });
+        var kept = await CreateWay(ThreePieces(), server).TranscribeAsync(NewChunk(), 0, before, ChunkOptions(before));
+        Assert.Equal(true, Block(kept.RawResponse)["whole_text_missing"]);
+        var requests = server.Requests.Count;
+
+        var config = await LoadConfigAsync();
+        var look = await CreateWay(ThreePieces(), server).LookAgainAsync(NewChunk(), AsKept(kept.RawResponse), config, ChunkOptions(config));
+
+        Assert.Null(look.Answer);
+        Assert.Equal(0, look.LinesAsked);
+        Assert.Equal(requests, server.Requests.Count);
+    }
+
     // ---- the mirror: a line the whole text gave in Russian where the piece alone is Spanish ----
 
     [Theory]

@@ -51,6 +51,8 @@ public enum TranscriptionChunkAction
     RebuildCombined = 6,
     DeleteSubChunk = 7,
     RebuildSplitMerged = 8,
+    /// <summary>A job of the plain-text model: the doubted lines of its kept answers asked again with audio around them (paid); waits for the end.</summary>
+    LookAgain = 9,
 }
 
 public record ChunkCommandResult(bool Ok, string Message);

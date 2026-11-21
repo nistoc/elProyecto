@@ -146,6 +146,29 @@ internal static class SpeechPieceSecondLook
         return run != null && similarity >= RunSimilarity ? Respell(own!, run) : null;
     }
 
+    /// <summary>Doubt that a whole Spanish line translates a Russian piece (<see cref="LooksTranslated"/>).</summary>
+    public const string DoubtTranslated = "translated";
+
+    /// <summary>Doubt that a Russian line stands over Spanish speech (<see cref="LooksWrittenInRussian"/>).</summary>
+    public const string DoubtWrittenInRussian = "written_in_russian";
+
+    /// <summary>Doubt that a part of a line translates a Russian part of the piece (<see cref="LooksPartlyTranslated"/>).</summary>
+    public const string DoubtTranslatedInPart = "translated_in_part";
+
+    /// <summary>
+    /// Which doubt the line the whole text gave to a piece raises against what the piece heard alone, in
+    /// the order they are tried; null when none. A piece asked again for <see cref="DoubtWrittenInRussian"/>
+    /// is settled by <see cref="SaidInSpanishAround"/>, the others by <see cref="SaidAsHeardAround"/>.
+    /// </summary>
+    public static string? DoubtOf(string? line, string? own)
+    {
+        if (LooksTranslated(line, own))
+            return DoubtTranslated;
+        if (LooksWrittenInRussian(line, own))
+            return DoubtWrittenInRussian;
+        return LooksPartlyTranslated(line, own) ? DoubtTranslatedInPart : null;
+    }
+
     /// <summary>
     /// True when the line the whole text gave to a piece is written in Spanish where the piece asked alone
     /// is Russian, and the two do not sound alike: the line may be a translation of what was said. Two

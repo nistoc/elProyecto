@@ -1374,6 +1374,110 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
     }
 
     /// <inheritdoc />
+    public async Task<LookAgainSummary> LookAgainAtMainChunksAsync(
+        TranscriptionConfig config,
+        string artifactRoot,
+        string agentJobId,
+        int chunkIndex,
+        CancellationToken ct)
+    {
+        if (config.Get<bool?>("save_per_chunk_json") != true)
+            throw new InvalidOperationException("look_again requires save_per_chunk_json=true");
+        if (!SpeechPiecesTranscription.AppliesTo(config.Model))
+            throw new InvalidOperationException($"look_again is for a job of a plain-text model (gpt-transcribe); this job's model is {config.Model}");
+
+        var indexMap = TranscriptionChunkOnDiskReader.MapPartIndexToAudioPath(Path.Combine(artifactRoot, "chunks"));
+        if (indexMap.Count == 0)
+            throw new InvalidOperationException("look_again needs the audio of the chunks under chunks/");
+        if (chunkIndex >= 0 && !indexMap.ContainsKey(chunkIndex))
+            throw new ArgumentOutOfRangeException(nameof(chunkIndex), $"chunks/ has no audio for main chunk {chunkIndex}");
+
+        var resolveChunk = await CreateOnDiskChunkResolverAsync(config, artifactRoot, indexMap, ct).ConfigureAwait(false);
+        var cacheDirFull = Path.Combine(artifactRoot, config.CacheDir);
+        var perChunkDirFull = Path.Combine(artifactRoot, config.Get<string>("per_chunk_json_dir") ?? "chunks_json");
+        var perChunkMdDirFull = Path.Combine(artifactRoot, config.Get<string>("per_chunk_md_dir") ?? "chunks_md");
+        var speechTimeMap = await SpeechTimeMapFile.TryLoadAsync(artifactRoot, ct).ConfigureAwait(false);
+        var way = new SpeechPiecesTranscription(_audioUtils, _client, _logger);
+
+        int chunks = 0, changed = 0, asked = 0, taken = 0, mdKept = 0;
+        var audioSec = 0.0;
+        var indexes = chunkIndex >= 0 ? new[] { chunkIndex } : indexMap.Keys.OrderBy(i => i).ToArray();
+        foreach (var index in indexes)
+        {
+            ct.ThrowIfCancellationRequested();
+            // A chunk the operator split is told by its parts: its own answer is not what the transcript holds.
+            if (OperatorSplitArtifactPresence.HasArtifactsForChunk(artifactRoot, config.SplitChunksDir, index))
+                continue;
+            var chunk = resolveChunk(index, indexMap[index]);
+            var kept = await TryLoadPerChunkTranscriptionResultAsync(config, artifactRoot, chunk, ct).ConfigureAwait(false);
+            if (kept == null)
+                continue;
+            chunks++;
+
+            var options = new TranscriptionClientOptions
+            {
+                Model = config.Get<string>("model"),
+                Language = config.Language,
+                Prompt = config.Get<string>("prompt"),
+                Temperature = config.Temperature,
+                ResponseFormat = config.Get<string>("response_format"),
+                ChunkingStrategy = config.Get<string>("chunking_strategy"),
+                ChunkIndex = index,
+                AgentJobId = agentJobId,
+            };
+            var look = await way.LookAgainAsync(
+                chunk.Path,
+                kept.RawResponse,
+                config,
+                options,
+                line => AppendTranscriptActivityForChunk(agentJobId, index, null, line),
+                ct).ConfigureAwait(false);
+            asked += look.LinesAsked;
+            taken += look.LinesTaken;
+            audioSec += look.AudioSecAsked;
+            if (look.Answer == null)
+                continue;
+
+            var chunkFileName = Path.GetFileName(chunk.Path);
+            _artifacts.SaveJobPerChunkTranscriptionJson(chunkFileName, look.Answer.RawResponse, perChunkDirFull);
+            if (!_artifacts.RefreshJobPerChunkMarkdown(
+                    chunkFileName, kept.Segments, look.Answer.Segments, chunk.Offset, chunk.EmitGuard, perChunkMdDirFull, speechTimeMap))
+            {
+                mdKept++;
+                _logger?.LogWarning(
+                    "look_again: chunk {Index}: the md under {MdDir} was edited by hand and is left as it is; the new lines are in the JSON only",
+                    index, perChunkMdDirFull);
+            }
+
+            // The cache answers for the chunk's audio as long as it is the same file: it must give the settled answer too.
+            var baseName = TranscriptionChunkOnDiskReader.ManifestStemFromChunkFileName(chunkFileName);
+            var manifestPath = TranscriptionChunkOnDiskReader.TryResolveManifestJsonPath(artifactRoot, config.CacheDir, baseName)
+                               ?? Path.Combine(cacheDirFull, baseName + ".manifest.json");
+            if (File.Exists(manifestPath))
+            {
+                var manifest = await _cache.LoadManifestAsync(manifestPath, ct).ConfigureAwait(false);
+                if (manifest.Chunks.ContainsKey(chunkFileName))
+                {
+                    var fingerprint = await _cache.GetFileFingerprintAsync(chunk.Path, ct).ConfigureAwait(false);
+                    await _cache.CacheResponseAsync(manifestPath, manifest, chunkFileName, fingerprint, look.Answer.RawResponse, ct).ConfigureAwait(false);
+                }
+            }
+
+            AppendTranscriptActivityForChunk(agentJobId, index, null, $"Look again: {look.LinesTaken} of {look.LinesAsked} lines taken from the pieces asked with audio around them");
+            changed++;
+        }
+
+        string? rebuilt = null;
+        if (changed > 0)
+            rebuilt = await RebuildCombinedAsync(config, artifactRoot, ct).ConfigureAwait(false);
+
+        _logger?.LogInformation(
+            "look_again {JobId}: chunks {Chunks}, changed {Changed}, lines asked {Asked}, taken {Taken}, audio {Seconds:F1}s, md kept {MdKept}, transcript {Rebuilt}",
+            agentJobId, chunks, changed, asked, taken, audioSec, mdKept, rebuilt ?? "unchanged");
+        return new LookAgainSummary(chunks, changed, asked, taken, Math.Round(audioSec, 1), mdKept, rebuilt);
+    }
+
+    /// <inheritdoc />
     public async Task RebuildCombinedOutputsFromPerChunkJsonAsync(
         TranscriptionConfig config,
         string artifactRoot,
@@ -1382,6 +1486,13 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         CancellationToken ct)
     {
         _ = nodeModel;
+        _ = agentJobId;
+        await RebuildCombinedAsync(config, artifactRoot, ct).ConfigureAwait(false);
+    }
+
+    /// <returns>The combined transcript written.</returns>
+    private async Task<string> RebuildCombinedAsync(TranscriptionConfig config, string artifactRoot, CancellationToken ct)
+    {
         if (config.Get<bool?>("save_per_chunk_json") != true)
             throw new InvalidOperationException("rebuild_combined requires save_per_chunk_json=true");
 
@@ -1458,6 +1569,7 @@ public sealed class TranscriptionPipeline : ITranscriptionPipeline
         _artifacts.StitchJobMarkdownFromChunks(artifactRoot, stitchBasenames, perChunkMdRel, config.SplitChunksDir, mdPath);
         _artifacts.SaveJobCombinedTranscriptionJson(jsonPath, merged);
         _logger?.LogInformation("rebuild_combined: wrote {Md} and {Json} (+{N} chunks_md)", mdPath, jsonPath, merged.Count);
+        return mdPath;
     }
 
     private static string ResolveCombinedOutputBaseName(TranscriptionConfig config, string artifactRoot)

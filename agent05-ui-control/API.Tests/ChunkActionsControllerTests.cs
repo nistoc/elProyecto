@@ -207,6 +207,62 @@ public class ChunkActionsControllerTests
         Assert.Equal(TranscriptionChunkAction.Cancel, grpc.ChunkCalls[0].Action);
     }
 
+    private static JobsController Controller(InMemoryJobStore store, RecordingTranscriptionClient grpc) => new(
+        store,
+        new StubJobWorkspace(),
+        MockPipeline.Instance,
+        MockBroadcaster.Instance,
+        grpc,
+        NullLogger<JobsController>.Instance);
+
+    [Fact]
+    public async Task PostChunkAction_look_again_of_a_done_job_asks_every_chunk()
+    {
+        var store = new InMemoryJobStore();
+        var id = await store.CreateAsync(new JobCreateInput("x.m4a", null));
+        await store.UpdateAsync(id, s =>
+        {
+            s.Phase = "awaiting_refiner";
+            s.Status = "done";
+            s.Agent04JobId = "a04-done";
+        });
+        var grpc = new RecordingTranscriptionClient();
+
+        var result = await Controller(store, grpc).PostChunkAction(
+            id, new ChunkActionRequest { Action = "look_again", ChunkIndex = -1 }, CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        var call = Assert.Single(grpc.ChunkCalls);
+        Assert.Equal(TranscriptionChunkAction.LookAgain, call.Action);
+        Assert.Equal(-1, call.ChunkIndex);
+        Assert.Equal(id, call.JobDirectoryRelative);
+    }
+
+    [Fact]
+    public async Task PostChunkAction_look_again_of_a_running_job_and_every_chunk_for_another_action_are_refused()
+    {
+        var store = new InMemoryJobStore();
+        var running = await CreateRunningTranscriberJobAsync(store, "a04-run");
+        var done = await store.CreateAsync(new JobCreateInput("x.m4a", null));
+        await store.UpdateAsync(done, s =>
+        {
+            s.Phase = "idle";
+            s.Status = "done";
+            s.Agent04JobId = "a04-done";
+        });
+        var grpc = new RecordingTranscriptionClient();
+        var controller = Controller(store, grpc);
+
+        var whileRunning = await controller.PostChunkAction(
+            running, new ChunkActionRequest { Action = "look_again", ChunkIndex = -1 }, CancellationToken.None);
+        var everyChunk = await controller.PostChunkAction(
+            done, new ChunkActionRequest { Action = "retranscribe", ChunkIndex = -1 }, CancellationToken.None);
+
+        Assert.IsType<ConflictObjectResult>(whileRunning.Result);
+        Assert.IsType<BadRequestObjectResult>(everyChunk.Result);
+        Assert.Empty(grpc.ChunkCalls);
+    }
+
     [Fact]
     public async Task PostChunkAction_wrong_phase_returns_conflict_and_does_not_call_client()
     {

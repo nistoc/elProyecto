@@ -418,6 +418,7 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
             || request.Action == ChunkCommandAction.RebuildCombined
             || request.Action == ChunkCommandAction.DeleteSubChunk
             || request.Action == ChunkCommandAction.RebuildSplitMerged
+            || request.Action == ChunkCommandAction.LookAgain
             || request.Action == ChunkCommandAction.Cancel;
         var job = _store.Get(request.JobId);
         if (job == null && allowCompleted && !string.IsNullOrWhiteSpace(request.JobDirectoryRelative))
@@ -503,6 +504,12 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
                     throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0"));
                 RecordChunkOperatorActionInNodeModel(request.JobId, request.ChunkIndex, "rebuild_split_merged");
                 return await ExecuteRebuildSplitMergedAsync(request, context.CancellationToken).ConfigureAwait(false);
+            case ChunkCommandAction.LookAgain:
+                if (job.State != JobState.Completed)
+                    throw new RpcException(new Status(StatusCode.FailedPrecondition, $"look_again requires a completed job (state={job.State})"));
+                if (request.ChunkIndex < -1)
+                    throw new RpcException(new Status(StatusCode.InvalidArgument, "chunk_index must be >= 0, or -1 for every chunk"));
+                return await ExecuteLookAgainAsync(request, context.CancellationToken).ConfigureAwait(false);
             default:
                 return new ChunkCommandResponse { Ok = false, Message = "unknown_action" };
         }
@@ -637,6 +644,59 @@ public class TranscriptionGrpcService : TranscriptionService.TranscriptionServic
         }, CancellationToken.None);
 
         return new ChunkCommandResponse { Ok = true, Message = "retranscribe_started" };
+    }
+
+    /// <summary>
+    /// Waits for the look to end and tells what it did: a job is looked at in seconds (only the doubted pieces
+    /// are asked), and whoever runs it needs the counts to sum what was paid.
+    /// </summary>
+    private async Task<ChunkCommandResponse> ExecuteLookAgainAsync(ChunkCommandRequest request, CancellationToken ct)
+    {
+        string artifactRoot;
+        try
+        {
+            artifactRoot = ResolveChunkCancelBase(request.JobId, request.JobDirectoryRelative);
+        }
+        catch (RpcException ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = ex.Status.Detail };
+        }
+
+        var configRel = (_configuration["Agent04:ConfigPath"] ?? "config/default.json").Trim()
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var configPathFull = ResolveConfigFullPath(_workspaceRoot.RootPath, configRel);
+        if (string.IsNullOrEmpty(configPathFull))
+            return new ChunkCommandResponse { Ok = false, Message = "transcription config file not found" };
+
+        TranscriptionConfig config;
+        try
+        {
+            config = await TranscriptionConfig.FromFileAsync(configPathFull, ct).ConfigureAwait(false);
+            config = JobSettingsFile.Apply(config, artifactRoot, _logger);
+        }
+        catch (Exception ex)
+        {
+            return new ChunkCommandResponse { Ok = false, Message = "config load failed: " + ex.Message };
+        }
+
+        try
+        {
+            var done = await _pipeline.LookAgainAtMainChunksAsync(config, artifactRoot, request.JobId, request.ChunkIndex, ct).ConfigureAwait(false);
+            var message = string.Create(CultureInfo.InvariantCulture,
+                $"look_again_ok: chunks {done.Chunks}, changed {done.ChunksChanged}, lines asked {done.LinesAsked}, taken {done.LinesTaken}, audio {done.AudioSecAsked:F1}s, md kept {done.MdKept}, transcript {(done.Rebuilt == null ? "unchanged" : Path.GetFileName(done.Rebuilt))}");
+            _logger.LogInformation("Look again: job {JobId}: {Message}", request.JobId, message);
+            return new ChunkCommandResponse { Ok = true, Message = message };
+        }
+        catch (TranscriptionAccountRefusedException ex)
+        {
+            // No credits, the key, access: the next job would be refused the same way.
+            throw new RpcException(new Status(StatusCode.FailedPrecondition, "look_again refused by the server: " + ex.Message));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or IOException)
+        {
+            _logger.LogWarning(ex, "Look again failed for job {JobId}", request.JobId);
+            return new ChunkCommandResponse { Ok = false, Message = "look_again failed: " + ex.Message };
+        }
     }
 
     private async Task<ChunkCommandResponse> ExecuteRebuildCombinedAsync(ChunkCommandRequest request, CancellationToken ct)

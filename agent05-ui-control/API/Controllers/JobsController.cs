@@ -454,7 +454,12 @@ public class JobsController : ControllerBase
         };
     }
 
-    /// <summary>Forward chunk operator action to Agent04. Actions: cancel, retranscribe, split, transcribe_sub, rebuild_combined, rebuild_split_merged (see body.action).</summary>
+    /// <summary>
+    /// Forward chunk operator action to Agent04. Actions: cancel, retranscribe, split, transcribe_sub, rebuild_combined,
+    /// rebuild_split_merged, look_again (see body.action). look_again — a done job of the plain-text model: the lines of
+    /// its kept answers the doubts of today find are asked again with the audio around them (paid, those cuts only);
+    /// chunkIndex −1 looks at every chunk; the answer comes when it is done and its message says what was asked and taken.
+    /// </summary>
     [HttpPost("{id}/chunk-actions")]
     public async Task<ActionResult<ChunkActionResponse>> PostChunkAction(
         string id,
@@ -462,9 +467,13 @@ public class JobsController : ControllerBase
         CancellationToken ct = default)
     {
         if (body == null || string.IsNullOrWhiteSpace(body.Action))
-            return BadRequest(new { error = "action is required (cancel | retranscribe | split | transcribe_sub | rebuild_combined | rebuild_split_merged)" });
-        if (body.ChunkIndex < 0)
-            return BadRequest(new { error = "chunkIndex must be >= 0" });
+            return BadRequest(new { error = "action is required (cancel | retranscribe | split | transcribe_sub | rebuild_combined | rebuild_split_merged | look_again)" });
+
+        var action = ParseChunkAction(body.Action.Trim());
+        if (action == null)
+            return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "retranscribe", "split", "transcribe_sub", "rebuild_combined", "rebuild_split_merged", "look_again" } });
+        if (body.ChunkIndex < 0 && !(action == TranscriptionChunkAction.LookAgain && body.ChunkIndex == -1))
+            return BadRequest(new { error = "chunkIndex must be >= 0 (look_again: or -1 for every chunk)" });
 
         var job = await _store.GetAsync(id, ct);
         if (job == null)
@@ -472,15 +481,17 @@ public class JobsController : ControllerBase
         if (string.IsNullOrWhiteSpace(job.Agent04JobId))
             return Conflict(new { error = "Agent04 job id not available yet; wait for transcription to start" });
 
-        var action = ParseChunkAction(body.Action.Trim());
-        if (action == null)
-            return BadRequest(new { error = "unknown action", allowed = new[] { "cancel", "retranscribe", "split", "transcribe_sub", "rebuild_combined", "rebuild_split_merged" } });
+        if (action == TranscriptionChunkAction.LookAgain
+            && !string.Equals(job.Status, "done", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(job.Status, "completed", StringComparison.OrdinalIgnoreCase))
+            return Conflict(new { error = "look_again requires a job whose transcription is done" });
 
         var allowAfterDone = action == TranscriptionChunkAction.Split
             || action == TranscriptionChunkAction.TranscribeSub
             || action == TranscriptionChunkAction.Retranscribe
             || action == TranscriptionChunkAction.RebuildCombined
-            || action == TranscriptionChunkAction.RebuildSplitMerged;
+            || action == TranscriptionChunkAction.RebuildSplitMerged
+            || action == TranscriptionChunkAction.LookAgain;
         if (action == TranscriptionChunkAction.Cancel)
         {
             var st = job.Status ?? "";
@@ -564,6 +575,7 @@ public class JobsController : ControllerBase
             "transcribe_sub" => TranscriptionChunkAction.TranscribeSub,
             "rebuild_combined" => TranscriptionChunkAction.RebuildCombined,
             "rebuild_split_merged" => TranscriptionChunkAction.RebuildSplitMerged,
+            "look_again" => TranscriptionChunkAction.LookAgain,
             _ => null
         };
 
