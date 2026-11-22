@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canBuildDialogue,
+  dayPageHref,
   defaultDialogueTitle,
   dialogueCandidates,
   estimateRunUsd,
@@ -441,5 +442,37 @@ describe('pages of a lesson', () => {
 
     expect(index.get('aaa')?.hasPackage).toBe(true);
     expect(index.get('zzzz')).not.toHaveProperty('hasPackage');
+  });
+
+  it('tells every job of a lesson the page of its day and whether it is stale', () => {
+    const dayPage = { builtAt: '2026-10-24T10:00:00Z', stale: true };
+    const withPage: LessonSession = {
+      ...session([
+        period({ tracks: [track('mixed', null, 600, [run('aaa')])] }),
+      ]),
+      dayPage,
+    };
+    const without: LessonSession = {
+      ...session([
+        period({ tracks: [track('mixed', null, 600, [run('zzzz')])] }),
+      ]),
+      id: '2026.10.30',
+      date: '2026-10-30',
+      dayPage: null,
+    };
+    const index = indexLessonJobs({
+      enabled: true,
+      estimateUsdPerMinute: 0.006,
+      sessions: [withPage, without],
+    });
+
+    expect(index.get('aaa')?.dayPage).toEqual(dayPage);
+    expect(index.get('zzzz')).not.toHaveProperty('dayPage');
+  });
+});
+
+describe('dayPageHref', () => {
+  it('is the address agent05 gives the page of the day at', () => {
+    expect(dayPageHref('2026-10-23')).toBe('/api/sessions/2026-10-23/page');
   });
 });

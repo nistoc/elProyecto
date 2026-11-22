@@ -115,13 +115,16 @@ def cmd_publish(a):
     shutil.copyfile(src, tmp)
     os.replace(tmp, target)
     say('published %s' % target)
+    if getattr(a, 'commit', True):  # `days` commits its packages and pages at once
+        from .history import commit_days, message_of
+        commit_days(a.packages, [a.date], message_of('package', [a.date]))
     return 0
 
 
 def cmd_page(a):
     from .page import Agent05, day_page, write_page
     api = Agent05(a.agent05)
-    made = 0
+    made = []
     for date in a.dates:
         path = day_page(a.packages, date) if a.packages else os.path.join(a.out, '%s.html' % date)
         res = write_page(api, date, path)
@@ -129,9 +132,12 @@ def cmd_page(a):
             say('%s: no package and no note - no page' % date)
             continue
         path, size, left_out = res
-        made += 1
+        made.append(date)
         say('%s: %s, %.1f MB%s' % (date, path, size / 1048576.0,
                                     ', %d media file(s) left out' % len(left_out) if left_out else ''))
+    if made and a.packages:
+        from .history import commit_days, message_of
+        commit_days(a.packages, made, message_of('page', made))
     return 0 if made else EXIT_ERROR
 
 

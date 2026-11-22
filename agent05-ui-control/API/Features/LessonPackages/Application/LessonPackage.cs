@@ -280,6 +280,18 @@ public sealed class LessonMark
 /// <param name="BuiltAt">UTC time the lists were built or the file was written, ISO 8601.</param>
 public sealed record LessonPackageInfo(string? BuiltAt);
 
+/// <summary>
+/// That a lesson day has its page (<c>lesson.html</c> next to its package, made by the builder's <c>page</c>
+/// command from the package, the owner's edits and the notes), for the lessons list.
+/// </summary>
+/// <param name="BuiltAt">UTC time the page was written, ISO 8601.</param>
+/// <param name="Stale">
+/// A file of the day folder the page is made of (the package, the owner's edits of it or of the speakers) was
+/// written after the page: the page does not show it until it is made again. Words "said before" that a lesson
+/// transcribed later changed are not told by this.
+/// </param>
+public sealed record LessonDayPageInfo(string BuiltAt, bool Stale);
+
 /// <summary>The earlier lessons the words of a package were compared with.</summary>
 /// <param name="Lessons">How many lessons before this one have a transcript.</param>
 /// <param name="From">The oldest of them, <c>YYYY-MM-DD</c>; null when there is none.</param>
@@ -315,6 +327,12 @@ public interface ILessonPackageStore
 {
     /// <summary>The lessons that have a package. Empty when the folder of the packages is not there.</summary>
     IReadOnlyDictionary<string, LessonPackageInfo> List();
+
+    /// <summary>The lesson days that have a page (<c>lesson.html</c>), also a day of notes alone with no package.</summary>
+    IReadOnlyDictionary<string, LessonDayPageInfo> DayPages();
+
+    /// <summary>The full path of the page of a lesson day, or null when the day has none.</summary>
+    string? DayPagePath(string date);
 
     /// <summary>The package of the lesson, or null when there is none.</summary>
     /// <exception cref="InvalidOperationException">The file cannot be read.</exception>

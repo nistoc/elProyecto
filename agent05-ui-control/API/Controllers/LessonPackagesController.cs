@@ -51,6 +51,24 @@ public class LessonPackagesController : ControllerBase
     }
 
     /// <summary>
+    /// The page of the lesson day (<c>lesson.html</c> next to its package): one self-contained HTML file the builder
+    /// made of the package, the owner's edits and the notes. Given as it lies, never made here; the lessons list
+    /// tells when it is older than the files it is made of (<see cref="LessonDayPageInfo.Stale"/>).
+    /// </summary>
+    [HttpGet("api/sessions/{date}/page")]
+    public IActionResult DayPage(string date)
+    {
+        if (!LessonPageRules.TryDate(date, out var day))
+            return BadRequest(ProblemOf(400, "The date of the lesson must be written YYYY-MM-DD."));
+        var path = _packages.DayPagePath(day);
+        if (path == null)
+            return NotFound(ProblemOf(404, $"The lesson of {day} has no page; make it with: python -m builder page {day} --packages <packages folder>."));
+        if (HttpContext != null)  // a page made again is shown at once, never from the browser's cache
+            Response.Headers.CacheControl = "no-cache";
+        return PhysicalFile(path, "text/html; charset=utf-8");
+    }
+
+    /// <summary>
     /// Writes fields of one item anew, or takes the item out of the lists. Body:
     /// <c>{ "fields"?: { name: text | null }, "leftOut"?: bool }</c> — a field given as null (or the very
     /// text the builder wrote) goes back to the builder's text, a field not named stays as it is. The

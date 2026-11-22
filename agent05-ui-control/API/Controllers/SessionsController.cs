@@ -83,12 +83,14 @@ public class SessionsController : ControllerBase
 
         var pages = _pages.Load();
         var packages = _packages.List();
+        var dayPages = _packages.DayPages();
         var notes = _notes?.Infos();
         var withRuns = (await LessonSessions.WithRunsAsync(_catalog, _store, _workspace, ct))
             .Select(s => s with
             {
                 Pages = pages.TryGetValue(s.Date, out var ofLesson) ? ofLesson : Array.Empty<LessonPage>(),
                 Package = packages.TryGetValue(s.Date, out var package) ? package : null,
+                DayPage = dayPages.TryGetValue(s.Date, out var dayPage) ? dayPage : null,
                 Stage = packages.ContainsKey(s.Date) ? LessonStage.Package : LessonBatchPlanner.StageOf(s),
                 Notes = notes != null && notes.TryGetValue(s.Date, out var ofNotes) ? ofNotes : null,
             })

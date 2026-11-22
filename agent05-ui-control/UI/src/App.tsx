@@ -268,6 +268,11 @@ function AppContent() {
                       : null
                   }
                   onOpenNotes={openNotes}
+                  dayPage={
+                    jobLesson.dayPage
+                      ? { date: jobLesson.date, stale: jobLesson.dayPage.stale }
+                      : null
+                  }
                 />
               </p>
             )}

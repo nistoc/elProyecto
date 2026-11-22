@@ -170,6 +170,23 @@ describe('lessonGroupHeads', () => {
     });
     expect(heads.get('oct-talk')).toEqual({ date: '2026-10-23', count: 5 });
   });
+
+  it('tells which lesson day has its page', () => {
+    const dayPage = { builtAt: '2026-11-14T10:00:00Z', stale: false };
+    const withPage = new Map(lessons);
+    for (const [id, known] of lessons)
+      if (known.date === '2026-11-13') withPage.set(id, { ...known, dayPage });
+    const sorted = sortJobs(jobs, { key: 'lesson', dir: 'desc' }, withPage);
+
+    const heads = lessonGroupHeads(sorted, withPage);
+
+    expect(heads.get('nov-mixed')).toEqual({
+      date: '2026-11-13',
+      count: 1,
+      dayPage,
+    });
+    expect(heads.get('oct-talk')).toEqual({ date: '2026-10-23', count: 5 });
+  });
 });
 
 describe('stored order', () => {

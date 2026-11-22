@@ -129,6 +129,12 @@ body {
   text-decoration: underline;
 }
 
+/* The page of a lesson day that is older than an edit of its day: it does not show that edit yet. */
+.lesson-pages__link--stale {
+  border-style: dashed;
+  border-color: var(--color-warning, #b8860b);
+}
+
 /* The package the app itself shows: a button among the links. */
 .lesson-pages__link--app {
   border-color: var(--color-primary);

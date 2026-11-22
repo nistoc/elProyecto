@@ -80,6 +80,20 @@ export interface LessonSession {
   package?: { builtAt?: string | null } | null;
   /** The notes of the vault copy in the day folder: how many, how many are homework; null when none. */
   notes?: LessonNotesInfo | null;
+  /** The page of the lesson day (one HTML file in the packages folder); null when the day has none. */
+  dayPage?: LessonDayPage | null;
+}
+
+/** The page of a lesson day: one HTML file the builder made of the package, the owner's edits and the notes. */
+export interface LessonDayPage {
+  builtAt: string;
+  /** A file the page is made of was written after it: the page does not show that edit until it is made again. */
+  stale: boolean;
+}
+
+/** Where agent05 gives the page of a lesson day. */
+export function dayPageHref(date: string): string {
+  return `/api/sessions/${encodeURIComponent(date)}/page`;
 }
 
 /** The address as a link may open it: http(s) only. Null for anything else, which is never made a link. */
@@ -308,6 +322,8 @@ export interface LessonJobInfo {
   hasPackage?: boolean;
   /** The lesson this job belongs to has notes in its vault copy (homework and others). */
   notes?: LessonNotesInfo;
+  /** The page of the lesson day this job belongs to; absent when the day has none. */
+  dayPage?: LessonDayPage;
 }
 
 /**
@@ -327,6 +343,7 @@ export function indexLessonJobs(
         startedAt: period.startedAt ?? '',
         ...(pages.length > 0 ? { pages } : {}),
         ...(session.package ? { hasPackage: true } : {}),
+        ...(session.dayPage ? { dayPage: session.dayPage } : {}),
         ...(session.notes && session.notes.notes > 0
           ? { notes: session.notes }
           : {}),

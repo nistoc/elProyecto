@@ -101,6 +101,17 @@ typing the Spanish, matching pairs, a word left out of a phrase; the browser's o
 notes themselves folded under "sources". What a learner does there (answers, ticks, repetition boxes) is kept by the
 browser only (`localStorage`).
 
+Where it is opened: the file itself in a browser, or the link «📘 Lesson page» of the lesson in XtractManager —
+agent05 gives the file as it lies at `GET /api/sessions/{date}/page`, and marks the link ⚠ when `package.json`,
+`marks.json` or `speakers.json` of the day was written after the page (an edit made in the app is shown by the page
+only after `page` is run again). What a learner did on the file is kept by the browser per address: the file and the
+link keep it apart.
+
+History (`history.py`): when the packages folder is a git repository of the owner's own (no remote — it holds the
+text of the lessons), `page`, `publish` and `days --publish` end with a commit of the day folders they wrote (the
+page, the package, and the owner's edits that came in since). A folder that is not a repository is left as it is;
+a failure of git is said and does not stop the call. Tests: `builder/tests/test_history.py`.
+
 The page is not published anywhere (the owner's word of 2026-11-21: files on the disk, not claude.ai Artifacts).
 Template: `page_template.html` (`{{title}}`, `{{data}}`; the data is JSON with every `<` written `<`). Tests:
 `builder/tests/test_page.py`, `builder/tests/test_study.py`.

@@ -156,8 +156,10 @@ def publish_all(a, dates):
         elif os.path.exists(os.path.join(a.packages, date, 'package.json')):
             say('%s: already published, left as it is' % date)
         else:
-            cmd_publish(argparse.Namespace(date=date, work=a.work, packages=a.packages, replace=False))
+            cmd_publish(argparse.Namespace(date=date, work=a.work, packages=a.packages, replace=False, commit=False))
     write_day_pages(a, dates)
+    from .history import commit_days, message_of
+    commit_days(a.packages, dates, message_of('days', dates))
 
 
 def write_day_pages(a, dates):

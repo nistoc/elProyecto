@@ -212,6 +212,11 @@ function JobsListView({
                         : null
                     }
                     onOpenNotes={onOpenNotes}
+                    dayPage={
+                      head.dayPage && head.date
+                        ? { date: head.date, stale: head.dayPage.stale }
+                        : null
+                    }
                   />
                 </li>
               )}

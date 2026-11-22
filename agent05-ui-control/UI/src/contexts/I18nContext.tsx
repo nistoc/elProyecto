@@ -340,6 +340,11 @@ const messages: Record<Locale, Record<string, string>> = {
     lessonPageFailed: 'The link was not saved',
     jobLesson: 'Lesson',
     jobLessonRecording: 'recording',
+    lessonDayPage: 'Lesson page',
+    lessonDayPageOpenHint:
+      'Open the page of the lesson day in a new tab: words, phrases, grammar, homework, practice',
+    lessonDayPageStale:
+      'The page is older than an edit of its day and does not show it yet; make it again:',
     lessonPackage: 'Lesson package',
     lessonPackageOpenHint:
       'Open the package of the lesson here: words, grammar, topics, examples',
@@ -795,6 +800,11 @@ const messages: Record<Locale, Record<string, string>> = {
     lessonPageFailed: 'Ссылка не сохранена',
     jobLesson: 'Урок',
     jobLessonRecording: 'запись',
+    lessonDayPage: 'Страница урока',
+    lessonDayPageOpenHint:
+      'Открыть страницу дня урока в новой вкладке: слова, фразы, грамматика, ДЗ, практика',
+    lessonDayPageStale:
+      'Страница старее правки своего дня и её пока не показывает; соберите заново:',
     lessonPackage: 'Пакет урока',
     lessonPackageOpenHint:
       'Открыть пакет урока здесь: слова, грамматика, темы, примеры',
@@ -1251,6 +1261,11 @@ const messages: Record<Locale, Record<string, string>> = {
     lessonPageFailed: 'El enlace no se guardó',
     jobLesson: 'Clase',
     jobLessonRecording: 'grabación',
+    lessonDayPage: 'Página de la clase',
+    lessonDayPageOpenHint:
+      'Abrir la página del día de clase en una pestaña nueva: palabras, frases, gramática, deberes, práctica',
+    lessonDayPageStale:
+      'La página es anterior a una edición de su día y aún no la muestra; vuelve a generarla:',
     lessonPackage: 'Paquete de la clase',
     lessonPackageOpenHint:
       'Abrir aquí el paquete de la clase: palabras, gramática, temas, ejemplos',

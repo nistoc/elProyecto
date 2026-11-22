@@ -146,6 +146,51 @@ public sealed class LessonPackagesTests : IDisposable
     }
 
     [Fact]
+    public void DayPages_names_the_days_with_a_page_and_tells_when_a_file_it_is_made_of_was_written_after_it()
+    {
+        var store = Create().Store;
+        Assert.Empty(store.DayPages());
+
+        PutPackage();
+        var page = Put(_packages, Day + "/" + FileLessonPackageStore.DayPageFileName, "<p>la ventana</p>");
+        var notesOnly = Put(_packages, "2026-10-30/" + FileLessonPackageStore.DayPageFileName, "<p>notas</p>");
+        Put(_packages, "notes/" + FileLessonPackageStore.DayPageFileName, "<p>not a day</p>");
+        var built = new DateTime(2026, 10, 24, 10, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(PackageFile(), built.AddHours(-1));
+        File.SetLastWriteTimeUtc(page, built);
+        File.SetLastWriteTimeUtc(notesOnly, built);
+
+        var listed = store.DayPages();
+
+        Assert.Equal(new[] { "2026-10-23", "2026-10-30" }, listed.Keys.OrderBy(k => k, StringComparer.Ordinal));
+        Assert.Equal(new LessonDayPageInfo("2026-10-24T10:00:00Z", false), listed[Day]);
+        Assert.False(listed["2026-10-30"].Stale);
+
+        var marks = Put(_packages, Day + "/" + FileLessonPackageStore.MarksFileName, "{}");
+        File.SetLastWriteTimeUtc(marks, built.AddMinutes(5));
+        Assert.True(store.DayPages()[Day].Stale);
+
+        File.SetLastWriteTimeUtc(marks, built.AddMinutes(-5));
+        var speakers = Put(_packages, Day + "/speakers.json", "{}");
+        File.SetLastWriteTimeUtc(speakers, built.AddMinutes(5));
+        Assert.True(store.DayPages()[Day].Stale);
+    }
+
+    [Fact]
+    public void DayPage_gives_the_file_of_the_day_as_it_lies()
+    {
+        var controller = Create().Controller;
+        Assert.IsType<BadRequestObjectResult>(controller.DayPage("../2026-10-23"));
+        Assert.IsType<NotFoundObjectResult>(controller.DayPage(Day));
+
+        var page = Put(_packages, Day + "/" + FileLessonPackageStore.DayPageFileName, "<p>la ventana</p>");
+
+        var file = Assert.IsType<PhysicalFileResult>(controller.DayPage(Day));
+        Assert.Equal(page, file.FileName);
+        Assert.Equal("text/html; charset=utf-8", file.ContentType);
+    }
+
+    [Fact]
     public void Read_gives_the_lists_of_the_file_and_takes_a_list_written_as_null_for_an_empty_one()
     {
         PutPackage();
@@ -502,6 +547,7 @@ public sealed class LessonPackagesTests : IDisposable
     public async Task The_lessons_list_tells_which_lesson_has_a_package()
     {
         PutPackage();
+        Put(_packages, Day + "/" + FileLessonPackageStore.DayPageFileName, "<p>la ventana</p>");
         var parts = Create();
         var sessions = new SessionsController(
             parts.Catalog,
@@ -517,6 +563,8 @@ public sealed class LessonPackagesTests : IDisposable
 
         Assert.False(string.IsNullOrEmpty(listed.Sessions.Single(s => s.Date == Day).Package?.BuiltAt));
         Assert.Null(listed.Sessions.Single(s => s.Date == "2026-10-16").Package);
+        Assert.NotNull(listed.Sessions.Single(s => s.Date == Day).DayPage);
+        Assert.Null(listed.Sessions.Single(s => s.Date == "2026-10-16").DayPage);
     }
 
     [Fact]

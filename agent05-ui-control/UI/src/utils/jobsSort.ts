@@ -1,4 +1,4 @@
-import type { LessonJobInfo, LessonPage } from './lessons';
+import type { LessonDayPage, LessonJobInfo, LessonPage } from './lessons';
 import type { LessonNotesInfo } from './lessonNotes';
 
 /** What the jobs list is ordered by: the lesson a job belongs to, or the day the job itself was made. */
@@ -97,6 +97,8 @@ export interface JobsLessonGroup {
   hasPackage?: boolean;
   /** The notes of the lesson's vault copy (homework and others); absent when it has none. */
   notes?: LessonNotesInfo;
+  /** The page of the lesson day; absent when the day has none. */
+  dayPage?: LessonDayPage;
 }
 
 /**
@@ -118,6 +120,7 @@ export function lessonGroupHeads(
       if (info?.pages?.length) current.pages = info.pages;
       if (info?.hasPackage) current.hasPackage = true;
       if (info?.notes) current.notes = info.notes;
+      if (info?.dayPage) current.dayPage = info.dayPage;
       heads.set(job.id, current);
     }
     current.count += 1;

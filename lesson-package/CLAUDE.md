@@ -63,7 +63,7 @@ These are requirements, not ideas. A change that breaks one of them needs the ow
 | Words of the UI | `agent05-ui-control/UI/src/contexts/I18nContext.tsx`, keys `lessonPackage*` and `pkg*`, three languages |
 | Tests | `agent05-ui-control/API.Tests/` — `LessonWordRulesTests.cs`, `SaidTextTests.cs`, `HeardElsewhereTests.cs`, `LessonPackageViewBuilderTests.cs`, `LessonPackagesTests.cs`; `agent05-ui-control/UI/src/utils/lessonPackage.spec.ts` |
 | Builder | `lesson-package/builder/` — `python -m builder build <date>…` ([README](builder/README.md), how it builds: [BUILDER.md](BUILDER.md)); tests `builder/tests/` (`python -m unittest discover` from `lesson-package/`) |
-| Page of a lesson day | `lesson-package/builder/page.py` + `page_template.html` — `python -m builder page <date>… --packages <packages folder>` writes `<packages folder>/<YYYY-MM-DD>/lesson.html`: one self-contained, read-only HTML file of the day, made anew from its data (the package as the app shows it and the notes of its vault copy, cut by `study.py` into small study items — words, phrases, mistakes, grammar cards, tasks with keys — with practice: spaced repetition, typing, matching, a word left out); GET only, free; `days --publish` makes it too. Not a claude.ai Artifact (owner, 2026-11-21): the pages are files on the owner's disk. A day folder with no `package.json` is not a package for agent05. The page is never the place of an edit — edit in XtractManager, make the page again |
+| Page of a lesson day | `lesson-package/builder/page.py` + `page_template.html` — `python -m builder page <date>… --packages <packages folder>` writes `<packages folder>/<YYYY-MM-DD>/lesson.html`: one self-contained, read-only HTML file of the day, made anew from its data (the package as the app shows it and the notes of its vault copy, cut by `study.py` into small study items — words, phrases, mistakes, grammar cards, tasks with keys — with practice: spaced repetition, typing, matching, a word left out); GET only, free; `days --publish` makes it too. Not a claude.ai Artifact (owner, 2026-11-21): the pages are files on the owner's disk. agent05 gives the file at `GET /api/sessions/{date}/page` and the lessons list tells `dayPage` (`stale` when an edit of the day is newer than the page), so the lesson links it. The packages folder is a git repository of the owner's own (2026-11-22; no remote, never pushed: it holds the lessons); `page`, `publish` and `days --publish` commit the day folders they wrote (`builder/history.py`). A day folder with no `package.json` is not a package for agent05. The page is never the place of an edit — edit in XtractManager, make the page again |
 
 ## Rules that must hold
 
@@ -125,14 +125,15 @@ time (agent05 logs the time). The next reads take a fraction of a second.
   A prompt is checked only by a paid run — rule 7.
 - **A new kind of list**: its model and ids first (rule 2), then the screen.
 
-## State (2026-11-21) and what is next
+## State (2026-11-22) and what is next
 
 Done: the screen with four tabs; the words table (only new by default, lists, search, recording, sorting,
 columns dragged and remembered); every text edited in place and put back; a row taken out and returned; a
 phrase played from the recording; "said before" counted against all earlier lessons; a word no other hearing
-has marked «?» (`heardElsewhere`, 2026-11-21); thirty-five lessons
-have a package; the builder in the repository (`builder/`, see BUILDER.md, "State"), reading the lesson with its
-speakers from agent05 — thirty-one lessons built by it, pass 3 answered by Claude subagents, eleven of them
+has marked «?» (`heardElsewhere`, 2026-11-21); fifty-one lessons
+have a package (2026-11-22), and every lesson day a page (`lesson.html`) opened from the lesson in XtractManager;
+the builder in the repository (`builder/`, see BUILDER.md, "State"), reading the lesson with its
+speakers from agent05 — all but four of the packages built by it, pass 3 answered by Claude subagents, eleven of them
 through `python -m builder days` from the batch plan to the published package (the last twenty-one with speakers
 told by voice, `voice-speakers/`). By the owner's pick of 2026-11-20 a
 build asks only request A of the first form (`--first-form a`, the default; BUILDER.md, "What is weak", 6).

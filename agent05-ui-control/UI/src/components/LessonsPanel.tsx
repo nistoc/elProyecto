@@ -671,6 +671,11 @@ export function LessonsPanel({
                 session.notes ? { date: session.date, ...session.notes } : null
               }
               onOpenNotes={onOpenNotes}
+              dayPage={
+                session.dayPage
+                  ? { date: session.date, stale: session.dayPage.stale }
+                  : null
+              }
             />
             <button
               type="button"

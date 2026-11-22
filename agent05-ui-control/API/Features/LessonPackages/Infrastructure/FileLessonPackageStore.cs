@@ -22,6 +22,17 @@ public sealed class FileLessonPackageStore : ILessonPackageStore
     public const string PackageFileName = "package.json";
     public const string MarksFileName = "marks.json";
 
+    /// <summary>The page of a lesson day, written by the builder (<c>python -m builder page</c>), only read here.</summary>
+    public const string DayPageFileName = "lesson.html";
+
+    /// <summary>The files of a day folder its page is made of: one written after the page makes it stale.</summary>
+    private static readonly string[] DayPageSources =
+    {
+        PackageFileName,
+        MarksFileName,
+        LessonText.Infrastructure.FileLessonSpeakersStore.FileName,
+    };
+
     private static readonly JsonSerializerOptions ReadOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
@@ -92,6 +103,42 @@ public sealed class FileLessonPackageStore : ILessonPackageStore
         }
 
         return found;
+    }
+
+    public IReadOnlyDictionary<string, LessonDayPageInfo> DayPages()
+    {
+        var found = new Dictionary<string, LessonDayPageInfo>(StringComparer.Ordinal);
+        try
+        {
+            if (!Directory.Exists(_root))
+                return found;
+            foreach (var dir in new DirectoryInfo(_root).EnumerateDirectories())
+            {
+                if (!LessonPageRules.TryDate(dir.Name, out var date))
+                    continue;
+                var page = new FileInfo(Path.Combine(dir.FullName, DayPageFileName));
+                if (!page.Exists)
+                    continue;
+                var stale = DayPageSources
+                    .Select(name => new FileInfo(Path.Combine(dir.FullName, name)))
+                    .Any(source => source.Exists && source.LastWriteTimeUtc > page.LastWriteTimeUtc);
+                found[date] = new LessonDayPageInfo(Stamp(page.LastWriteTimeUtc), stale);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "The lesson packages folder {Path} cannot be listed; the lessons show no page", _root);
+        }
+
+        return found;
+    }
+
+    public string? DayPagePath(string date)
+    {
+        if (!LessonPageRules.TryDate(date, out var day))
+            return null;
+        var path = Path.Combine(_root, day, DayPageFileName);
+        return File.Exists(path) ? path : null;
     }
 
     public LessonPackageDocument? Read(string date)

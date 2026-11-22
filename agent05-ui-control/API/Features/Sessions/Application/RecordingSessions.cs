@@ -30,6 +30,13 @@ public sealed record RecordingSession(
     public LessonPackages.Application.LessonPackageInfo? Package { get; init; }
 
     /// <summary>
+    /// The page of the lesson day (<c>lesson.html</c> in the packages folder, given by
+    /// <c>GET /api/sessions/{date}/page</c>) and whether it is older than the files it is made of; null when the
+    /// day has none.
+    /// </summary>
+    public LessonPackages.Application.LessonDayPageInfo? DayPage { get; init; }
+
+    /// <summary>
     /// Where the lesson stands on the way from a recording to a package, see <see cref="LessonStage"/>;
     /// null where nobody worked it out.
     /// </summary>
